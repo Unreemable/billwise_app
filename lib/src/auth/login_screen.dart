@@ -1,43 +1,41 @@
 import 'package:flutter/material.dart';
 import 'auth_service.dart';
-import '../home/home_screen.dart';
-import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
-  static const route = '/login';
   const LoginScreen({super.key});
+  static const route = '/login';
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _form = GlobalKey<FormState>();
+  final _formKey = GlobalKey<FormState>();
   final _email = TextEditingController();
-  final _pass = TextEditingController();
+  final _password = TextEditingController();
   bool _loading = false;
+  bool _obscure = true;
+  String? _error;
 
   @override
   void dispose() {
     _email.dispose();
-    _pass.dispose();
+    _password.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
-    if (!_form.currentState!.validate()) return;
-    setState(() => _loading = true);
+    if (!_formKey.currentState!.validate()) return;
+    setState(() { _loading = true; _error = null; });
     try {
-      await AuthService().signIn(_email.text.trim(), _pass.text);
-      if (mounted) Navigator.pushReplacementNamed(context, HomeScreen.route);
+      await AuthService.instance.signIn(_email.text.trim(), _password.text);
+      if (mounted) Navigator.pushReplacementNamed(context, '/home');
     } catch (e) {
-      _snack('$e');
+      setState(() => _error = 'فشل تسجيل الدخول. تأكد من البريد/الرقم السري.');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
-
-  void _snack(String m) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
 
   @override
   Widget build(BuildContext context) {
@@ -51,52 +49,39 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Form(
-                key: _form,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextFormField(
-                      controller: _email,
-                      keyboardType: TextInputType.emailAddress,
-                      decoration: const InputDecoration(
-                        labelText: 'البريد الإلكتروني',
-                        border: OutlineInputBorder(),
-                      ),
-                      validator: (v) {
-                        if (v == null || v.trim().isEmpty) return 'أدخلي البريد';
-                        final ok = RegExp(r'^\S+@\S+\.\S+$').hasMatch(v.trim());
-                        return ok ? null : 'صيغة البريد غير صحيحة';
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _pass,
-                      obscureText: true,
-                      decoration: const InputDecoration(
-                        labelText: 'كلمة المرور',
-                        border: OutlineInputBorder(),
-                      ),
-                      validator: (v) => (v == null || v.isEmpty) ? 'أدخلي كلمة المرور' : null,
-                    ),
-                    const SizedBox(height: 16),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: _loading ? null : _submit,
-                        child: _loading
-                            ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                            : const Text('دخول'),
+                key: _formKey,
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  TextFormField(
+                    controller: _email,
+                    decoration: const InputDecoration(labelText: 'البريد الإلكتروني'),
+                    keyboardType: TextInputType.emailAddress,
+                    validator: (v) => (v == null || !v.contains('@')) ? 'أدخل بريد صحيح' : null,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _password,
+                    decoration: InputDecoration(
+                      labelText: 'كلمة المرور',
+                      suffixIcon: IconButton(
+                        onPressed: () => setState(() => _obscure = !_obscure),
+                        icon: Icon(_obscure ? Icons.visibility : Icons.visibility_off),
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    TextButton(
-                      onPressed: _loading
-                          ? null
-                          : () => Navigator.pushReplacementNamed(context, RegisterScreen.route),
-                      child: const Text('إنشاء حساب جديد'),
-                    ),
-                  ],
-                ),
+                    obscureText: _obscure,
+                    validator: (v) => (v == null || v.length < 6) ? '6 أحرف على الأقل' : null,
+                  ),
+                  const SizedBox(height: 12),
+                  if (_error != null) Text(_error!, style: const TextStyle(color: Colors.red)),
+                  const SizedBox(height: 8),
+                  ElevatedButton(
+                    onPressed: _loading ? null : _submit,
+                    child: _loading ? const CircularProgressIndicator() : const Text('دخول'),
+                  ),
+                  TextButton(
+                    onPressed: _loading ? null : () => Navigator.pushNamed(context, '/register'),
+                    child: const Text('إنشاء حساب'),
+                  ),
+                ]),
               ),
             ),
           ),

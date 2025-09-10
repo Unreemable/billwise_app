@@ -1,42 +1,23 @@
 import 'package:firebase_auth/firebase_auth.dart';
 
 class AuthService {
-  final _auth = FirebaseAuth.instance;
+  AuthService._();
+  static final AuthService instance = AuthService._();
 
-  Future<UserCredential> signIn(String email, String password) async {
-    try {
-      return await _auth.signInWithEmailAndPassword(email: email, password: password);
-    } on FirebaseAuthException catch (e) {
-      throw _mapError(e);
-    }
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  Stream<User?> get authStateChanges => _auth.authStateChanges();
+  User? get currentUser => _auth.currentUser;
+
+  Future<User?> signIn(String email, String password) async {
+    final cred = await _auth.signInWithEmailAndPassword(email: email, password: password);
+    return cred.user;
   }
 
-  Future<UserCredential> register(String email, String password) async {
-    try {
-      return await _auth.createUserWithEmailAndPassword(email: email, password: password);
-    } on FirebaseAuthException catch (e) {
-      throw _mapError(e);
-    }
+  Future<User?> register(String email, String password) async {
+    final cred = await _auth.createUserWithEmailAndPassword(email: email, password: password);
+    return cred.user;
   }
 
   Future<void> signOut() => _auth.signOut();
-
-  String _mapError(FirebaseAuthException e) {
-    switch (e.code) {
-      case 'invalid-email':
-        return 'البريد الإلكتروني غير صالح.';
-      case 'user-not-found':
-        return 'لا يوجد مستخدم بهذا البريد.';
-      case 'wrong-password':
-        return 'كلمة المرور غير صحيحة.';
-      case 'email-already-in-use':
-        return 'البريد مستخدم مسبقًا.';
-      case 'weak-password':
-        return 'كلمة المرور ضعيفة (8 أحرف على الأقل).';
-      case 'operation-not-allowed':
-        return 'Email/Password غير مفعّل في Firebase.';
-      default:
-        return e.message ?? e.code;
-    }
-  }
 }
