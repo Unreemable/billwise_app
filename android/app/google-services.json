@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "231247706970",
+    "project_id": "billwise-deeb2",
+    "storage_bucket": "billwise-deeb2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:231247706970:android:0ad46b2e86043898c29163",
+        "android_client_info": {
+          "package_name": "com.example.hhhh"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBUckM4T8ceVGKiUUDRkicURMcxZIEBJ_4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
