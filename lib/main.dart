@@ -17,9 +17,10 @@ import 'src/warranties/ui/warranty_list_page.dart';
 import 'src/warranties/ui/add_warranty_page.dart';
 import 'src/warranties/ui/warranty_detail_page.dart';
 
-// Models للتفاصيل
+// Models (لصفحات التفاصيل)
 import 'src/common/models.dart';
-// صفحة الscan
+
+// صفحة الـ Scan
 import 'src/ocr/scan_receipt_page.dart';
 
 Future<void> main() async {
@@ -43,7 +44,7 @@ class App extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF3C7EFF)),
       ),
 
-      // يوجّه تلقائيًا حسب حالة الدخول
+      // يوجّه حسب حالة الدخول
       home: StreamBuilder<User?>(
         stream: FirebaseAuth.instance.authStateChanges(),
         builder: (context, snap) {
@@ -64,46 +65,56 @@ class App extends StatelessWidget {
         HomeScreen.route: (_) => const HomeScreen(),
         BillListPage.route: (_) => const BillListPage(),
         WarrantyListPage.route: (_) => const WarrantyListPage(),
-        AddWarrantyPage.route: (_) => const AddWarrantyPage(),
         ScanReceiptPage.route: (_) => const ScanReceiptPage(),
+        // AddBillPage لا تحتاج arguments حالياً
+        AddBillPage.route: (_) => const AddBillPage(),
       },
 
-      // صفحات تحتاج arguments + تمرير suggestWarranty/prefill لـ AddBillPage
+      // صفحات تحتاج arguments
       onGenerateRoute: (settings) {
-        if (settings.name == BillDetailPage.route && settings.arguments is BillDetails) {
+        // تفاصيل فاتورة: نتوقع BillDetails
+        if (settings.name == BillDetailPage.route &&
+            settings.arguments is BillDetails) {
           return MaterialPageRoute(
-            builder: (_) => BillDetailPage(details: settings.arguments as BillDetails),
+            builder: (_) =>
+                BillDetailPage(details: settings.arguments as BillDetails),
             settings: settings,
           );
         }
 
-        if (settings.name == WarrantyDetailPage.route && settings.arguments is WarrantyDetails) {
+        // تفاصيل ضمان: نتوقع WarrantyDetails
+        if (settings.name == WarrantyDetailPage.route &&
+            settings.arguments is WarrantyDetails) {
           return MaterialPageRoute(
-            builder: (_) => WarrantyDetailPage(details: settings.arguments as WarrantyDetails),
+            builder: (_) => WarrantyDetailPage(
+                details: settings.arguments as WarrantyDetails),
             settings: settings,
           );
         }
 
-        if (settings.name == AddBillPage.route) {
-          // نتوقع arguments = { suggestWarranty: bool, prefill: Map<String,dynamic>? }
-          bool suggest = false;
-          Map<String, dynamic>? prefill;
-
+        // إضافة ضمان: تحتاج billId (وممكن start/end اختياري)
+        if (settings.name == AddWarrantyPage.route) {
           final args = settings.arguments;
-          if (args is Map) {
-            suggest = (args['suggestWarranty'] as bool?) ?? false;
-            final rawPrefill = args['prefill'];
-            if (rawPrefill is Map) {
-              prefill = rawPrefill.cast<String, dynamic>();
-            }
+          if (args is Map<String, dynamic> && args['billId'] is String) {
+            return MaterialPageRoute(
+              builder: (_) => AddWarrantyPage(
+                billId: args['billId'] as String,
+                defaultStartDate: args['start'] as DateTime?,
+                defaultEndDate: args['end'] as DateTime?,
+              ),
+              settings: settings,
+            );
           }
-
+          // في حال نُسيت الـ arguments
           return MaterialPageRoute(
-            builder: (_) => AddBillPage(
-              suggestWarranty: suggest,
-              prefill: prefill,
+            builder: (_) => const Directionality(
+              textDirection: TextDirection.rtl,
+              child: Scaffold(
+                body: Center(
+                  child: Text('⚠️ يلزم تمرير billId لصفحة إضافة الضمان'),
+                ),
+              ),
             ),
-            settings: settings,
           );
         }
 

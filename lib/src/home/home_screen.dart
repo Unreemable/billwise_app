@@ -1,14 +1,22 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 import '../auth/auth_service.dart';
 import '../auth/login_screen.dart';
 
 import '../bills/ui/bill_list_page.dart';
 import '../bills/ui/add_bill_page.dart';
-import '../bills/ui/bill_detail_page.dart';
+// لو ما تحتاجين صفحة التفاصيل الآن تقدرين تحذفين هذا الاستيراد
+// import '../bills/ui/bill_detail_page.dart';
+
 import '../warranties/ui/warranty_list_page.dart';
-import '../warranties/ui/warranty_detail_page.dart';
-import '../common/models.dart';
+// import '../warranties/ui/warranty_detail_page.dart';
+
 import '../ocr/scan_receipt_page.dart';
+
+// خدمات Firestore
+import '../bills/data/bill_service.dart';
+import '../warranties/data/warranty_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -22,6 +30,13 @@ enum HomeFilter { bills, warranties }
 
 class _HomeScreenState extends State<HomeScreen> {
   HomeFilter _filter = HomeFilter.bills;
+  final _searchCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -42,7 +57,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 await AuthService.instance.signOut();
                 if (context.mounted) {
                   Navigator.pushNamedAndRemoveUntil(
-                      context, LoginScreen.route, (_) => false);
+                    context,
+                    LoginScreen.route,
+                        (_) => false,
+                  );
                 }
               },
               icon: const Icon(Icons.logout),
@@ -51,7 +69,12 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         floatingActionButton: FloatingActionButton(
           onPressed: () async {
-            await Navigator.pushNamed(context, AddBillPage.route);
+            // نفتح صفحة إضافة فاتورة مباشرة (بدون الاعتماد على route name)
+            await Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AddBillPage()),
+            );
+            setState(() {}); // ينعش القائمة عند الرجوع
           },
           child: const Icon(Icons.add),
         ),
@@ -59,23 +82,35 @@ class _HomeScreenState extends State<HomeScreen> {
           selectedIndex: 0,
           destinations: const [
             NavigationDestination(
-                icon: Icon(Icons.home_outlined), label: 'الرئيسية'),
+              icon: Icon(Icons.home_outlined),
+              label: 'الرئيسية',
+            ),
             NavigationDestination(
-                icon: Icon(Icons.receipt_long), label: 'فواتيري'),
+              icon: Icon(Icons.receipt_long),
+              label: 'فواتيري',
+            ),
             NavigationDestination(
-                icon: Icon(Icons.verified), label: 'الضمانات'),
+              icon: Icon(Icons.verified),
+              label: 'الضمانات',
+            ),
           ],
           onDestinationSelected: (i) async {
             if (i == 1) {
-              await Navigator.pushNamed(context, BillListPage.route);
+              await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const BillListPage()),
+              );
             } else if (i == 2) {
-              await Navigator.pushNamed(context, WarrantyListPage.route);
+              await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const WarrantyListPage()),
+              );
             }
           },
         ),
         body: Stack(
           children: [
-            _HeaderGradient(),
+            const _HeaderGradient(),
             SafeArea(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
@@ -86,53 +121,18 @@ class _HomeScreenState extends State<HomeScreen> {
                       userEmail: user?.email ?? 'غير مسجّل',
                       filter: _filter,
                       onChangeFilter: () => _showFilterSheet(context),
+                      searchCtrl: _searchCtrl,
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      'Recent ${_filter == HomeFilter.bills ? "Bills" : "Warranties"}',
+                      _filter == HomeFilter.bills
+                          ? 'أحدث الفواتير'
+                          : 'أحدث الضمانات',
                       textAlign: isRTL ? TextAlign.right : TextAlign.left,
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                     const SizedBox(height: 8),
-                    ...List.generate(4, (i) {
-                      return _ItemTile(
-                        title: _filter == HomeFilter.bills
-                            ? 'فاتورة #${i + 1}'
-                            : 'ضمان #${i + 1}',
-                        subtitle: _filter == HomeFilter.bills
-                            ? 'متجر إلكترونيات • 299 SAR'
-                            : 'ينتهي بعد 7 أشهر',
-                        progress: (i + 1) * 0.18,
-                        trailing: const Icon(Icons.chevron_left),
-                        onTap: () async {
-                          if (_filter == HomeFilter.bills) {
-                            final d = BillDetails(
-                              title: 'Carrefour',
-                              product: 'Air Fryer',
-                              amount: 299,
-                              purchaseDate: DateTime(2024, 8, 1),
-                              returnDeadline: DateTime(2024, 8, 15),
-                              warrantyExpiry: DateTime(2025, 8, 1),
-                            );
-                            Navigator.pushNamed(
-                                context, BillDetailPage.route,
-                                arguments: d);
-                          } else {
-                            final d = WarrantyDetails(
-                              title: 'Extra',
-                              product: 'Dell Laptop',
-                              warrantyStart: DateTime(2024, 8, 5),
-                              warrantyExpiry: DateTime(2025, 8, 15),
-                              returnDeadline: DateTime(2024, 8, 4),
-                              reminderDate: DateTime(2025, 8, 5),
-                            );
-                            Navigator.pushNamed(
-                                context, WarrantyDetailPage.route,
-                                arguments: d);
-                          }
-                        },
-                      );
-                    }),
+                    _buildRecentList(), // القائمة الحقيقية من Firestore
                   ],
                 ),
               ),
@@ -141,6 +141,143 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
+  }
+
+  // قائمة حديثة حسب الفلتر + البحث
+  Widget _buildRecentList() {
+    if (_filter == HomeFilter.bills) {
+      return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: BillService.instance.streamBills(),
+        builder: (context, s) {
+          if (s.hasError) {
+            return Center(child: Text('خطأ: ${s.error}'));
+          }
+          if (!s.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          var docs = s.data!.docs;
+
+          // فلترة بالبحث (عنوان/اسم متجر)
+          final q = _searchCtrl.text.trim().toLowerCase();
+          if (q.isNotEmpty) {
+            docs = docs.where((d) {
+              final data = d.data();
+              final title = (data['title'] ?? '').toString().toLowerCase();
+              final shop = (data['shop_name'] ?? '').toString().toLowerCase();
+              return title.contains(q) || shop.contains(q);
+            }).toList();
+          }
+
+          if (docs.isEmpty) {
+            return const _EmptyHint(text: 'لا توجد فواتير مطابقة');
+          }
+
+          // نعرض فقط 8 عناصر (حديثة)
+          final toShow = docs.take(8).toList();
+          return Column(
+            children: toShow.map((doc) {
+              final d = doc.data();
+              final title = (d['title'] ?? '—').toString();
+              final shop = (d['shop_name'] ?? '—').toString();
+              final amount = d['total_amount'];
+              final ret = (d['return_deadline'] as Timestamp?)?.toDate();
+              final ex = (d['exchange_deadline'] as Timestamp?)?.toDate();
+              final hasWarranty = (d['warranty_coverage'] as bool?) ?? false;
+
+              return _ItemTile(
+                title: title,
+                subtitle: '$shop • ${amount ?? '-'}',
+                meta: 'إرجاع: ${_daysLeft(ret)} · استبدال: ${_daysLeft(ex)}',
+                trailing: hasWarranty
+                    ? const Icon(Icons.verified, color: Colors.green)
+                    : const SizedBox(),
+                onTap: () {
+                  // لو عندك صفحة تفاصيل جاهزة مرّري id/arguments حسب تطبيقك
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const BillListPage()),
+                  );
+                },
+              );
+            }).toList(),
+          );
+        },
+      );
+    } else {
+      // وارنـتيز
+      return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: WarrantyService.instance.streamWarranties(),
+        builder: (context, s) {
+          if (s.hasError) {
+            return Center(child: Text('خطأ: ${s.error}'));
+          }
+          if (!s.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          var docs = s.data!.docs;
+
+          // فلترة بالبحث (المزوّد/الفاتورة غير متاحة هنا، نكتفي بالمزوّد)
+          final q = _searchCtrl.text.trim().toLowerCase();
+          if (q.isNotEmpty) {
+            docs = docs.where((d) {
+              final data = d.data();
+              final provider = (data['provider'] ?? '').toString().toLowerCase();
+              return provider.contains(q);
+            }).toList();
+          }
+
+          if (docs.isEmpty) {
+            return const _EmptyHint(text: 'لا توجد ضمانات مطابقة');
+          }
+
+          final toShow = docs.take(8).toList();
+          return Column(
+            children: toShow.map((doc) {
+              final d = doc.data();
+              final provider = (d['provider'] ?? '—').toString();
+              final end = (d['end_date'] as Timestamp?)?.toDate();
+
+              return _ItemTile(
+                title: provider,
+                subtitle: 'ينتهي: ${_date(end)}',
+                meta: _badge(expiry: end),
+                trailing: const Icon(Icons.chevron_left),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const WarrantyListPage()),
+                  );
+                },
+              );
+            }).toList(),
+          );
+        },
+      );
+    }
+  }
+
+  String _daysLeft(DateTime? d) {
+    if (d == null) return '—';
+    final dd = DateTime(d.year, d.month, d.day);
+    final diff = dd.difference(DateTime.now()).inDays;
+    if (diff < 0) return 'منتهٍ';
+    if (diff == 0) return 'اليوم';
+    return 'بعد $diff يوم';
+  }
+
+  static String _date(DateTime? d) {
+    if (d == null) return '—';
+    final two = (int n) => n.toString().padLeft(2, '0');
+    return '${d.year}-${two(d.month)}-${two(d.day)}';
+  }
+
+  static String _badge({required DateTime? expiry}) {
+    if (expiry == null) return '—';
+    final diff = expiry.difference(DateTime.now()).inDays;
+    if (diff < 0) return 'منتهي';
+    if (diff <= 7) return 'قريب جدًا';
+    if (diff <= 30) return 'قريب';
+    return 'ساري';
   }
 
   void _showFilterSheet(BuildContext context) async {
@@ -173,6 +310,8 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 class _HeaderGradient extends StatelessWidget {
+  const _HeaderGradient();
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -192,11 +331,13 @@ class _HeaderCard extends StatelessWidget {
   final String userEmail;
   final HomeFilter filter;
   final VoidCallback onChangeFilter;
+  final TextEditingController searchCtrl;
 
   const _HeaderCard({
     required this.userEmail,
     required this.filter,
     required this.onChangeFilter,
+    required this.searchCtrl,
   });
 
   @override
@@ -209,12 +350,17 @@ class _HeaderCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Expanded(
+                Expanded(
                   child: TextField(
-                    decoration: InputDecoration(
-                      hintText: 'Search by name',
+                    controller: searchCtrl,
+                    decoration: const InputDecoration(
+                      hintText: 'ابحث بالعنوان أو المتجر/المزوّد',
                       prefixIcon: Icon(Icons.search),
                     ),
+                    onChanged: (_) {
+                      // نعيد بناء الواجهة لتطبيق الفلترة
+                      (context as Element).markNeedsBuild();
+                    },
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -226,9 +372,11 @@ class _HeaderCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
-            // زر Quick Add
             FilledButton.icon(
-              onPressed: () => Navigator.pushNamed(context, ScanReceiptPage.route),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ScanReceiptPage()),
+              ),
               icon: const Icon(Icons.center_focus_strong),
               label: const Text('Quick Add'),
             ),
@@ -253,14 +401,14 @@ class _HeaderCard extends StatelessWidget {
 class _ItemTile extends StatelessWidget {
   final String title;
   final String subtitle;
-  final double progress;
+  final String meta;
   final Widget trailing;
   final VoidCallback onTap;
 
   const _ItemTile({
     required this.title,
     required this.subtitle,
-    required this.progress,
+    required this.meta,
     required this.trailing,
     required this.onTap,
   });
@@ -277,10 +425,28 @@ class _ItemTile extends StatelessWidget {
           children: [
             Text(subtitle),
             const SizedBox(height: 6),
-            LinearProgressIndicator(value: progress.clamp(0.0, 1.0)),
+            Text(meta, style: Theme.of(context).textTheme.bodySmall),
           ],
         ),
         trailing: trailing,
+      ),
+    );
+  }
+}
+class _EmptyHint extends StatelessWidget {
+  final String text;
+  const _EmptyHint({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 24),
+      child: Center(
+        child: Text(
+          text,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey),
+          textAlign: TextAlign.center,
+        ),
       ),
     );
   }

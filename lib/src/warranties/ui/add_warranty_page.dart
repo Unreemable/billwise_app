@@ -1,239 +1,109 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import '../../warranties/data/warranty_service.dart';
+import '../../bills/data/bill_service.dart';
+
+import 'package:cloud_firestore/cloud_firestore.dart'; // لـ Timestamp
 
 class AddWarrantyPage extends StatefulWidget {
+  final String billId;
+  final DateTime? defaultStartDate;
+  final DateTime? defaultEndDate;
   const AddWarrantyPage({
     super.key,
-    this.embedded = false,
-    this.prefill,
+    required this.billId,
+    this.defaultStartDate,
+    this.defaultEndDate,
   });
-
   static const route = '/add-warranty';
-
-  /// لو كانت داخل AddBillPage نعرض المحتوى بدون AppBar.
-  final bool embedded;
-
-  /// قيم جاهزة من OCR:
-  /// {
-  ///   'warrantyMonths': int?,
-  ///   'warrantyStart': String? (ISO8601),
-  ///   'warrantyExpiry': String? (ISO8601),
-  ///   'purchaseDate': String? (ISO8601), // اختياري
-  ///   'productName': String?            // اختياري
-  /// }
-  final Map<String, dynamic>? prefill;
 
   @override
   State<AddWarrantyPage> createState() => _AddWarrantyPageState();
 }
 
 class _AddWarrantyPageState extends State<AddWarrantyPage> {
-  final _product = TextEditingController();
-  final _purchaseDate = TextEditingController();
-  final _warrantyStart = TextEditingController();
-  final _expiry = TextEditingController();
-  final _billNumber = TextEditingController();
-  final _notes = TextEditingController();
-  final _months = ValueNotifier<int>(12);
+  final _providerCtrl = TextEditingController(text: 'Jarir');
+  DateTime _start = DateTime.now();
+  DateTime _end = DateTime.now().add(const Duration(days: 365));
+  final _fmt = DateFormat('yyyy-MM-dd');
+  bool _saving = false;
 
   @override
   void initState() {
     super.initState();
-    _applyPrefill();
+    if (widget.defaultStartDate != null) _start = widget.defaultStartDate!;
+    if (widget.defaultEndDate != null) _end = widget.defaultEndDate!;
   }
 
-  @override
-  void dispose() {
-    _product.dispose();
-    _purchaseDate.dispose();
-    _warrantyStart.dispose();
-    _expiry.dispose();
-    _billNumber.dispose();
-    _notes.dispose();
-    _months.dispose();
-    super.dispose();
-  }
-
-  // ========== Helpers ==========
-  String _fmt(DateTime d) =>
-      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-
-  DateTime? _parseYmd(String v) {
-    if (v.isEmpty) return null;
-    final p = v.split('-');
-    if (p.length != 3) return null;
-    final y = int.tryParse(p[0]);
-    final m = int.tryParse(p[1]);
-    final d = int.tryParse(p[2]);
-    if (y == null || m == null || d == null) return null;
-    return DateTime(y, m, d);
-  }
-
-  void _recalcExpiry() {
-    final start = _parseYmd(_warrantyStart.text);
-    if (start == null) return;
-    final m = _months.value;
-    final end = DateTime(start.year, start.month + m, start.day);
-    _expiry.text = _fmt(end);
-  }
-
-  void _applyPrefill() {
-    final p = widget.prefill;
-    if (p == null) return;
-
-    // product (اختياري)
-    final prod = p['productName'] as String?;
-    if (prod != null && prod.trim().isNotEmpty) _product.text = prod.trim();
-
-    // purchase date (اختياري)
-    final pd = p['purchaseDate'] as String?;
-    final pdDt = pd != null ? DateTime.tryParse(pd) : null;
-    if (pdDt != null) _purchaseDate.text = _fmt(pdDt);
-
-    // months
-    final m = p['warrantyMonths'];
-    if (m is int && m > 0) _months.value = m;
-
-    // start/end
-    final s = p['warrantyStart'] as String?;
-    final e = p['warrantyExpiry'] as String?;
-
-    final sDt = s != null ? DateTime.tryParse(s) : null;
-    final eDt = e != null ? DateTime.tryParse(e) : null;
-
-    if (sDt != null) _warrantyStart.text = _fmt(sDt);
-    if (eDt != null) {
-      _expiry.text = _fmt(eDt);
-    } else if (sDt != null) {
-      // احسب الانتهاء من البداية + الأشهر (إن ما وصل expiry جاهز)
-      final end = DateTime(sDt.year, sDt.month + _months.value, sDt.day);
-      _expiry.text = _fmt(end);
-    }
-  }
-
-  Future<void> _pickDate(TextEditingController ctrl, String help) async {
-    final now = DateTime.now();
-    final picked = await showDatePicker(
+  Future<void> _pickDate(DateTime initial, ValueChanged<DateTime> onPick) async {
+    final d = await showDatePicker(
       context: context,
-      initialDate: _parseYmd(ctrl.text) ?? now,
-      firstDate: DateTime(now.year - 5),
-      lastDate: DateTime(now.year + 5),
-      helpText: help,
+      initialDate: initial,
+      firstDate: DateTime(2015),
+      lastDate: DateTime(2100),
     );
-    if (picked != null) {
-      ctrl.text = _fmt(picked);
-      if (ctrl == _warrantyStart) _recalcExpiry();
+    if (d != null) onPick(d);
+  }
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      // 1) أنشئ الضمان
+      await WarrantyService.instance.createWarranty(
+        billId: widget.billId,
+        startDate: _start,
+        endDate: _end,
+        provider: _providerCtrl.text.trim().isEmpty ? 'Unknown' : _providerCtrl.text.trim(),
+        // userId: FirebaseAuth.instance.currentUser?.uid,
+      );
+      // 2) حدّث الفاتورة بملخص الضمان
+      await BillService.instance.updateBill(widget.billId, {
+        'warranty_coverage': true,
+        'warranty_end_date': Timestamp.fromDate(_end),
+      });
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم حفظ الضمان ✅')));
+      Navigator.of(context).pop();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('خطأ: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
   }
 
-  // ========== UI ==========
   @override
   Widget build(BuildContext context) {
-    final content = ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        const SizedBox(height: 8),
-        TextField(
-          controller: _product,
-          decoration: const InputDecoration(
-            labelText: 'Product Name',
-            prefixIcon: Icon(Icons.inventory_2_outlined),
-          ),
+    return Scaffold(
+      appBar: AppBar(title: const Text('إضافة ضمان')),
+      body: AbsorbPointer(
+        absorbing: _saving,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            TextField(controller: _providerCtrl, decoration: const InputDecoration(labelText: 'المزوّد / المتجر')),
+            ListTile(
+              title: const Text('بداية الضمان'),
+              subtitle: Text(_fmt.format(_start)),
+              trailing: const Icon(Icons.date_range),
+              onTap: () => _pickDate(_start, (d) => setState(() => _start = d)),
+            ),
+            ListTile(
+              title: const Text('نهاية الضمان'),
+              subtitle: Text(_fmt.format(_end)),
+              trailing: const Icon(Icons.verified_user),
+              onTap: () => _pickDate(_end, (d) => setState(() => _end = d)),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: _saving ? null : _save,
+              icon: const Icon(Icons.save),
+              label: Text(_saving ? 'جارٍ الحفظ...' : 'حفظ'),
+            ),
+          ],
         ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _purchaseDate,
-          readOnly: true,
-          onTap: () => _pickDate(_purchaseDate, 'Date of Purchase'),
-          decoration: const InputDecoration(
-            labelText: 'Date of Purchase',
-            prefixIcon: Icon(Icons.event),
-          ),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _warrantyStart,
-          readOnly: true,
-          onTap: () => _pickDate(_warrantyStart, 'Warranty Start Date'),
-          decoration: const InputDecoration(
-            labelText: 'Warranty Start Date',
-            prefixIcon: Icon(Icons.event_available),
-          ),
-        ),
-        const SizedBox(height: 12),
-        ValueListenableBuilder<int>(
-          valueListenable: _months,
-          builder: (_, months, __) => Row(
-            children: [
-              Expanded(
-                child: DropdownButtonFormField<int>(
-                  value: months,
-                  items: const [6, 12, 24, 36]
-                      .map((m) => DropdownMenuItem(value: m, child: Text('$m أشهر')))
-                      .toList(),
-                  onChanged: (v) {
-                    _months.value = v ?? 12;
-                    _recalcExpiry();
-                  },
-                  decoration: const InputDecoration(
-                    labelText: 'Warranty Duration',
-                    prefixIcon: Icon(Icons.timelapse),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: TextField(
-                  controller: _expiry,
-                  readOnly: true,
-                  onTap: () => _pickDate(_expiry, 'Expiry Date'),
-                  decoration: const InputDecoration(
-                    labelText: 'Expiry Date',
-                    prefixIcon: Icon(Icons.event_busy),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _billNumber,
-          decoration: const InputDecoration(
-            labelText: 'Bill Number (optional)',
-            prefixIcon: Icon(Icons.confirmation_number_outlined),
-          ),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _notes,
-          minLines: 2,
-          maxLines: 4,
-          decoration: const InputDecoration(
-            labelText: 'Notes',
-            prefixIcon: Icon(Icons.notes),
-          ),
-        ),
-        const SizedBox(height: 20),
-        FilledButton.icon(
-          onPressed: () {
-            // TODO: اربطي الحفظ بالفايرستور وربطه بالـ bill_id إذا فتحتيه من الفاتورة
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('تم حفظ الضمان (تجريبي).')),
-            );
-          },
-          icon: const Icon(Icons.save),
-          label: const Text('حفظ'),
-        ),
-      ],
-    );
-
-    if (widget.embedded) return Directionality(textDirection: TextDirection.rtl, child: content);
-
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: Scaffold(
-        appBar: AppBar(title: const Text('Warranty Information')),
-        body: content,
       ),
     );
   }
