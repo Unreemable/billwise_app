@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../common/models.dart';
 import 'warranty_detail_page.dart';
 
+
 class WarrantyListPage extends StatelessWidget {
   const WarrantyListPage({super.key});
   static const route = '/warranties';

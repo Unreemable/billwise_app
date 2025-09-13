@@ -57,19 +57,18 @@ class App extends StatelessWidget {
         },
       ),
 
-      // صفحات بدون باراميتر
+      // صفحات لا تحتاج arguments
       routes: {
         LoginScreen.route: (_) => const LoginScreen(),
         RegisterScreen.route: (_) => const RegisterScreen(),
         HomeScreen.route: (_) => const HomeScreen(),
         BillListPage.route: (_) => const BillListPage(),
         WarrantyListPage.route: (_) => const WarrantyListPage(),
-        AddBillPage.route: (_) => const AddBillPage(),
         AddWarrantyPage.route: (_) => const AddWarrantyPage(),
         ScanReceiptPage.route: (_) => const ScanReceiptPage(),
       },
 
-      // صفحات تحتاج arguments (التفاصيل) + دعم تمرير suggestWarranty لـ AddBillPage
+      // صفحات تحتاج arguments + تمرير suggestWarranty/prefill لـ AddBillPage
       onGenerateRoute: (settings) {
         if (settings.name == BillDetailPage.route && settings.arguments is BillDetails) {
           return MaterialPageRoute(
@@ -77,20 +76,37 @@ class App extends StatelessWidget {
             settings: settings,
           );
         }
+
         if (settings.name == WarrantyDetailPage.route && settings.arguments is WarrantyDetails) {
           return MaterialPageRoute(
             builder: (_) => WarrantyDetailPage(details: settings.arguments as WarrantyDetails),
             settings: settings,
           );
         }
-        if (settings.name == AddBillPage.route && settings.arguments is Map) {
-          final args = settings.arguments as Map;
-          final suggest = (args['suggestWarranty'] as bool?) ?? false;
+
+        if (settings.name == AddBillPage.route) {
+          // نتوقع arguments = { suggestWarranty: bool, prefill: Map<String,dynamic>? }
+          bool suggest = false;
+          Map<String, dynamic>? prefill;
+
+          final args = settings.arguments;
+          if (args is Map) {
+            suggest = (args['suggestWarranty'] as bool?) ?? false;
+            final rawPrefill = args['prefill'];
+            if (rawPrefill is Map) {
+              prefill = rawPrefill.cast<String, dynamic>();
+            }
+          }
+
           return MaterialPageRoute(
-            builder: (_) => AddBillPage(suggestWarranty: suggest),
+            builder: (_) => AddBillPage(
+              suggestWarranty: suggest,
+              prefill: prefill,
+            ),
             settings: settings,
           );
         }
+
         return null;
       },
     );

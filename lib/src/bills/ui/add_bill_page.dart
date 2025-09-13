@@ -1,5 +1,8 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+
+import 'package:firebase_auth/firebase_auth.dart';
+import '../../data/firestore_service.dart';
 import '../../warranties/ui/add_warranty_page.dart';
 
 class AddBillPage extends StatefulWidget {
@@ -11,10 +14,10 @@ class AddBillPage extends StatefulWidget {
 
   static const route = '/add-bill';
 
-  /// يظهر تبويب الـ Warranty تلقائيًا عند وجود كلمات (warranty/ضمان/…)
+  /// يفتح تبويب Warranty تلقائيًا إذا كانت true (قادمة من OCR)
   final bool suggestWarranty;
 
-  /// بيانات قادمة من OCR (اختيارية):
+  /// بيانات قادمة من OCR (اختيارية)
   /// {
   ///   'store': String?,
   ///   'amount': double? | String?,
@@ -45,11 +48,10 @@ class _AddBillPageState extends State<AddBillPage> {
   void initState() {
     super.initState();
     _applyPrefill();
-    _maybeSuggestWarranty();
+    _openWarrantyTabIfDetected();
   }
 
   void _applyPrefill() {
-    // خزّن نسخة قابلة للاستخدام
     _prefill = widget.prefill;
 
     final p = _prefill;
@@ -74,7 +76,6 @@ class _AddBillPageState extends State<AddBillPage> {
     // التاريخ
     final dateIso = p['date'] as String?;
     if (dateIso != null && dateIso.isNotEmpty) {
-      // نعرضه بصيغة yyyy-mm-dd
       final date = DateTime.tryParse(dateIso);
       if (date != null) {
         _date.text =
@@ -89,25 +90,22 @@ class _AddBillPageState extends State<AddBillPage> {
     }
   }
 
-  void _maybeSuggestWarranty() {
-    // أي دليل على وجود ضمان → اقترح الانتقال لتبويب الضمان
+  /// يفتح تبويب الضمان مباشرة إذا اكتشفنا كلمة/معلومات ضمان من OCR
+  void _openWarrantyTabIfDetected() {
     final hasOCRWarranty =
         (_prefill?['warrantyMonths'] != null) ||
             (_prefill?['warrantyStart'] != null) ||
             (_prefill?['warrantyExpiry'] != null);
 
     if (widget.suggestWarranty || hasOCRWarranty) {
+      _tab = 1; // افتح تبويب الضمان
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+          const SnackBar(
             behavior: SnackBarBehavior.floating,
-            content: const Text('تم رصد معلومات/كلمة "ضمان" — هل تريدين تعبئة نموذج الضمان؟'),
-            action: SnackBarAction(
-              label: 'نعم',
-              onPressed: () => setState(() => _tab = 1),
-            ),
-            duration: const Duration(seconds: 4),
+            content: Text('تم رصد كلمة/معلومات "ضمان" — فتحنا نموذج الضمان تلقائيًا.'),
+            duration: Duration(seconds: 3),
           ),
         );
       });
@@ -168,17 +166,89 @@ class _AddBillPageState extends State<AddBillPage> {
                   date: _date,
                   onPickDate: _pickDate,
                   receiptImage: _receiptImage,
-                  onSave: () {
-                    // TODO: ربط الحفظ بقاعدة البيانات/Storage إذا رغبت
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('تم حفظ الفاتورة (تجريبي).')),
-                    );
+                  onSave: () async {
+                    // ====== حفظ فعلي على Firestore/Storage ======
+                    try {
+                      final user = FirebaseAuth.instance.currentUser;
+                      if (user == null) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('يجب تسجيل الدخول')),
+                        );
+                        return;
+                      }
+                      final uid = user.uid;
+
+                      // المدخلات
+                      final amt = double.tryParse(_amount.text.trim()) ?? 0;
+                      final ds = _date.text.trim(); // yyyy-mm-dd
+                      if (ds.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('رجاءً حددي تاريخ الشراء')),
+                        );
+                        return;
+                      }
+                      final parts = ds.split('-');
+                      if (parts.length != 3) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('صيغة التاريخ غير صحيحة')),
+                        );
+                        return;
+                      }
+                      final pDate = DateTime(
+                        int.parse(parts[0]),
+                        int.parse(parts[1]),
+                        int.parse(parts[2]),
+                      );
+
+                      // إشارات/معلومات الضمان القادمة من OCR
+                      final hasWarranty = widget.suggestWarranty ||
+                          (_prefill?['warrantyMonths'] != null) ||
+                          (_prefill?['warrantyStart'] != null) ||
+                          (_prefill?['warrantyExpiry'] != null);
+
+                      final wMonths = _prefill?['warrantyMonths'] as int?;
+                      final wStartIso = _prefill?['warrantyStart'] as String?;
+                      final wEndIso = _prefill?['warrantyExpiry'] as String?;
+                      final wStart = wStartIso != null ? DateTime.tryParse(wStartIso) : null;
+                      final wEnd = wEndIso != null ? DateTime.tryParse(wEndIso) : null;
+
+                      // إنشاء Bill + (اختياري) Warranty
+                      await FirestoreService.instance.createBillAndMaybeWarrantyFromOCR(
+                        uid: uid,
+                        purchaseDate: pDate,
+                        totalAmount: amt,
+                        hasWarranty: hasWarranty,
+                        receiptImage: _receiptImage,
+                        warrantyMonths: wMonths,
+                        warrantyStart: wStart ?? pDate,
+                        warrantyEnd: wEnd ??
+                            (wMonths != null
+                                ? DateTime(pDate.year, pDate.month + wMonths, pDate.day)
+                                : null),
+                      );
+
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('تم حفظ الفاتورة بنجاح')),
+                      );
+                      Navigator.pop(context);
+                    } catch (e) {
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('تعذّر الحفظ: $e')),
+                      );
+                    }
                   },
                 )
                     : AddWarrantyPage(
                   embedded: true,
-                  // نمرّر prefill بسيطًا عبر الحقول النصية (اختياري لاحقًا)
+                  prefill: {
+                    'warrantyMonths': _prefill?['warrantyMonths'],
+                    'warrantyStart': _prefill?['warrantyStart'],
+                    'warrantyExpiry': _prefill?['warrantyExpiry'],
+                  },
                 ),
+
               ),
             ),
           ],

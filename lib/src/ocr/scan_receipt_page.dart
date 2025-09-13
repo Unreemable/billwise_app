@@ -22,7 +22,10 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
   String? _error;
 
   Future<void> _pick(bool camera) async {
-    setState(() { _error = null; });
+    setState(() {
+      _error = null;
+    });
+
     final picker = ImagePicker();
     final x = await picker.pickImage(
       source: camera ? ImageSource.camera : ImageSource.gallery,
@@ -30,23 +33,35 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
     );
     if (x == null) return;
 
-    // احفظ نسخة محليًا
+    // احفظ نسخة محليًا داخل Documents
     final dir = await getApplicationDocumentsDirectory();
-    final filename = 'receipt_${DateTime.now().millisecondsSinceEpoch}${p.extension(x.path)}';
+    final filename =
+        'receipt_${DateTime.now().millisecondsSinceEpoch}${p.extension(x.path)}';
     final saved = await File(x.path).copy(p.join(dir.path, filename));
-    setState(() { _image = saved; });
+
+    setState(() {
+      _image = saved;
+    });
   }
 
   Future<void> _runOcrAndGo() async {
     if (_image == null) return;
-    setState(() { _processing = true; _error = null; });
+
+    setState(() {
+      _processing = true;
+      _error = null;
+    });
 
     try {
+      // 1) OCR
       final text = await OcrService.instance.extractText(_image!);
+
+      // 2) Parsing
       final parsed = ReceiptParser.parse(text);
 
-      // بناء باراميترات لصفحة AddBill
+      // 3) بناء باراميترات لصفحة AddBill
       final args = {
+        // لو true راح يفتح تبويب Warranty تلقائيًا داخل AddBillPage (عدّلناه مسبقًا)
         'suggestWarranty': parsed.hasWarrantyKeyword,
         'prefill': {
           'store': parsed.storeName,
@@ -61,6 +76,8 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
       };
 
       if (!mounted) return;
+
+      // 4) الانتقال لصفحة الإضافة
       await Navigator.pushNamed(context, AddBillPage.route, arguments: args);
     } catch (e) {
       setState(() => _error = e.toString());
@@ -84,11 +101,15 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
                     : Image.file(_image!, fit: BoxFit.contain),
               ),
             ),
+
             if (_error != null)
               Padding(
                 padding: const EdgeInsets.all(8.0),
-                child: Text(_error!, style: const TextStyle(color: Colors.red)),
+                child:
+                Text(_error!, style: const TextStyle(color: Colors.red)),
               ),
+
+            // أزرار الالتقاط/الاختيار
             Padding(
               padding: const EdgeInsets.all(12),
               child: Row(
@@ -111,12 +132,19 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
                 ],
               ),
             ),
+
+            // زر تشغيل الـ OCR والانتقال
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
               child: FilledButton.icon(
-                onPressed: (_image == null || _processing) ? null : _runOcrAndGo,
+                onPressed:
+                (_image == null || _processing) ? null : _runOcrAndGo,
                 icon: _processing
-                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                    ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
                     : const Icon(Icons.text_snippet),
                 label: const Text('التعرّف وملء الحقول'),
               ),
