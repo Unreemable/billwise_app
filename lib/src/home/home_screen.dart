@@ -8,6 +8,7 @@ import '../bills/ui/bill_detail_page.dart';
 import '../warranties/ui/warranty_list_page.dart';
 import '../warranties/ui/warranty_detail_page.dart';
 import '../common/models.dart';
+import '../ocr/scan_receipt_page.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -223,6 +224,13 @@ class _HeaderCard extends StatelessWidget {
                   icon: const Icon(Icons.tune),
                 ),
               ],
+            ),
+            const SizedBox(height: 8),
+            // زر Quick Add
+            FilledButton.icon(
+              onPressed: () => Navigator.pushNamed(context, ScanReceiptPage.route),
+              icon: const Icon(Icons.center_focus_strong),
+              label: const Text('Quick Add'),
             ),
             const SizedBox(height: 8),
             Row(

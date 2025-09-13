@@ -19,6 +19,8 @@ import 'src/warranties/ui/warranty_detail_page.dart';
 
 // Models للتفاصيل
 import 'src/common/models.dart';
+// صفحة الscan
+import 'src/ocr/scan_receipt_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -64,6 +66,7 @@ class App extends StatelessWidget {
         WarrantyListPage.route: (_) => const WarrantyListPage(),
         AddBillPage.route: (_) => const AddBillPage(),
         AddWarrantyPage.route: (_) => const AddWarrantyPage(),
+        ScanReceiptPage.route: (_) => const ScanReceiptPage(),
       },
 
       // صفحات تحتاج arguments (التفاصيل) + دعم تمرير suggestWarranty لـ AddBillPage
