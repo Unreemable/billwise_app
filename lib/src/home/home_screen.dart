@@ -1,20 +1,14 @@
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-import '../auth/auth_service.dart';
 import '../auth/login_screen.dart';
-
 import '../bills/ui/bill_list_page.dart';
 import '../bills/ui/add_bill_page.dart';
-// لو ما تحتاجين صفحة التفاصيل الآن تقدرين تحذفين هذا الاستيراد
-// import '../bills/ui/bill_detail_page.dart';
-
 import '../warranties/ui/warranty_list_page.dart';
-// import '../warranties/ui/warranty_detail_page.dart';
-
 import '../ocr/scan_receipt_page.dart';
 
-// خدمات Firestore
 import '../bills/data/bill_service.dart';
 import '../warranties/data/warranty_service.dart';
 
@@ -40,11 +34,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final user = AuthService.instance.currentUser;
-    final isRTL = Directionality.of(context) == TextDirection.rtl;
+    final user = FirebaseAuth.instance.currentUser;
 
     return Directionality(
-      textDirection: TextDirection.rtl,
+      textDirection: ui.TextDirection.ltr,
       child: Scaffold(
         extendBodyBehindAppBar: true,
         appBar: AppBar(
@@ -52,9 +45,9 @@ class _HomeScreenState extends State<HomeScreen> {
           elevation: 0,
           actions: [
             IconButton(
-              tooltip: 'تسجيل خروج',
+              tooltip: 'Sign out',
               onPressed: () async {
-                await AuthService.instance.signOut();
+                await FirebaseAuth.instance.signOut();
                 if (context.mounted) {
                   Navigator.pushNamedAndRemoveUntil(
                     context,
@@ -69,42 +62,27 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         floatingActionButton: FloatingActionButton(
           onPressed: () async {
-            // نفتح صفحة إضافة فاتورة مباشرة (بدون الاعتماد على route name)
+            // Add Bill manually
             await Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const AddBillPage()),
             );
-            setState(() {}); // ينعش القائمة عند الرجوع
+            if (mounted) setState(() {});
           },
           child: const Icon(Icons.add),
         ),
         bottomNavigationBar: NavigationBar(
           selectedIndex: 0,
           destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.home_outlined),
-              label: 'الرئيسية',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.receipt_long),
-              label: 'فواتيري',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.verified),
-              label: 'الضمانات',
-            ),
+            NavigationDestination(icon: Icon(Icons.home_outlined), label: 'Home'),
+            NavigationDestination(icon: Icon(Icons.receipt_long), label: 'Bills'),
+            NavigationDestination(icon: Icon(Icons.verified), label: 'Warranties'),
           ],
           onDestinationSelected: (i) async {
             if (i == 1) {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const BillListPage()),
-              );
+              await Navigator.push(context, MaterialPageRoute(builder: (_) => const BillListPage()));
             } else if (i == 2) {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const WarrantyListPage()),
-              );
+              await Navigator.push(context, MaterialPageRoute(builder: (_) => const WarrantyListPage()));
             }
           },
         ),
@@ -118,21 +96,18 @@ class _HomeScreenState extends State<HomeScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     _HeaderCard(
-                      userEmail: user?.email ?? 'غير مسجّل',
+                      userEmail: user?.email ?? 'Guest',
                       filter: _filter,
                       onChangeFilter: () => _showFilterSheet(context),
                       searchCtrl: _searchCtrl,
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      _filter == HomeFilter.bills
-                          ? 'أحدث الفواتير'
-                          : 'أحدث الضمانات',
-                      textAlign: isRTL ? TextAlign.right : TextAlign.left,
+                      _filter == HomeFilter.bills ? 'Recent bills' : 'Recent warranties',
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                     const SizedBox(height: 8),
-                    _buildRecentList(), // القائمة الحقيقية من Firestore
+                    _buildRecentList(userId: user?.uid),
                   ],
                 ),
               ),
@@ -143,21 +118,16 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // قائمة حديثة حسب الفلتر + البحث
-  Widget _buildRecentList() {
+  // Recent items according to filter + search
+  Widget _buildRecentList({String? userId}) {
     if (_filter == HomeFilter.bills) {
       return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: BillService.instance.streamBills(),
+        stream: BillService.instance.streamBills(userId: userId),
         builder: (context, s) {
-          if (s.hasError) {
-            return Center(child: Text('خطأ: ${s.error}'));
-          }
-          if (!s.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
+          if (s.hasError) return Center(child: Text('Error: ${s.error}'));
+          if (!s.hasData) return const Center(child: CircularProgressIndicator());
           var docs = s.data!.docs;
 
-          // فلترة بالبحث (عنوان/اسم متجر)
           final q = _searchCtrl.text.trim().toLowerCase();
           if (q.isNotEmpty) {
             docs = docs.where((d) {
@@ -167,12 +137,8 @@ class _HomeScreenState extends State<HomeScreen> {
               return title.contains(q) || shop.contains(q);
             }).toList();
           }
+          if (docs.isEmpty) return const _EmptyHint(text: 'No bills found.');
 
-          if (docs.isEmpty) {
-            return const _EmptyHint(text: 'لا توجد فواتير مطابقة');
-          }
-
-          // نعرض فقط 8 عناصر (حديثة)
           final toShow = docs.take(8).toList();
           return Column(
             children: toShow.map((doc) {
@@ -180,43 +146,25 @@ class _HomeScreenState extends State<HomeScreen> {
               final title = (d['title'] ?? '—').toString();
               final shop = (d['shop_name'] ?? '—').toString();
               final amount = d['total_amount'];
-              final ret = (d['return_deadline'] as Timestamp?)?.toDate();
-              final ex = (d['exchange_deadline'] as Timestamp?)?.toDate();
-              final hasWarranty = (d['warranty_coverage'] as bool?) ?? false;
-
               return _ItemTile(
                 title: title,
                 subtitle: '$shop • ${amount ?? '-'}',
-                meta: 'إرجاع: ${_daysLeft(ret)} · استبدال: ${_daysLeft(ex)}',
-                trailing: hasWarranty
-                    ? const Icon(Icons.verified, color: Colors.green)
-                    : const SizedBox(),
-                onTap: () {
-                  // لو عندك صفحة تفاصيل جاهزة مرّري id/arguments حسب تطبيقك
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const BillListPage()),
-                  );
-                },
+                meta: 'Tap to view or edit',
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const BillListPage())),
               );
             }).toList(),
           );
         },
       );
     } else {
-      // وارنـتيز
       return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: WarrantyService.instance.streamWarranties(),
+        stream: WarrantyService.instance.streamWarranties(userId: userId),
         builder: (context, s) {
-          if (s.hasError) {
-            return Center(child: Text('خطأ: ${s.error}'));
-          }
-          if (!s.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
+          if (s.hasError) return Center(child: Text('Error: ${s.error}'));
+          if (!s.hasData) return const Center(child: CircularProgressIndicator());
           var docs = s.data!.docs;
 
-          // فلترة بالبحث (المزوّد/الفاتورة غير متاحة هنا، نكتفي بالمزوّد)
           final q = _searchCtrl.text.trim().toLowerCase();
           if (q.isNotEmpty) {
             docs = docs.where((d) {
@@ -225,29 +173,19 @@ class _HomeScreenState extends State<HomeScreen> {
               return provider.contains(q);
             }).toList();
           }
-
-          if (docs.isEmpty) {
-            return const _EmptyHint(text: 'لا توجد ضمانات مطابقة');
-          }
+          if (docs.isEmpty) return const _EmptyHint(text: 'No warranties found.');
 
           final toShow = docs.take(8).toList();
           return Column(
             children: toShow.map((doc) {
               final d = doc.data();
-              final provider = (d['provider'] ?? '—').toString();
-              final end = (d['end_date'] as Timestamp?)?.toDate();
-
+              final provider = (d['provider'] ?? 'Warranty').toString();
               return _ItemTile(
                 title: provider,
-                subtitle: 'ينتهي: ${_date(end)}',
-                meta: _badge(expiry: end),
-                trailing: const Icon(Icons.chevron_left),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const WarrantyListPage()),
-                  );
-                },
+                subtitle: 'Tap to view',
+                meta: '—',
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WarrantyListPage())),
               );
             }).toList(),
           );
@@ -256,53 +194,26 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  String _daysLeft(DateTime? d) {
-    if (d == null) return '—';
-    final dd = DateTime(d.year, d.month, d.day);
-    final diff = dd.difference(DateTime.now()).inDays;
-    if (diff < 0) return 'منتهٍ';
-    if (diff == 0) return 'اليوم';
-    return 'بعد $diff يوم';
-  }
-
-  static String _date(DateTime? d) {
-    if (d == null) return '—';
-    final two = (int n) => n.toString().padLeft(2, '0');
-    return '${d.year}-${two(d.month)}-${two(d.day)}';
-  }
-
-  static String _badge({required DateTime? expiry}) {
-    if (expiry == null) return '—';
-    final diff = expiry.difference(DateTime.now()).inDays;
-    if (diff < 0) return 'منتهي';
-    if (diff <= 7) return 'قريب جدًا';
-    if (diff <= 30) return 'قريب';
-    return 'ساري';
-  }
-
   void _showFilterSheet(BuildContext context) async {
     final picked = await showModalBottomSheet<HomeFilter>(
       context: context,
       showDragHandle: true,
-      builder: (_) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: ListView(
-          shrinkWrap: true,
-          children: [
-            RadioListTile<HomeFilter>(
-              value: HomeFilter.warranties,
-              groupValue: _filter,
-              title: const Text('Warranties'),
-              onChanged: (v) => Navigator.pop(context, v),
-            ),
-            RadioListTile<HomeFilter>(
-              value: HomeFilter.bills,
-              groupValue: _filter,
-              title: const Text('Bills'),
-              onChanged: (v) => Navigator.pop(context, v),
-            ),
-          ],
-        ),
+      builder: (_) => ListView(
+        shrinkWrap: true,
+        children: [
+          RadioListTile<HomeFilter>(
+            value: HomeFilter.warranties,
+            groupValue: _filter,
+            title: const Text('Warranties'),
+            onChanged: (v) => Navigator.pop(context, v),
+          ),
+          RadioListTile<HomeFilter>(
+            value: HomeFilter.bills,
+            groupValue: _filter,
+            title: const Text('Bills'),
+            onChanged: (v) => Navigator.pop(context, v),
+          ),
+        ],
       ),
     );
     if (picked != null) setState(() => _filter = picked);
@@ -354,18 +265,15 @@ class _HeaderCard extends StatelessWidget {
                   child: TextField(
                     controller: searchCtrl,
                     decoration: const InputDecoration(
-                      hintText: 'ابحث بالعنوان أو المتجر/المزوّد',
+                      hintText: 'Search by title / store / provider',
                       prefixIcon: Icon(Icons.search),
                     ),
-                    onChanged: (_) {
-                      // نعيد بناء الواجهة لتطبيق الفلترة
-                      (context as Element).markNeedsBuild();
-                    },
+                    onChanged: (_) => (context as Element).markNeedsBuild(),
                   ),
                 ),
                 const SizedBox(width: 12),
                 IconButton(
-                  tooltip: 'فلترة',
+                  tooltip: 'Filter',
                   onPressed: onChangeFilter,
                   icon: const Icon(Icons.tune),
                 ),
@@ -378,7 +286,7 @@ class _HeaderCard extends StatelessWidget {
                 MaterialPageRoute(builder: (_) => const ScanReceiptPage()),
               ),
               icon: const Icon(Icons.center_focus_strong),
-              label: const Text('Quick Add'),
+              label: const Text('Quick Add (OCR)'),
             ),
             const SizedBox(height: 8),
             Row(
@@ -433,6 +341,7 @@ class _ItemTile extends StatelessWidget {
     );
   }
 }
+
 class _EmptyHint extends StatelessWidget {
   final String text;
   const _EmptyHint({required this.text});

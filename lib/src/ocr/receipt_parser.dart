@@ -4,8 +4,7 @@ class ParsedReceipt {
   final double? totalAmount;
   final bool hasWarrantyKeyword;
 
-  // معلومات للضمان (إن وُجدت)
-  final int? warrantyMonths;           // 6/12/24...
+  final int? warrantyMonths;
   final DateTime? warrantyStartDate;
   final DateTime? warrantyExpiryDate;
 
@@ -24,35 +23,39 @@ class ParsedReceipt {
 }
 
 class ReceiptParser {
-  // كلمات مفتاحية — عربي/إنجليزي
   static const _kwWarranty = [
-    'warranty', 'warranties', 'guarantee', 'return', 'exchange',
-    'ضمان', 'الضمان', 'استبدال', 'إرجاع', 'ارجاع'
+    'warranty','warranties','guarantee','return','exchange',
+    'ضمان','الضمان','استبدال','إرجاع','ارجاع'
   ];
 
-  // أسماء الأشهر إنجليزي
   static const List<String> _enMonths = [
     'january','february','march','april','may','june',
     'july','august','september','october','november','december'
   ];
 
-  // مكافئ عربي مبسّط (اختياري)
   static const Map<String, int> _arMonthToNum = {
     'يناير': 1, 'فبراير': 2, 'مارس': 3, 'أبريل': 4, 'ابريل': 4, 'مايو': 5,
     'يونيو': 6, 'يوليو': 7, 'أغسطس': 8, 'اغسطس': 8, 'سبتمبر': 9,
     'أكتوبر': 10, 'اكتوبر': 10, 'نوفمبر': 11, 'ديسمبر': 12,
   };
 
-  // صيغ مبلغ: نأخذ الرقم الأكبر غالبًا هو الإجمالي
-  // مثال: SAR 1,234.56 | 1234.56 | 12,345 | ر.س 123.45
+  // normalize Arabic-Indic digits to Western digits
+  static String _normalizeDigits(String s) {
+    const ar = '٠١٢٣٤٥٦٧٨٩';
+    final buf = StringBuffer();
+    for (final ch in s.runes) {
+      final c = String.fromCharCode(ch);
+      final idx = ar.indexOf(c);
+      buf.write(idx == -1 ? c : idx.toString());
+    }
+    return buf.toString();
+  }
+
   static final RegExp _amountRegex = RegExp(
     r'(?:SAR|ر\.?\s?س|﷼)?\s*([0-9]{1,3}(?:[.,][0-9]{3})*|[0-9]+)(?:[.,]([0-9]{2}))?',
     caseSensitive: false,
   );
 
-  // --- توابع مساعدة للتواريخ بدون intl ---
-
-  // يحاول dd/MM/yyyy أو d/M/yyyy
   static DateTime? _parseDayMonthYearSlash(String s) {
     final m = RegExp(r'\b(\d{1,2})/(\d{1,2})/(\d{4})\b').firstMatch(s);
     if (m == null) return null;
@@ -63,7 +66,6 @@ class ReceiptParser {
     return DateTime(y, mo, d);
   }
 
-  // يحاول yyyy-MM-dd
   static DateTime? _parseYearDash(String s) {
     final m = RegExp(r'\b(\d{4})-(\d{1,2})-(\d{1,2})\b').firstMatch(s);
     if (m == null) return null;
@@ -74,58 +76,38 @@ class ReceiptParser {
     return DateTime(y, mo, d);
   }
 
-  // يحاول dd MMM yyyy (بالإنجليزية) مثل 15 Aug 2025
   static DateTime? _parseDayMonYearWords(String s) {
     final m = RegExp(r'\b(\d{1,2})\s+([A-Za-z]{3,})\s+(\d{4})\b').firstMatch(s);
     if (m == null) return null;
     final d = int.parse(m.group(1)!);
-    final monWord = m.group(2)!.toLowerCase();
+    final monWord = m.group(2)!.toLowerCase().replaceAll('.', '');
     final y = int.parse(m.group(3)!);
     int mo = _enMonths.indexOf(monWord) + 1;
-    // دعم مختصرات مثل Aug.
     if (mo == 0) {
       for (int i = 0; i < _enMonths.length; i++) {
-        if (_enMonths[i].startsWith(monWord.replaceAll('.', ''))) {
-          mo = i + 1;
-          break;
-        }
+        if (_enMonths[i].startsWith(monWord)) { mo = i + 1; break; }
       }
     }
     if (mo == 0 || d < 1 || d > 31) return null;
     return DateTime(y, mo, d);
   }
 
-  // يحاول يوم + شهر عربي + سنة: 15 أغسطس 2025
   static DateTime? _parseArabicMonth(String s) {
     final m = RegExp(r'\b(\d{1,2})\s+([اأإآءa-zA-Z]+)\s+(\d{4})\b').firstMatch(s);
     if (m == null) return null;
     final d = int.parse(m.group(1)!);
     final word = m.group(2)!.toLowerCase();
     final y = int.parse(m.group(3)!);
-
-    // طابق عربي
     int? mo = _arMonthToNum[word] ??
-        _arMonthToNum.entries
-            .firstWhere(
+        _arMonthToNum.entries.firstWhere(
               (e) => word.contains(e.key),
           orElse: () => const MapEntry('', 0),
-        )
-            .value;
+        ).value;
     if (mo == 0) return null;
     if (d < 1 || d > 31) return null;
     return DateTime(y, mo!, d);
   }
 
-  static DateTime? _tryParseDate(String s) {
-    s = s.trim().replaceAll(RegExp(r'[\u200f\u200e]'), '');
-    return _parseDayMonthYearSlash(s) ??
-        _parseYearDash(s) ??
-        _parseDayMonYearWords(s) ??
-        _parseArabicMonth(s) ??
-        _parseLooseYMD(s);
-  }
-
-  // آخر محاولة فضفاضة: 2025/8/15 أو 2025.08.15
   static DateTime? _parseLooseYMD(String s) {
     final m = RegExp(r'(\d{4})[^\d]?(\d{1,2})[^\d]?(\d{1,2})').firstMatch(s);
     if (m == null) return null;
@@ -136,13 +118,22 @@ class ReceiptParser {
     return DateTime(y, mo, d);
   }
 
+  static DateTime? _tryParseDate(String s) {
+    s = _normalizeDigits(s).trim().replaceAll(RegExp(r'[\u200f\u200e]'), '');
+    return _parseDayMonthYearSlash(s) ??
+        _parseYearDash(s) ??
+        _parseDayMonYearWords(s) ??
+        _parseArabicMonth(s) ??
+        _parseLooseYMD(s);
+  }
+
   static bool _containsWarrantyKeyword(String text) {
     final t = text.toLowerCase();
     return _kwWarranty.any((k) => t.contains(k));
   }
 
   static int? _extractWarrantyMonths(String text) {
-    final t = text.toLowerCase();
+    final t = _normalizeDigits(text.toLowerCase());
 
     final numM = RegExp(r'(\d+)\s*(month|months|شهر|أشهر)').firstMatch(t);
     if (numM != null) return int.tryParse(numM.group(1)!);
@@ -156,7 +147,6 @@ class ReceiptParser {
   }
 
   static String? _guessStore(List<String> lines) {
-    // نأخذ أول سطرين-ثلاثة لا تحتوي أرقام كثيرة كاسم متجر
     for (int i = 0; i < lines.length && i < 5; i++) {
       final l = lines[i].trim();
       if (l.isEmpty) continue;
@@ -171,7 +161,6 @@ class ReceiptParser {
       final d = _tryParseDate(l);
       if (d != null) return d;
     }
-    // ابحث داخل السطر على مقاطع قد تكون تاريخ
     for (final l in lines) {
       final words = l.split(RegExp(r'[\s,]+'));
       for (int i = 0; i < words.length; i++) {
@@ -185,8 +174,9 @@ class ReceiptParser {
   }
 
   static double? _bestAmount(String text) {
+    final t = _normalizeDigits(text);
     double best = -1;
-    for (final m in _amountRegex.allMatches(text)) {
+    for (final m in _amountRegex.allMatches(t)) {
       final whole = m.group(1) ?? '';
       final cents = m.group(2);
       final normalized = (whole.replaceAll(',', '').replaceAll('،', '')) +
@@ -213,7 +203,7 @@ class ReceiptParser {
     DateTime? wStart;
     DateTime? wExpiry;
     if (date != null && months != null) {
-      wStart = date;
+      wStart = DateTime(date.year, date.month, date.day);
       wExpiry = DateTime(date.year, date.month + months, date.day);
     }
 

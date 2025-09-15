@@ -1,29 +1,40 @@
+import 'package:flutter/foundation.dart';
+
+/// Simple bill model used by UI routes.
+@immutable
 class BillDetails {
-  final String title;           // مثال: Carrefour / Extra
-  final String product;         // Dell Laptop
-  final double amount;          // 299.0
-  final DateTime purchaseDate;  // تاريخ الشراء
+  final String title;
+  final String? product;
+  final double? amount;
+  final DateTime purchaseDate;
   final DateTime? returnDeadline;
+  final DateTime? exchangeDeadline;
+  final bool hasWarranty;
   final DateTime? warrantyExpiry;
 
-  BillDetails({
+  const BillDetails({
     required this.title,
-    required this.product,
-    required this.amount,
+    this.product,
+    this.amount,
     required this.purchaseDate,
     this.returnDeadline,
+    this.exchangeDeadline,
+    this.hasWarranty = false,
     this.warrantyExpiry,
   });
 }
 
+/// Simple warranty model used by UI routes.
+@immutable
 class WarrantyDetails {
-  final String title;                // اسم المتجر/الضمان
-  final String product;              // اسم المنتج
-  final DateTime warrantyStart;      // بداية الضمان
-  final DateTime warrantyExpiry;     // نهاية الضمان
-  final DateTime? returnDeadline;    // (اختياري) موعد الاستبدال
-  final DateTime? reminderDate;      // (اختياري) تذكير
-  WarrantyDetails({
+  final String title;
+  final String product;
+  final DateTime warrantyStart;
+  final DateTime warrantyExpiry;
+  final DateTime? returnDeadline; // optional: if you ever store it with bill
+  final DateTime? reminderDate;   // kept nullable for future use (unused now)
+
+  const WarrantyDetails({
     required this.title,
     required this.product,
     required this.warrantyStart,

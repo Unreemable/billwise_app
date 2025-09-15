@@ -1,10 +1,11 @@
-import 'dart:ui' as ui; // لتفادي مشكلة TextDirection.rtl
+import 'dart:ui' as ui; // for TextDirection.ltr
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 
-import '../../bills/data/bill_service.dart';
 import '../../common/models.dart';
+import '../../common/widgets/expiry_progress.dart';
+import '../data/bill_service.dart';
 import 'add_bill_page.dart';
 import 'bill_detail_page.dart';
 
@@ -18,8 +19,7 @@ class BillListPage extends StatefulWidget {
 
 class _BillListPageState extends State<BillListPage> {
   final _searchCtrl = TextEditingController();
-  final _money =
-  NumberFormat.currency(locale: 'ar', symbol: 'SAR ', decimalDigits: 2);
+  final _money = NumberFormat.currency(locale: 'en', symbol: 'SAR ', decimalDigits: 2);
 
   @override
   void dispose() {
@@ -27,48 +27,23 @@ class _BillListPageState extends State<BillListPage> {
     super.dispose();
   }
 
-  String _daysLeft(DateTime? d) {
+  String _fmt(DateTime? d) {
     if (d == null) return '—';
-    final dd = DateTime(d.year, d.month, d.day);
-    final diff = dd.difference(DateTime.now()).inDays;
-    if (diff < 0) return 'منتهٍ';
-    if (diff == 0) return 'اليوم';
-    return 'بعد $diff يوم';
-  }
-
-  // نحول وثيقة Firestore إلى BillDetails ونفتح صفحة التفاصيل عبر route
-  void _openDetailsFromDoc(Map<String, dynamic> d) {
-    final title = (d['title'] ?? '—').toString();
-    final product = (d['product'] ?? title).toString();
-    final amount = (d['total_amount'] as num?)?.toDouble() ?? 0.0;
-    final purchaseDate =
-        (d['purchase_date'] as Timestamp?)?.toDate() ?? DateTime.now();
-    final returnDeadline = (d['return_deadline'] as Timestamp?)?.toDate();
-    final warrantyExpiry = (d['warranty_end_date'] as Timestamp?)?.toDate();
-
-    // ملاحظة: BillDetails عندك لا يحتوي id، لذا لا نمرره هنا
-    final details = BillDetails(
-      title: title,
-      product: product,
-      amount: amount,
-      purchaseDate: purchaseDate,
-      returnDeadline: returnDeadline, // ← الاسم الصحيح
-      warrantyExpiry: warrantyExpiry,
-    );
-
-    Navigator.pushNamed(context, BillDetailPage.route, arguments: details);
+    String two(int x) => x.toString().padLeft(2, '0');
+    return '${d.year}-${two(d.month)}-${two(d.day)}';
   }
 
   @override
   Widget build(BuildContext context) {
     return Directionality(
-      textDirection: ui.TextDirection.rtl,
+      textDirection: ui.TextDirection.ltr,
       child: Scaffold(
-        appBar: AppBar(title: const Text('الفواتير')),
+        appBar: AppBar(title: const Text('Bills')),
         floatingActionButton: FloatingActionButton(
-          onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const AddBillPage()),
-          ),
+          onPressed: () async {
+            await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AddBillPage()));
+            if (mounted) setState(() {});
+          },
           child: const Icon(Icons.add),
         ),
         body: Column(
@@ -78,7 +53,7 @@ class _BillListPageState extends State<BillListPage> {
               child: TextField(
                 controller: _searchCtrl,
                 decoration: const InputDecoration(
-                  hintText: 'ابحث بالعنوان أو المتجر',
+                  hintText: 'Search by title or store',
                   prefixIcon: Icon(Icons.search),
                 ),
                 onChanged: (_) => setState(() {}),
@@ -89,73 +64,86 @@ class _BillListPageState extends State<BillListPage> {
               child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                 stream: BillService.instance.streamBills(),
                 builder: (context, s) {
-                  if (s.hasError) return Center(child: Text('خطأ: ${s.error}'));
-                  if (!s.hasData) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
+                  if (s.hasError) return Center(child: Text('Error: ${s.error}'));
+                  if (!s.hasData) return const Center(child: CircularProgressIndicator());
 
                   var docs = s.data!.docs;
 
-                  // فلترة حسب البحث
+                  // filter by search
                   final q = _searchCtrl.text.trim().toLowerCase();
                   if (q.isNotEmpty) {
                     docs = docs.where((e) {
                       final d = e.data();
-                      final title =
-                      (d['title'] ?? '').toString().toLowerCase();
-                      final shop =
-                      (d['shop_name'] ?? '').toString().toLowerCase();
+                      final title = (d['title'] ?? '').toString().toLowerCase();
+                      final shop = (d['shop_name'] ?? '').toString().toLowerCase();
                       return title.contains(q) || shop.contains(q);
                     }).toList();
                   }
 
                   if (docs.isEmpty) {
-                    return const Center(child: Text('لا توجد فواتير مطابقة'));
+                    return const Center(child: Text('No bills found.'));
                   }
 
                   return ListView.builder(
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     itemCount: docs.length,
                     itemBuilder: (_, i) {
-                      final doc = docs[i];
-                      final d = doc.data();
+                      final d = docs[i].data();
 
                       final title = (d['title'] ?? '—').toString();
                       final shop = (d['shop_name'] ?? '—').toString();
                       final amount = (d['total_amount'] as num?)?.toDouble();
-                      final ret =
-                      (d['return_deadline'] as Timestamp?)?.toDate();
-                      final ex =
-                      (d['exchange_deadline'] as Timestamp?)?.toDate();
-                      final hasWarranty =
-                          (d['warranty_coverage'] as bool?) ?? false;
+                      final purchase = (d['purchase_date'] as Timestamp?)?.toDate();
+                      final ret = (d['return_deadline'] as Timestamp?)?.toDate();
+                      final ex = (d['exchange_deadline'] as Timestamp?)?.toDate();
+                      final hasWarranty = (d['warranty_coverage'] as bool?) ?? false;
+                      final wEnd = (d['warranty_end_date'] as Timestamp?)?.toDate();
 
                       return Card(
-                        margin: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 6),
+                        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         child: ListTile(
-                          onTap: () => _openDetailsFromDoc(d),
+                          onTap: () {
+                            final details = BillDetails(
+                              title: title,
+                              product: shop,
+                              amount: amount ?? 0,
+                              purchaseDate: purchase ?? DateTime.now(),
+                              returnDeadline: ret,
+                              warrantyExpiry: wEnd,
+                            );
+                            Navigator.pushNamed(context, BillDetailPage.route, arguments: details);
+                          },
                           title: Text(title),
                           subtitle: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('$shop • '
-                                  '${amount == null ? '-' : _money.format(amount)}'),
-                              const SizedBox(height: 4),
-                              Text(
-                                'إرجاع: ${_daysLeft(ret)} · استبدال: ${_daysLeft(ex)}',
-                                style:
-                                Theme.of(context).textTheme.bodySmall,
-                              ),
+                              Text('$shop • ${amount == null ? '-' : _money.format(amount)}'),
+                              const SizedBox(height: 6),
+                              if (purchase != null && ret != null)
+                                ExpiryProgress(
+                                  title: 'Return',
+                                  startDate: purchase,
+                                  endDate: ret,
+                                  dense: true,      // thin bar
+                                  showInMonths: false, // days for bills
+                                ),
+                              if (purchase != null && ex != null) ...[
+                                const SizedBox(height: 6),
+                                ExpiryProgress(
+                                  title: 'Exchange',
+                                  startDate: purchase,
+                                  endDate: ex,
+                                  dense: true,
+                                  showInMonths: false,
+                                ),
+                              ],
                             ],
                           ),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              if (hasWarranty)
-                                const Icon(Icons.verified,
-                                    color: Colors.green),
-                              const Icon(Icons.chevron_left),
+                              if (hasWarranty) const Icon(Icons.verified, color: Colors.green),
+                              const Icon(Icons.chevron_right),
                             ],
                           ),
                         ),

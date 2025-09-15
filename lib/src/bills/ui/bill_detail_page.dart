@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../common/models.dart';
+import '../../common/widgets/expiry_progress.dart';
 
 class BillDetailPage extends StatelessWidget {
   const BillDetailPage({super.key, required this.details});
@@ -12,39 +13,57 @@ class BillDetailPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final money =
-    NumberFormat.currency(locale: 'ar', symbol: 'SAR ', decimalDigits: 2);
-    final two = (int n) => n.toString().padLeft(2, '0');
-    String fmt(DateTime? d) =>
-        d == null ? '—' : '${d.year}-${two(d.month)}-${two(d.day)}';
+    final money = NumberFormat.currency(locale: 'en', symbol: 'SAR ', decimalDigits: 2);
+    String two(int n) => n.toString().padLeft(2, '0');
+    String fmt(DateTime? d) => d == null ? '—' : '${d.year}-${two(d.month)}-${two(d.day)}';
 
     return Directionality(
-      textDirection: ui.TextDirection.rtl,
+      textDirection: ui.TextDirection.ltr,
       child: Scaffold(
         appBar: AppBar(title: Text(details.title)),
         body: ListView(
           padding: const EdgeInsets.all(16),
           children: [
             ListTile(
-              title: const Text('المنتج'),
+              title: const Text('Product/Store'),
               subtitle: Text(details.product ?? '—'),
             ),
             ListTile(
-              title: const Text('المبلغ'),
+              title: const Text('Amount'),
               subtitle: Text(money.format(details.amount ?? 0)),
             ),
             ListTile(
-              title: const Text('تاريخ الشراء'),
+              title: const Text('Purchase date'),
               subtitle: Text(fmt(details.purchaseDate)),
             ),
-            ListTile(
-              title: const Text('آخر موعد للإرجاع'),
-              subtitle: Text(fmt(details.returnDeadline)),
-            ),
-            ListTile(
-              title: const Text('نهاية الضمان'),
-              subtitle: Text(fmt(details.warrantyExpiry)),
-            ),
+            if (details.returnDeadline != null) ...[
+              const SizedBox(height: 8),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: ExpiryProgress(
+                    title: 'Return',
+                    startDate: details.purchaseDate ?? DateTime.now(),
+                    endDate: details.returnDeadline!,
+                    showInMonths: false, // days for bills
+                  ),
+                ),
+              ),
+            ],
+            if (details.warrantyExpiry != null) ...[
+              const SizedBox(height: 8),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: ExpiryProgress(
+                    title: 'Warranty',
+                    startDate: details.purchaseDate ?? DateTime.now(),
+                    endDate: details.warrantyExpiry!,
+                    showInMonths: true, // months for warranty
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),
