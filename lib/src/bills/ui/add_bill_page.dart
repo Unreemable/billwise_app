@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:image_picker/image_picker.dart';
+
 import '../../warranties/ui/add_warranty_page.dart';
 import '../data/bill_service.dart';
 
@@ -25,6 +27,10 @@ class _AddBillPageState extends State<AddBillPage> {
 
   DateTime? _ocrWarrantyStart;
   DateTime? _ocrWarrantyEnd;
+
+  // الصورة
+  final _picker = ImagePicker();
+  String? _receiptImagePath;
 
   final _fmt = DateFormat('yyyy-MM-dd');
   bool _saving = false;
@@ -77,7 +83,11 @@ class _AddBillPageState extends State<AddBillPage> {
     super.dispose();
   }
 
-  Future<void> _pickDate(BuildContext ctx, DateTime initial, ValueChanged<DateTime> onPick) async {
+  Future<void> _pickDate(
+      BuildContext ctx,
+      DateTime initial,
+      ValueChanged<DateTime> onPick,
+      ) async {
     final d = await showDatePicker(
       context: ctx,
       initialDate: initial,
@@ -85,6 +95,35 @@ class _AddBillPageState extends State<AddBillPage> {
       lastDate: DateTime(2100),
     );
     if (d != null) onPick(d);
+  }
+
+  Future<void> _pickReceipt() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt),
+              title: const Text('Camera'),
+              onTap: () => Navigator.pop(ctx, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('Gallery'),
+              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null) return;
+
+    final x = await _picker.pickImage(source: source, imageQuality: 85);
+    if (x != null) {
+      setState(() => _receiptImagePath = x.path);
+    }
   }
 
   Future<String?> _saveBillOnly() async {
@@ -96,6 +135,7 @@ class _AddBillPageState extends State<AddBillPage> {
       );
       return null;
     }
+
     final amount = num.tryParse(_amountCtrl.text.trim());
     if (amount == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -103,6 +143,7 @@ class _AddBillPageState extends State<AddBillPage> {
       );
       return null;
     }
+
     if (_hasWarranty && _warrantyEnd == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Pick warranty end date')),
@@ -121,6 +162,8 @@ class _AddBillPageState extends State<AddBillPage> {
         exchangeDeadline: _exchangeDeadline,
         warrantyCoverage: _hasWarranty,
         warrantyEndDate: _warrantyEnd,
+        // مرري مسار الصورة لحفظها ورفعها
+        receiptImagePath: _receiptImagePath,
       );
       if (!mounted) return id;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -151,7 +194,9 @@ class _AddBillPageState extends State<AddBillPage> {
       builder: (_) => AddWarrantyPage(
         billId: billId,
         defaultStartDate: _ocrWarrantyStart ?? _purchaseDate,
-        defaultEndDate: _ocrWarrantyEnd ?? _warrantyEnd ?? _purchaseDate.add(const Duration(days: 365)),
+        defaultEndDate: _ocrWarrantyEnd ??
+            _warrantyEnd ??
+            _purchaseDate.add(const Duration(days: 365)),
       ),
     ));
     if (mounted) Navigator.of(context).pop();
@@ -166,31 +211,74 @@ class _AddBillPageState extends State<AddBillPage> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            TextField(controller: _titleCtrl, decoration: const InputDecoration(labelText: 'Bill title/description')),
-            TextField(controller: _shopCtrl, decoration: const InputDecoration(labelText: 'Store name')),
+            TextField(
+              controller: _titleCtrl,
+              decoration:
+              const InputDecoration(labelText: 'Bill title/description'),
+            ),
+            TextField(
+              controller: _shopCtrl,
+              decoration: const InputDecoration(labelText: 'Store name'),
+            ),
             TextField(
               controller: _amountCtrl,
               decoration: const InputDecoration(labelText: 'Amount (SAR)'),
               keyboardType: TextInputType.number,
             ),
             const SizedBox(height: 12),
+
+            // اختيار الصورة ومعاينة الاسم
+            Row(
+              children: [
+                ElevatedButton.icon(
+                  onPressed: _pickReceipt,
+                  icon: const Icon(Icons.attach_file),
+                  label: const Text('Attach receipt'),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    _receiptImagePath == null
+                        ? 'No file'
+                        : _receiptImagePath!.split('/').last,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // التواريخ
             ListTile(
               title: const Text('Purchase date'),
               subtitle: Text(_fmt.format(_purchaseDate)),
               trailing: const Icon(Icons.date_range),
-              onTap: () => _pickDate(context, _purchaseDate, (d) => setState(() => _purchaseDate = d)),
+              onTap: () => _pickDate(context, _purchaseDate, (d) {
+                setState(() {
+                  _purchaseDate = d;
+                  // لما يتغيّر تاريخ الشراء نحدّث افتراضياً الديدلاينز
+                  _returnDeadline = d.add(const Duration(days: 14));
+                  _exchangeDeadline = d.add(const Duration(days: 30));
+                });
+              }),
             ),
             ListTile(
               title: const Text('Return deadline'),
               subtitle: Text(_fmt.format(_returnDeadline)),
               trailing: const Icon(Icons.event),
-              onTap: () => _pickDate(context, _returnDeadline, (d) => setState(() => _returnDeadline = d)),
+              onTap: () =>
+                  _pickDate(context, _returnDeadline, (d) => setState(() {
+                    _returnDeadline = d;
+                  })),
             ),
             ListTile(
               title: const Text('Exchange deadline'),
               subtitle: Text(_fmt.format(_exchangeDeadline)),
               trailing: const Icon(Icons.event_repeat),
-              onTap: () => _pickDate(context, _exchangeDeadline, (d) => setState(() => _exchangeDeadline = d)),
+              onTap: () =>
+                  _pickDate(context, _exchangeDeadline, (d) => setState(() {
+                    _exchangeDeadline = d;
+                  })),
             ),
             const Divider(),
             SwitchListTile(
@@ -198,14 +286,18 @@ class _AddBillPageState extends State<AddBillPage> {
               onChanged: (v) => setState(() {
                 _hasWarranty = v;
                 if (!v) _warrantyEnd = null;
-                if (v && _warrantyEnd == null) _warrantyEnd = _ocrWarrantyEnd;
+                if (v && _warrantyEnd == null) {
+                  _warrantyEnd =
+                      _ocrWarrantyEnd ?? _purchaseDate.add(const Duration(days: 365));
+                }
               }),
               title: const Text('Has warranty?'),
             ),
             if (_hasWarranty)
               ListTile(
                 title: const Text('Warranty end date'),
-                subtitle: Text(_warrantyEnd == null ? '—' : _fmt.format(_warrantyEnd!)),
+                subtitle:
+                Text(_warrantyEnd == null ? '—' : _fmt.format(_warrantyEnd!)),
                 trailing: const Icon(Icons.verified_user),
                 onTap: () => _pickDate(
                   context,

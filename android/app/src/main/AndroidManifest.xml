@@ -1,11 +1,20 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Camera permission -->
-    <uses-permission android:name="android.permission.CAMERA" />
-    <!-- (اختياري) لو بتسجلين فيديو مع صوت الكاميرا -->
-    <!-- <uses-permission android:name="android.permission.RECORD_AUDIO" /> -->
+    <!-- للاتصال بالإنترنت (Firebase، رفع الصور، إلخ) -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- لا تستبعدي الأجهزة التي لا تحتوي على كاميرا فعلية (مفيد للإيموليتر) -->
+    <!-- الكاميرا -->
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <!-- قراءة الصور:
+         - Android 13+ (API 33+): READ_MEDIA_IMAGES
+         - Android 12 وما قبله: READ_EXTERNAL_STORAGE مع maxSdkVersion=32 -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
+    <!-- لا تستبعدي الأجهزة بدون كاميرا (مفيد للمحاكي) -->
     <uses-feature
         android:name="android.hardware.camera.any"
         android:required="false" />
@@ -13,7 +22,8 @@
     <application
         android:label="Billwise"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:supportsRtl="true">
 
         <activity
             android:name=".MainActivity"
@@ -36,17 +46,18 @@
             </intent-filter>
         </activity>
 
-        <!-- لا تحذفي هذا: يستخدمه Flutter لتوليد Registered Plugins -->
+        <!-- مطلوب من Flutter لتسجيل الإضافات -->
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
     </application>
 
-    <!-- مطلوبة لاستعلام أنشطة معالجة النص (يستخدمها Flutter داخليًا) -->
+    <!-- (اختياري) استعلام عن أنشطة معالجة النص—يستخدمه Flutter داخليًا أحيانًا -->
     <queries>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT" />
             <data android:mimeType="text/plain" />
         </intent>
     </queries>
+
 </manifest>

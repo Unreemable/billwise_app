@@ -4,18 +4,11 @@ class WarrantyService {
   WarrantyService._();
   static final WarrantyService instance = WarrantyService._();
 
-  final _db = FirebaseFirestore.instance;
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
 
   Timestamp _ts(DateTime d) => Timestamp.fromDate(d);
 
-  /// Create warranty document in top-level "Warranties".
-  /// Fields:
-  /// - bill_id (String)
-  /// - provider (String)
-  /// - start_date (Timestamp)
-  /// - end_date (Timestamp)
-  /// - status (String) default 'active'
-  /// - user_id (String?)   // pass current uid so list can filter
+  /// إنشاء ضمان في مجموعة Warranties
   Future<String> createWarranty({
     required String billId,
     required DateTime startDate,
@@ -38,24 +31,23 @@ class WarrantyService {
     return ref.id;
   }
 
-  /// Update warranty by id (partial).
   Future<void> updateWarranty(String id, Map<String, dynamic> patch) async {
     patch['updated_at'] = FieldValue.serverTimestamp();
     await _db.collection('Warranties').doc(id).update(patch);
   }
 
-  /// Delete warranty by id.
   Future<void> deleteWarranty(String id) async {
     await _db.collection('Warranties').doc(id).delete();
   }
 
-  /// Stream warranties, optionally filtered by userId.
-  /// Ordered by end_date ascending (so nearest-expiring first).
+  /// عرض الضمانات مرتبة حسب تاريخ الانتهاء (أقرب انتهاء أولاً).
+  /// هذا الاستعلام يحتاج الإندكس: user_id ASC + end_date ASC (أو DESC حسب رغبتك).
   Stream<QuerySnapshot<Map<String, dynamic>>> streamWarranties({String? userId}) {
     Query<Map<String, dynamic>> q = _db.collection('Warranties');
     if (userId != null) {
       q = q.where('user_id', isEqualTo: userId);
     }
-    return q.orderBy('end_date').snapshots();
+    return q.orderBy('end_date', descending: true).snapshots();
+
   }
 }
