@@ -122,36 +122,48 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildRecentList({String? userId}) {
     if (_filter == HomeFilter.bills) {
       return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: BillService.instance.streamBills(userId: userId),
+        stream: BillService.instance.streamBillsSnapshot(userId: userId),
         builder: (context, s) {
-          if (s.hasError) return Center(child: Text('Error: ${s.error}'));
-          if (!s.hasData) return const Center(child: CircularProgressIndicator());
-          var docs = s.data!.docs;
+          if (s.hasError) {
+            return Center(child: Text('Error: ${s.error}'));
+          }
+          if (s.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
 
+          var docs = s.data?.docs ?? <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+
+          // filter by search
           final q = _searchCtrl.text.trim().toLowerCase();
           if (q.isNotEmpty) {
             docs = docs.where((d) {
               final data = d.data();
               final title = (data['title'] ?? '').toString().toLowerCase();
-              final shop = (data['shop_name'] ?? '').toString().toLowerCase();
+              final shop  = (data['shop_name'] ?? '').toString().toLowerCase();
               return title.contains(q) || shop.contains(q);
             }).toList();
           }
-          if (docs.isEmpty) return const _EmptyHint(text: 'No bills found.');
+
+          if (docs.isEmpty) {
+            return const _EmptyHint(text: 'No bills found.');
+          }
 
           final toShow = docs.take(8).toList();
           return Column(
             children: toShow.map((doc) {
               final d = doc.data();
-              final title = (d['title'] ?? '—').toString();
-              final shop = (d['shop_name'] ?? '—').toString();
+              final title  = (d['title'] ?? '—').toString();
+              final shop   = (d['shop_name'] ?? '—').toString();
               final amount = d['total_amount'];
               return _ItemTile(
                 title: title,
                 subtitle: '$shop • ${amount ?? '-'}',
                 meta: 'Tap to view or edit',
                 trailing: const Icon(Icons.chevron_right),
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const BillListPage())),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const BillListPage()),
+                ),
               );
             }).toList(),
           );
@@ -161,9 +173,14 @@ class _HomeScreenState extends State<HomeScreen> {
       return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: WarrantyService.instance.streamWarranties(userId: userId),
         builder: (context, s) {
-          if (s.hasError) return Center(child: Text('Error: ${s.error}'));
-          if (!s.hasData) return const Center(child: CircularProgressIndicator());
-          var docs = s.data!.docs;
+          if (s.hasError) {
+            return Center(child: Text('Error: ${s.error}'));
+          }
+          if (s.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          var docs = s.data?.docs ?? <QueryDocumentSnapshot<Map<String, dynamic>>>[];
 
           final q = _searchCtrl.text.trim().toLowerCase();
           if (q.isNotEmpty) {
@@ -173,7 +190,10 @@ class _HomeScreenState extends State<HomeScreen> {
               return provider.contains(q);
             }).toList();
           }
-          if (docs.isEmpty) return const _EmptyHint(text: 'No warranties found.');
+
+          if (docs.isEmpty) {
+            return const _EmptyHint(text: 'No warranties found.');
+          }
 
           final toShow = docs.take(8).toList();
           return Column(
@@ -185,7 +205,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 subtitle: 'Tap to view',
                 meta: '—',
                 trailing: const Icon(Icons.chevron_right),
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WarrantyListPage())),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const WarrantyListPage()),
+                ),
               );
             }).toList(),
           );

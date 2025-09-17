@@ -5,6 +5,7 @@ class ExpiryProgress extends StatelessWidget {
   final DateTime endDate;
   final String title;
   final bool dense;
+
   /// If true → show remaining in months; else days.
   final bool showInMonths;
 
@@ -24,12 +25,15 @@ class ExpiryProgress extends StatelessWidget {
     final passedDays = now.difference(startDate).inDays;
     final progress = totalDays > 0 ? (passedDays / totalDays).clamp(0.0, 1.0) : 1.0;
 
+    // كم باقي
+    final leftDays = endDate.difference(now).inDays;
+
+    // تحديد النص
     String label;
     if (showInMonths) {
-      final leftMonths = (endDate.difference(now).inDays / 30).floor();
+      final leftMonths = (leftDays / 30).floor();
       label = leftMonths < 0 ? 'Expired' : 'Expires in $leftMonths months';
     } else {
-      final leftDays = endDate.difference(now).inDays;
       if (leftDays < 0) {
         label = 'Expired';
       } else if (leftDays == 0) {
@@ -37,6 +41,18 @@ class ExpiryProgress extends StatelessWidget {
       } else {
         label = 'Expires in $leftDays days';
       }
+    }
+
+    // اختيار اللون حسب الوقت
+    Color barColor;
+    if (leftDays < 0) {
+      barColor = Colors.red; // منتهي
+    } else if (progress >= 0.8) {
+      barColor = Colors.red; // قريب جدًا
+    } else if (progress >= 0.5) {
+      barColor = Colors.orange; // متوسط (تحذير)
+    } else {
+      barColor = Colors.green; // آمن
     }
 
     return Column(
@@ -49,6 +65,8 @@ class ExpiryProgress extends StatelessWidget {
           child: LinearProgressIndicator(
             value: progress,
             minHeight: dense ? 4 : 8,
+            valueColor: AlwaysStoppedAnimation<Color>(barColor),
+            backgroundColor: Colors.grey.shade300,
           ),
         ),
         const SizedBox(height: 4),

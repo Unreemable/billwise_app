@@ -62,7 +62,8 @@ class _BillListPageState extends State<BillListPage> {
             const SizedBox(height: 8),
             Expanded(
               child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                stream: BillService.instance.streamBills(),
+                stream: BillService.instance.streamBillsSnapshot(),
+
                 builder: (context, s) {
                   if (s.hasError) return Center(child: Text('Error: ${s.error}'));
                   if (!s.hasData) return const Center(child: CircularProgressIndicator());

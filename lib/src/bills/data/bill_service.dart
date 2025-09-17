@@ -1,35 +1,14 @@
-import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
-import 'package:path/path.dart' as p;
 
 class BillService {
   BillService._();
   static final instance = BillService._();
 
-  final FirebaseFirestore _db = FirebaseFirestore.instance;
-  final FirebaseStorage _storage = FirebaseStorage.instance;
+  final _db = FirebaseFirestore.instance;
 
   Timestamp _ts(DateTime d) => Timestamp.fromDate(d);
 
-  Future<String?> _uploadIfAny({
-    required String? receiptImagePath,
-    required String billId,
-    required String? userId,
-  }) async {
-    if (receiptImagePath == null) return null;
-    final file = File(receiptImagePath);
-    if (!await file.exists()) return null;
-
-    final fileName = p.basename(file.path);
-    final ref = _storage
-        .ref()
-        .child('receipts/${userId ?? "anon"}/$billId/$fileName');
-
-    final task = await ref.putFile(file);
-    return await task.ref.getDownloadURL();
-  }
-
+  /// إنشاء فاتورة
   Future<String> createBill({
     required String title,
     required String shopName,
@@ -38,20 +17,19 @@ class BillService {
     required DateTime returnDeadline,
     required DateTime exchangeDeadline,
     required bool warrantyCoverage,
+
+    // تمت إضافته:
+    DateTime? warrantyStartDate,
+
+    // كان موجود مسبقًا:
     DateTime? warrantyEndDate,
-    String? userId,               // لتصفية حسب المستخدم
-    String? receiptImagePath,     // مسار الصورة من ImagePicker (اختياري)
+
+    String? userId,
+    String? receiptImagePath,
   }) async {
     final ref = _db.collection('Bills').doc();
 
-    // ارفع الصورة أولاً (لو فيه)
-    final receiptUrl = await _uploadIfAny(
-      receiptImagePath: receiptImagePath,
-      billId: ref.id,
-      userId: userId,
-    );
-
-    await ref.set({
+    final data = <String, dynamic>{
       'title': title,
       'shop_name': shopName,
       'purchase_date': _ts(purchaseDate),
@@ -59,31 +37,95 @@ class BillService {
       'return_deadline': _ts(returnDeadline),
       'exchange_deadline': _ts(exchangeDeadline),
       'warranty_coverage': warrantyCoverage,
+
+      // الجديد:
+      if (warrantyStartDate != null)
+        'warranty_start_date': _ts(warrantyStartDate),
+
+      // القديم:
       if (warrantyEndDate != null) 'warranty_end_date': _ts(warrantyEndDate),
-      if (userId != null) 'user_id': userId,
 
-      // احتفظي بالمصدر + رابط التحميل
-      if (receiptImagePath != null) 'receipt_image_path': receiptImagePath,
-      if (receiptUrl != null) 'receipt_url': receiptUrl,
-
+      'receipt_image_path': receiptImagePath,
+      'user_id': userId,
       'created_at': FieldValue.serverTimestamp(),
       'updated_at': FieldValue.serverTimestamp(),
-    });
+    };
+
+    await ref.set(data);
     return ref.id;
   }
 
-  Stream<QuerySnapshot<Map<String, dynamic>>> streamBills({String? userId}) {
+  /// تحديث فاتورة
+  Future<void> updateBill({
+    required String billId,
+    String? title,
+    String? shopName,
+    DateTime? purchaseDate,
+    num? totalAmount,
+    DateTime? returnDeadline,
+    DateTime? exchangeDeadline,
+    bool? warrantyCoverage,
+
+    // تمت إضافته:
+    DateTime? warrantyStartDate,
+
+    // كان موجود مسبقًا:
+    DateTime? warrantyEndDate,
+
+    String? receiptImagePath,
+  }) async {
+    final ref = _db.collection('Bills').doc(billId);
+
+    final data = <String, dynamic>{
+      if (title != null) 'title': title,
+      if (shopName != null) 'shop_name': shopName,
+      if (purchaseDate != null) 'purchase_date': _ts(purchaseDate),
+      if (totalAmount != null) 'total_amount': totalAmount,
+      if (returnDeadline != null) 'return_deadline': _ts(returnDeadline),
+      if (exchangeDeadline != null) 'exchange_deadline': _ts(exchangeDeadline),
+      if (warrantyCoverage != null) 'warranty_coverage': warrantyCoverage,
+
+      // الجديد:
+      if (warrantyStartDate != null)
+        'warranty_start_date': _ts(warrantyStartDate),
+
+      // القديم:
+      if (warrantyEndDate != null) 'warranty_end_date': _ts(warrantyEndDate),
+
+      if (receiptImagePath != null) 'receipt_image_path': receiptImagePath,
+      'updated_at': FieldValue.serverTimestamp(),
+    };
+
+    if (data.isNotEmpty) {
+      await ref.update(data);
+    }
+  }
+
+  /// بثّ الفواتير لحظيًا كـ QuerySnapshot (مناسب لـ StreamBuilder<QuerySnapshot<...>>)
+  Stream<QuerySnapshot<Map<String, dynamic>>> streamBillsSnapshot({
+    String? userId,
+    String orderBy = 'created_at',
+    bool descending = true,
+  }) {
     Query<Map<String, dynamic>> q = _db.collection('Bills');
-    if (userId != null) q = q.where('user_id', isEqualTo: userId);
-    return q.orderBy('created_at', descending: true).snapshots();
+    if (userId != null) {
+      q = q.where('user_id', isEqualTo: userId);
+    }
+    q = q.orderBy(orderBy, descending: descending);
+    return q.snapshots();
   }
 
-  Future<void> updateBill(String id, Map<String, dynamic> patch) async {
-    patch['updated_at'] = FieldValue.serverTimestamp();
-    await _db.collection('Bills').doc(id).update(patch);
-  }
-
-  Future<void> deleteBill(String id) async {
-    await _db.collection('Bills').doc(id).delete();
+  /// بثّ الفواتير كقائمة Maps جاهزة (مناسب لـ StreamBuilder<List<Map>>)
+  Stream<List<Map<String, dynamic>>> streamBills({
+    String? userId,
+    String orderBy = 'created_at',
+    bool descending = true,
+  }) {
+    return streamBillsSnapshot(
+      userId: userId,
+      orderBy: orderBy,
+      descending: descending,
+    ).map((snap) =>
+        snap.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList());
   }
 }

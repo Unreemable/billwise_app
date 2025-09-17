@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../data/warranty_service.dart';
 import '../../bills/data/bill_service.dart';
@@ -65,6 +64,7 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
         return;
       }
 
+      // 1) احفظ سجل الضمان نفسه
       await WarrantyService.instance.createWarranty(
         billId: widget.billId,
         startDate: _start,
@@ -73,10 +73,13 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
         userId: uid,
       );
 
-      await BillService.instance.updateBill(widget.billId, {
-        'warranty_coverage': true,
-        'warranty_end_date': Timestamp.fromDate(_end),
-      });
+      // 2) حدّث الفاتورة: فعّل الضمان وخزّن start/end
+      await BillService.instance.updateBill(
+        billId: widget.billId,
+        warrantyCoverage: true,
+        warrantyStartDate: _start,
+        warrantyEndDate: _end,
+      );
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
