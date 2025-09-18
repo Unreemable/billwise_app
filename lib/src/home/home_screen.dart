@@ -9,9 +9,6 @@ import '../bills/ui/add_bill_page.dart';
 import '../warranties/ui/warranty_list_page.dart';
 import '../ocr/scan_receipt_page.dart';
 
-import '../bills/data/bill_service.dart';
-import '../warranties/data/warranty_service.dart';
-
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
   static const route = '/home';
@@ -25,6 +22,12 @@ enum HomeFilter { bills, warranties }
 class _HomeScreenState extends State<HomeScreen> {
   HomeFilter _filter = HomeFilter.bills;
   final _searchCtrl = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _searchCtrl.addListener(() => setState(() {}));
+  }
 
   @override
   void dispose() {
@@ -62,7 +65,6 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         floatingActionButton: FloatingActionButton(
           onPressed: () async {
-            // Add Bill manually
             await Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const AddBillPage()),
@@ -118,28 +120,43 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  /// ستريم للفواتير من مجموعة Bills
+  Stream<QuerySnapshot<Map<String, dynamic>>> _billsStream({String? userId}) {
+    final col = FirebaseFirestore.instance.collection('Bills');
+    final baseQuery = userId != null ? col.where('user_id', isEqualTo: userId) : col;
+
+    // أحدث الفواتير أولاً
+    return baseQuery.orderBy('created_at', descending: true).limit(25).snapshots();
+  }
+
+  /// ستريم للضمانات من مجموعة Warranties (مرتب حسب end_date ليتوافق مع الإندكس)
+  Stream<QuerySnapshot<Map<String, dynamic>>> _warrantiesStream({String? userId}) {
+    final col = FirebaseFirestore.instance.collection('Warranties');
+    final baseQuery = userId != null ? col.where('user_id', isEqualTo: userId) : col;
+
+    return baseQuery.orderBy('end_date', descending: true).limit(25).snapshots();
+  }
+
   // Recent items according to filter + search
   Widget _buildRecentList({String? userId}) {
     if (_filter == HomeFilter.bills) {
       return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: BillService.instance.streamBillsSnapshot(userId: userId),
+        stream: _billsStream(userId: userId),
         builder: (context, s) {
-          if (s.hasError) {
-            return Center(child: Text('Error: ${s.error}'));
-          }
+          if (s.hasError) return Center(child: Text('Error: ${s.error}'));
           if (s.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
 
           var docs = s.data?.docs ?? <QueryDocumentSnapshot<Map<String, dynamic>>>[];
 
-          // filter by search
+          // filter by search (title / shop_name)
           final q = _searchCtrl.text.trim().toLowerCase();
           if (q.isNotEmpty) {
             docs = docs.where((d) {
               final data = d.data();
               final title = (data['title'] ?? '').toString().toLowerCase();
-              final shop  = (data['shop_name'] ?? '').toString().toLowerCase();
+              final shop = (data['shop_name'] ?? '').toString().toLowerCase();
               return title.contains(q) || shop.contains(q);
             }).toList();
           }
@@ -152,8 +169,8 @@ class _HomeScreenState extends State<HomeScreen> {
           return Column(
             children: toShow.map((doc) {
               final d = doc.data();
-              final title  = (d['title'] ?? '—').toString();
-              final shop   = (d['shop_name'] ?? '—').toString();
+              final title = (d['title'] ?? '—').toString();
+              final shop = (d['shop_name'] ?? '—').toString();
               final amount = d['total_amount'];
               return _ItemTile(
                 title: title,
@@ -171,11 +188,9 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     } else {
       return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: WarrantyService.instance.streamWarranties(userId: userId),
+        stream: _warrantiesStream(userId: userId),
         builder: (context, s) {
-          if (s.hasError) {
-            return Center(child: Text('Error: ${s.error}'));
-          }
+          if (s.hasError) return Center(child: Text('Error: ${s.error}'));
           if (s.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
@@ -187,7 +202,8 @@ class _HomeScreenState extends State<HomeScreen> {
             docs = docs.where((d) {
               final data = d.data();
               final provider = (data['provider'] ?? '').toString().toLowerCase();
-              return provider.contains(q);
+              final title = (data['title'] ?? '').toString().toLowerCase(); // احتياطًا لو عندك عنوان
+              return provider.contains(q) || title.contains(q);
             }).toList();
           }
 
@@ -291,7 +307,6 @@ class _HeaderCard extends StatelessWidget {
                       hintText: 'Search by title / store / provider',
                       prefixIcon: Icon(Icons.search),
                     ),
-                    onChanged: (_) => (context as Element).markNeedsBuild(),
                   ),
                 ),
                 const SizedBox(width: 12),

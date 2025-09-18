@@ -8,14 +8,14 @@ class WarrantyService {
 
   Timestamp _ts(DateTime d) => Timestamp.fromDate(d);
 
-  /// إنشاء ضمان في مجموعة Warranties
+  /// إنشاء ضمان (مرتبط بفاتورة)
   Future<String> createWarranty({
     required String billId,
     required DateTime startDate,
     required DateTime endDate,
+    required String userId,            // اجباري
     String provider = 'Unknown',
     String status = 'active',
-    String? userId,
   }) async {
     final ref = _db.collection('Warranties').doc();
     await ref.set({
@@ -24,30 +24,61 @@ class WarrantyService {
       'start_date': _ts(startDate),
       'end_date': _ts(endDate),
       'status': status,
-      if (userId != null) 'user_id': userId,
+      'user_id': userId,
       'created_at': FieldValue.serverTimestamp(),
       'updated_at': FieldValue.serverTimestamp(),
     });
     return ref.id;
   }
 
-  Future<void> updateWarranty(String id, Map<String, dynamic> patch) async {
-    patch['updated_at'] = FieldValue.serverTimestamp();
-    await _db.collection('Warranties').doc(id).update(patch);
+  Future<void> updateWarranty({
+    required String id,
+    String? provider,
+    String? status,
+    DateTime? startDate,
+    DateTime? endDate,
+  }) async {
+    final patch = <String, dynamic>{
+      if (provider != null) 'provider': provider,
+      if (status != null) 'status': status,
+      if (startDate != null) 'start_date': _ts(startDate),
+      if (endDate != null)   'end_date': _ts(endDate),
+      'updated_at': FieldValue.serverTimestamp(),
+    };
+    if (patch.isNotEmpty) {
+      await _db.collection('Warranties').doc(id).update(patch);
+    }
   }
 
   Future<void> deleteWarranty(String id) async {
     await _db.collection('Warranties').doc(id).delete();
   }
 
-  /// عرض الضمانات مرتبة حسب تاريخ الانتهاء (أقرب انتهاء أولاً).
-  /// هذا الاستعلام يحتاج الإندكس: user_id ASC + end_date ASC (أو DESC حسب رغبتك).
-  Stream<QuerySnapshot<Map<String, dynamic>>> streamWarranties({String? userId}) {
-    Query<Map<String, dynamic>> q = _db.collection('Warranties');
-    if (userId != null) {
-      q = q.where('user_id', isEqualTo: userId);
-    }
-    return q.orderBy('end_date', descending: true).snapshots();
+  /// ستريم ضمانات المستخدم الحالي مرتّبة حسب تاريخ الانتهاء (الأحدث/الأقرب أولاً)
+  /// ملاحظة: where(user_id) + orderBy(end_date) يحتاج Composite Index:
+  /// Warranties: user_id ASC + end_date DESC (أو ASC حسب ترتيبك)
+  Stream<QuerySnapshot<Map<String, dynamic>>> streamWarrantiesSnapshot({
+    required String userId,
+    bool descending = true,
+    int? limit,
+  }) {
+    Query<Map<String, dynamic>> q = _db
+        .collection('Warranties')
+        .where('user_id', isEqualTo: userId)
+        .orderBy('end_date', descending: descending);
+    if (limit != null) q = q.limit(limit);
+    return q.snapshots();
+  }
 
+  Stream<List<Map<String, dynamic>>> streamWarranties({
+    required String userId,
+    bool descending = true,
+    int? limit,
+  }) {
+    return streamWarrantiesSnapshot(
+      userId: userId,
+      descending: descending,
+      limit: limit,
+    ).map((snap) => snap.docs.map((d) => {'id': d.id, ...d.data()}).toList());
   }
 }

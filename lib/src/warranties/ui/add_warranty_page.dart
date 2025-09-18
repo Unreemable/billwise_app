@@ -70,7 +70,7 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
         startDate: _start,
         endDate: _end,
         provider: _providerCtrl.text.trim().isEmpty ? 'Unknown' : _providerCtrl.text.trim(),
-        userId: uid,
+        userId: FirebaseAuth.instance.currentUser!.uid,
       );
 
       // 2) حدّث الفاتورة: فعّل الضمان وخزّن start/end

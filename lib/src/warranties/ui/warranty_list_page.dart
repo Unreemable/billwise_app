@@ -26,8 +26,10 @@ class WarrantyListPage extends StatelessWidget {
       body: uid == null
           ? const Center(child: Text('Please sign in to view your warranties.'))
           : StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        // Top-level collection with user filter — no composite index needed
-        stream: WarrantyService.instance.streamWarranties(userId: uid),
+        // ملاحظة: where(user_id)+orderBy(end_date) يحتاج Composite Index:
+        // user_id ASC + end_date DESC
+        stream: WarrantyService.instance
+            .streamWarrantiesSnapshot(userId: uid, descending: true),
         builder: (context, snap) {
           if (snap.hasError) {
             return Center(child: Text('Error: ${snap.error}'));
@@ -57,8 +59,11 @@ class WarrantyListPage extends StatelessWidget {
                 child: ListTile(
                   contentPadding: const EdgeInsets.symmetric(
                       horizontal: 16, vertical: 12),
-                  title: Text(provider,
-                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                  title: Text(
+                    provider,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                   subtitle: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -74,8 +79,17 @@ class WarrantyListPage extends StatelessWidget {
                           startDate: start,
                           endDate: end,
                           dense: true,
-                          showInMonths: true, // show remaining in months
+                          showInMonths: true,
                         ),
+                      const SizedBox(height: 6),
+                      // إظهار الحالة لتفادي التحذير واستخدامها فعليًا
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Chip(
+                          label: Text(status),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
                     ],
                   ),
                   trailing: const Icon(Icons.chevron_right),

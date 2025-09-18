@@ -5,6 +5,8 @@ import 'package:image_picker/image_picker.dart';
 import '../../warranties/ui/add_warranty_page.dart';
 import '../data/bill_service.dart';
 
+import 'package:firebase_auth/firebase_auth.dart';
+
 class AddBillPage extends StatefulWidget {
   const AddBillPage({
     super.key,
@@ -79,29 +81,22 @@ class _AddBillPageState extends State<AddBillPage> {
 
     final lower = normalized.toLowerCase();
 
-    // رقم + وحدة: يوم/يوماً/يوما/ايام/أيام/day/days
     final m = RegExp(
       r'(\d{1,3})\s*(day|days|يوم|يوماً|يوما|ايام|أيام)',
       caseSensitive: false,
     ).firstMatch(lower);
     if (m != null) return int.tryParse(m.group(1)!);
 
-    // بدون رقم: يومان/يومين => 2
     if (RegExp(r'(يومان|يومين)').hasMatch(lower)) return 2;
-
-    // بدون رقم: يوم/يوماً/يوما => 1
+    if (RegExp(r'\b(a day)\b').hasMatch(lower)) return 1;
     if (RegExp(r'(يوم|يوماً|يوما)').hasMatch(lower)) return 1;
 
-    // إنجليزي: a day => 1
-    if (RegExp(r'\b(a day)\b').hasMatch(lower)) return 1;
-
-    // fallback: رقم صافي
     return int.tryParse(lower.replaceAll(RegExp(r'[^0-9]'), ''));
   }
 
-  // NEW: حساب الديدلاين مع شمول يوم الشراء (31-03 + 3 أيام = 02-04)
+  // NEW: حساب الديدلاين مع شمول يوم الشراء
   DateTime _deadlineFrom(DateTime start, int days, {bool includeStart = true}) {
-    final base = DateTime(start.year, start.month, start.day); // ثبّت على منتصف الليل
+    final base = DateTime(start.year, start.month, start.day);
     final add = includeStart ? (days - 1) : days;
     return base.add(Duration(days: add));
   }
@@ -136,7 +131,7 @@ class _AddBillPageState extends State<AddBillPage> {
     _returnDeadline   ??= _parseDate(prefill['returnDeadline']);
     _exchangeDeadline ??= _parseDate(prefill['exchangeDeadline']);
 
-    // سياسات الاسترجاع/الاستبدال (قد تأتي كنص أو رقم – دعم مفاتيح أكثر)
+    // سياسات الاسترجاع/الاستبدال
     _retDays ??= _extractDays(
       prefill['returnDays'] ??
           prefill['returnPolicy'] ??
@@ -152,7 +147,7 @@ class _AddBillPageState extends State<AddBillPage> {
           prefill['policy'],
     );
 
-    // احسبي الديدلاين تلقائياً من تاريخ الشراء مع شمول يوم الشراء
+    // احسبي الديدلاين تلقائياً من تاريخ الشراء
     if (_purchaseDate != null) {
       if (_retDays != null && _returnDeadline == null) {
         _returnDeadline = _deadlineFrom(_purchaseDate!, _retDays!, includeStart: true);
@@ -170,7 +165,7 @@ class _AddBillPageState extends State<AddBillPage> {
     _warrantyStart ??= _ocrWarrantyStart;
     _warrantyEnd   ??= _ocrWarrantyEnd;
 
-    // مسار الصورة (اختياري)
+    // مسار الصورة
     final path = (prefill['receiptPath'] ?? '') as String;
     if (path.isNotEmpty) _receiptImagePath = path;
 
@@ -244,6 +239,15 @@ class _AddBillPageState extends State<AddBillPage> {
   }
 
   Future<String?> _saveBillOnly() async {
+    // تأكد من تسجيل الدخول
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please sign in first')),
+      );
+      return null;
+    }
+
     // حقول مطلوبة
     if (_titleCtrl.text.trim().isEmpty ||
         _shopCtrl.text.trim().isEmpty ||
@@ -285,6 +289,7 @@ class _AddBillPageState extends State<AddBillPage> {
         warrantyCoverage: _hasWarranty,
         warrantyStartDate: _warrantyStart,  // NEW
         warrantyEndDate: _warrantyEnd,
+        userId: uid,                        // مهم
         receiptImagePath: _receiptImagePath,
       );
       if (!mounted) return id;
@@ -348,7 +353,9 @@ class _AddBillPageState extends State<AddBillPage> {
             TextField(
               controller: _amountCtrl,
               decoration: const InputDecoration(labelText: 'Amount (SAR)'),
-              keyboardType: TextInputType.number,
+              keyboardType: const TextInputType.numberWithOptions(
+                signed: false, decimal: true,
+              ),
             ),
             const SizedBox(height: 12),
 
@@ -373,7 +380,7 @@ class _AddBillPageState extends State<AddBillPage> {
             ),
             const SizedBox(height: 12),
 
-            // التواريخ (تبدأ — حتى تختارين)
+            // التواريخ
             ListTile(
               title: const Text('Purchase date'),
               subtitle: Text(_fmtOrDash(_purchaseDate)),
@@ -381,7 +388,6 @@ class _AddBillPageState extends State<AddBillPage> {
               onTap: () => _pickDate(context, _purchaseDate, (d) {
                 setState(() {
                   _purchaseDate = d;
-                  // NEW: إعادة حساب تلقائي لو عندنا أيام مستنتجة مع شمول يوم الشراء
                   if (_retDays != null) {
                     _returnDeadline = _deadlineFrom(d, _retDays!, includeStart: true);
                   }
