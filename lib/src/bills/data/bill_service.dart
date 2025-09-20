@@ -19,7 +19,7 @@ class BillService {
     required bool warrantyCoverage,
     DateTime? warrantyStartDate,          // اختياري
     DateTime? warrantyEndDate,            // اختياري
-    required String userId,               // اجباري
+    required String userId,               // إلزامي
     String? receiptImagePath,             // اختياري
   }) async {
     final ref = _db.collection('Bills').doc();
@@ -44,7 +44,7 @@ class BillService {
     return ref.id;
   }
 
-  /// تحديث فاتورة
+  /// تحديث فاتورة (Patch)
   Future<void> updateBill({
     required String billId,
     String? title,
@@ -61,16 +61,16 @@ class BillService {
     final ref = _db.collection('Bills').doc(billId);
 
     final patch = <String, dynamic>{
-      if (title != null)            'title': title,
-      if (shopName != null)         'shop_name': shopName,
-      if (purchaseDate != null)     'purchase_date': _ts(purchaseDate),
-      if (totalAmount != null)      'total_amount': totalAmount,
-      if (returnDeadline != null)   'return_deadline': _ts(returnDeadline),
-      if (exchangeDeadline != null) 'exchange_deadline': _ts(exchangeDeadline),
-      if (warrantyCoverage != null) 'warranty_coverage': warrantyCoverage,
+      if (title != null)             'title': title,
+      if (shopName != null)          'shop_name': shopName,
+      if (purchaseDate != null)      'purchase_date': _ts(purchaseDate),
+      if (totalAmount != null)       'total_amount': totalAmount,
+      if (returnDeadline != null)    'return_deadline': _ts(returnDeadline),
+      if (exchangeDeadline != null)  'exchange_deadline': _ts(exchangeDeadline),
+      if (warrantyCoverage != null)  'warranty_coverage': warrantyCoverage,
       if (warrantyStartDate != null) 'warranty_start_date': _ts(warrantyStartDate),
       if (warrantyEndDate != null)   'warranty_end_date': _ts(warrantyEndDate),
-      if (receiptImagePath != null) 'receipt_image_path': receiptImagePath,
+      if (receiptImagePath != null)  'receipt_image_path': receiptImagePath,
       'updated_at': FieldValue.serverTimestamp(),
     };
 
@@ -91,7 +91,7 @@ class BillService {
     return {'id': snap.id, ...?snap.data()};
   }
 
-  /// ستريم QuerySnapshot (مناسب لـ StreamBuilder<QuerySnapshot<...>>)
+  /// ستريم QuerySnapshot (لمكوّنات مثل StreamBuilder<QuerySnapshot<...>>)
   Stream<QuerySnapshot<Map<String, dynamic>>> streamBillsSnapshot({
     required String userId,
     String orderBy = 'created_at',
@@ -102,11 +102,12 @@ class BillService {
         .collection('Bills')
         .where('user_id', isEqualTo: userId)
         .orderBy(orderBy, descending: descending);
+
     if (limit != null) q = q.limit(limit);
     return q.snapshots();
   }
 
-  /// ستريم كقائمة Maps جاهزة (مناسب لـ StreamBuilder<List<Map>>)
+  /// ستريم قائمة Maps جاهزة (لمكوّنات مثل StreamBuilder<List<Map>>)
   Stream<List<Map<String, dynamic>>> streamBills({
     required String userId,
     String orderBy = 'created_at',
@@ -120,8 +121,4 @@ class BillService {
       limit: limit,
     ).map((snap) => snap.docs.map((d) => {'id': d.id, ...d.data()}).toList());
   }
-
-
-
-
 }
