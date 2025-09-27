@@ -4,15 +4,14 @@ import 'package:image_picker/image_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-
 import '../../warranties/ui/add_warranty_page.dart';
 import '../data/bill_service.dart';
 
 class AddBillPage extends StatefulWidget {
   const AddBillPage({
     super.key,
-    this.billId,                // ← NEW: لو موجود نشتغل "تعديل"
-    this.prefill,               // ← بيانات اختيارية من OCR (للإضافة)
+    this.billId,                // تعديل إن وجد
+    this.prefill,               // بيانات OCR (للإضافة)
     this.suggestWarranty = false,
   });
 
@@ -36,11 +35,10 @@ class _AddBillPageState extends State<AddBillPage> {
   DateTime? _returnDeadline;
   DateTime? _exchangeDeadline;
 
+  // سويتش فقط — بدون حقول تواريخ للضمان في هذه الصفحة
   bool _hasWarranty = false;
-  DateTime? _warrantyStart;
-  DateTime? _warrantyEnd;
 
-  // قادمة من OCR (اختيارية)
+  // من OCR فقط لاستخدامها كتاريخ افتراضي في صفحة الضمان
   DateTime? _ocrWarrantyStart;
   DateTime? _ocrWarrantyEnd;
 
@@ -57,7 +55,10 @@ class _AddBillPageState extends State<AddBillPage> {
 
   // تحميل فاتورة موجودة (وضع التعديل)
   bool _loadingExisting = false;
-  Map<String, dynamic>? _loadedBill; // نحتفظ بالأصلية لو احتجنا
+
+  // فحص وجود ضمان مرتبط بهذه الفاتورة (في وضع التعديل)
+  bool _checkingWarranty = false;
+  bool _hasExistingWarranty = false;
 
   // ================= Helpers =================
   DateTime? _parseDate(dynamic v) {
@@ -112,7 +113,7 @@ class _AddBillPageState extends State<AddBillPage> {
     super.didChangeDependencies();
 
     // لو في billId = تعديل → حمّل الفاتورة وتوقف عن استخدام prefill
-    if (widget.billId != null && !_loadingExisting && _loadedBill == null) {
+    if (widget.billId != null && !_loadingExisting) {
       _loadExisting(widget.billId!);
       return;
     }
@@ -124,7 +125,10 @@ class _AddBillPageState extends State<AddBillPage> {
   }
 
   Future<void> _loadExisting(String billId) async {
-    setState(() => _loadingExisting = true);
+    setState(() {
+      _loadingExisting = true;
+      _checkingWarranty = true;
+    });
     try {
       final data = await BillService.instance.getBill(billId);
       if (data == null) {
@@ -135,9 +139,8 @@ class _AddBillPageState extends State<AddBillPage> {
         Navigator.of(context).pop();
         return;
       }
-      _loadedBill = data;
 
-      // تعبئة الحقول
+      // تعبئة الحقول الأساسية فقط
       _titleCtrl.text  = (data['title'] ?? '').toString();
       _shopCtrl.text   = (data['shop_name'] ?? '').toString();
       final amount     = data['total_amount'];
@@ -147,11 +150,16 @@ class _AddBillPageState extends State<AddBillPage> {
       _returnDeadline   = (data['return_deadline'] as Timestamp?)?.toDate();
       _exchangeDeadline = (data['exchange_deadline'] as Timestamp?)?.toDate();
 
-      _hasWarranty   = (data['warranty_coverage'] as bool?) ?? false;
-      _warrantyStart = (data['warranty_start_date'] as Timestamp?)?.toDate();
-      _warrantyEnd   = (data['warranty_end_date'] as Timestamp?)?.toDate();
-
+      _hasWarranty      = (data['warranty_coverage'] as bool?) ?? false;
       _receiptImagePath = (data['receipt_image_path'] as String?);
+
+      // ✅ فحص هل يوجد Warranty مرتبط بهذه الفاتورة
+      final snap = await FirebaseFirestore.instance
+          .collection('Warranties')
+          .where('bill_id', isEqualTo: billId)
+          .limit(1)
+          .get();
+      _hasExistingWarranty = snap.docs.isNotEmpty;
 
       setState(() {});
     } catch (e) {
@@ -160,7 +168,12 @@ class _AddBillPageState extends State<AddBillPage> {
         SnackBar(content: Text('Error loading bill: $e')),
       );
     } finally {
-      if (mounted) setState(() => _loadingExisting = false);
+      if (mounted) {
+        setState(() {
+          _loadingExisting = false;
+          _checkingWarranty = false;
+        });
+      }
     }
   }
 
@@ -206,11 +219,9 @@ class _AddBillPageState extends State<AddBillPage> {
       }
     }
 
-    // الضمان من OCR
+    // الضمان من OCR (للتواريخ الافتراضية لاحقًا في صفحة الضمان فقط)
     _ocrWarrantyStart = _parseDate(prefill['warrantyStart']);
     _ocrWarrantyEnd   = _parseDate(prefill['warrantyEnd']);
-    _warrantyStart ??= _ocrWarrantyStart;
-    _warrantyEnd   ??= _ocrWarrantyEnd;
 
     // صورة
     final path = (prefill['receiptPath'] ?? '') as String;
@@ -308,13 +319,6 @@ class _AddBillPageState extends State<AddBillPage> {
       return null;
     }
 
-    if (_hasWarranty && (_warrantyStart == null || _warrantyEnd == null)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pick warranty start & end date')),
-      );
-      return null;
-    }
-
     setState(() => _saving = true);
     try {
       final id = await BillService.instance.createBill(
@@ -324,9 +328,7 @@ class _AddBillPageState extends State<AddBillPage> {
         totalAmount: amount,
         returnDeadline: _returnDeadline!,
         exchangeDeadline: _exchangeDeadline!,
-        warrantyCoverage: _hasWarranty,
-        warrantyStartDate: _warrantyStart,
-        warrantyEndDate: _warrantyEnd,
+        warrantyCoverage: _hasWarranty, // فقط العلم
         userId: uid,
         receiptImagePath: _receiptImagePath,
       );
@@ -369,13 +371,6 @@ class _AddBillPageState extends State<AddBillPage> {
       return;
     }
 
-    if (_hasWarranty && (_warrantyStart == null || _warrantyEnd == null)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pick warranty start & end date')),
-      );
-      return;
-    }
-
     setState(() => _saving = true);
     try {
       await BillService.instance.updateBill(
@@ -386,9 +381,8 @@ class _AddBillPageState extends State<AddBillPage> {
         totalAmount: amount,
         returnDeadline: _returnDeadline!,
         exchangeDeadline: _exchangeDeadline!,
-        warrantyCoverage: _hasWarranty,
-        warrantyStartDate: _warrantyStart,
-        warrantyEndDate: _warrantyEnd,
+        warrantyCoverage: _hasWarranty, // فقط العلم
+        // لا نمرّر تواريخ ضمان من صفحة الفاتورة
         receiptImagePath: _receiptImagePath,
       );
       if (!mounted) return;
@@ -446,12 +440,21 @@ class _AddBillPageState extends State<AddBillPage> {
   }
 
   Future<void> _saveAndAddWarranty() async {
-    // لو تعديل: حدّث وبعدين افتح add warranty بنفس billId
+    // في وضع التعديل: لا تسمح بإضافة ضمان جديد إذا كان موجود مسبقًا
+    if (widget.billId != null && _hasExistingWarranty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('A warranty already exists for this bill.')),
+      );
+      return;
+    }
+
+    // في التعديل: حدّث ثم افتح صفحة الضمان
     if (widget.billId != null) {
       await _updateBill();
       if (!mounted) return;
-      final baseStart = _warrantyStart ?? _ocrWarrantyStart ?? _purchaseDate ?? DateTime.now();
-      final baseEnd   = _warrantyEnd   ?? _ocrWarrantyEnd   ?? baseStart.add(const Duration(days: 365));
+      final baseStart = _ocrWarrantyStart ?? _purchaseDate ?? DateTime.now();
+      final baseEnd   = _ocrWarrantyEnd   ?? baseStart.add(const Duration(days: 365));
       await Navigator.of(context).push(MaterialPageRoute(
         builder: (_) => AddWarrantyPage(
           billId: widget.billId!,
@@ -463,12 +466,12 @@ class _AddBillPageState extends State<AddBillPage> {
       return;
     }
 
-    // لو إضافة جديدة: أنشئ الفاتورة أولاً
+    // إضافة جديدة: أنشئ أولًا
     final newId = await _saveNewBill();
     if (newId == null || !mounted) return;
 
-    final baseStart = _warrantyStart ?? _ocrWarrantyStart ?? _purchaseDate ?? DateTime.now();
-    final baseEnd   = _warrantyEnd   ?? _ocrWarrantyEnd   ?? baseStart.add(const Duration(days: 365));
+    final baseStart = _ocrWarrantyStart ?? _purchaseDate ?? DateTime.now();
+    final baseEnd   = _ocrWarrantyEnd   ?? baseStart.add(const Duration(days: 365));
 
     await Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => AddWarrantyPage(
@@ -584,42 +587,30 @@ class _AddBillPageState extends State<AddBillPage> {
 
             const Divider(),
 
+            // سويتش فقط — بدون أي حقول للضمان هنا
             SwitchListTile(
               value: _hasWarranty,
-              onChanged: (v) => setState(() {
-                _hasWarranty = v;
-                if (!v) {
-                  _warrantyStart = null;
-                  _warrantyEnd = null;
-                } else {
-                  _warrantyStart ??= _ocrWarrantyStart ?? _purchaseDate;
-                  _warrantyEnd   ??= _ocrWarrantyEnd   ?? _purchaseDate?.add(const Duration(days: 365));
-                }
-              }),
+              onChanged: (v) => setState(() => _hasWarranty = v),
               title: const Text('Has warranty?'),
             ),
-            if (_hasWarranty) ...[
-              ListTile(
-                title: const Text('Warranty start date'),
-                subtitle: Text(_fmtOrDash(_warrantyStart)),
-                trailing: const Icon(Icons.shield_outlined),
-                onTap: () => _pickDate(
-                  context,
-                  _warrantyStart ?? _purchaseDate ?? DateTime.now(),
-                      (d) => setState(() => _warrantyStart = d),
+
+            if (_hasWarranty && isEdit && _checkingWarranty)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: LinearProgressIndicator(minHeight: 2),
+              ),
+
+            if (_hasWarranty && isEdit && _hasExistingWarranty)
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text(
+                  'A warranty already exists for this bill.',
                 ),
               ),
-              ListTile(
-                title: const Text('Warranty end date'),
-                subtitle: Text(_fmtOrDash(_warrantyEnd)),
-                trailing: const Icon(Icons.verified_user),
-                onTap: () => _pickDate(
-                  context,
-                  _warrantyEnd ?? _warrantyStart ?? _purchaseDate ?? DateTime.now(),
-                      (d) => setState(() => _warrantyEnd = d),
-                ),
-              ),
-            ],
 
             const SizedBox(height: 16),
             Row(
@@ -628,17 +619,22 @@ class _AddBillPageState extends State<AddBillPage> {
                   child: OutlinedButton.icon(
                     onPressed: _saving ? null : _save,
                     icon: const Icon(Icons.save_outlined),
-                    label: Text(_saving ? (isEdit ? 'Updating...' : 'Saving...') : (isEdit ? 'Update' : 'Save')),
+                    label: Text(_saving
+                        ? (isEdit ? 'Updating...' : 'Saving...')
+                        : (isEdit ? 'Update' : 'Save')),
                   ),
                 ),
                 const SizedBox(width: 12),
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: _saving ? null : _saveAndAddWarranty,
-                    icon: const Icon(Icons.verified_user),
-                    label: Text(isEdit ? 'Update & add warranty' : 'Save & add warranty'),
+                if (_hasWarranty && !(isEdit && _hasExistingWarranty))
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: _saving ? null : _saveAndAddWarranty,
+                      icon: const Icon(Icons.verified_user),
+                      label: Text(isEdit
+                          ? 'Update & add warranty'
+                          : 'Save & add warranty'),
+                    ),
                   ),
-                ),
               ],
             ),
           ],

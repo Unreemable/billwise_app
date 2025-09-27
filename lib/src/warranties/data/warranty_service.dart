@@ -8,18 +8,18 @@ class WarrantyService {
 
   Timestamp _ts(DateTime d) => Timestamp.fromDate(d);
 
-  /// إنشاء ضمان (مرتبط بفاتورة)
+  /// إنشاء ضمان (ممكن مرتبط بفاتورة، وممكن بدون فاتورة)
   Future<String> createWarranty({
-    required String billId,
+    String? billId,                 // ← صارت اختيارية
     required DateTime startDate,
     required DateTime endDate,
-    required String userId,           // إلزامي
+    required String userId,         // لا يزال إلزامي
     String provider = 'Unknown',
-    String? status,                   // اختياري - الواجهة لا تعتمد عليه
+    String? status,                 // اختياري
   }) async {
     final ref = _db.collection('Warranties').doc();
     await ref.set({
-      'bill_id': billId,
+      if (billId != null) 'bill_id': billId, // يُحفظ فقط إذا كان موجود
       'provider': provider,
       'start_date': _ts(startDate),
       'end_date': _ts(endDate),
@@ -35,10 +35,10 @@ class WarrantyService {
   Future<void> updateWarranty({
     required String id,
     String? provider,
-    String? status,        // اختياري
+    String? status,
     DateTime? startDate,
     DateTime? endDate,
-    String? billId,        // لو ودك تغييره (نادرًا)
+    String? billId, // ممكن تغييره (اختياري)
   }) async {
     final patch = <String, dynamic>{
       if (provider != null)  'provider': provider,
@@ -65,13 +65,13 @@ class WarrantyService {
     return {'id': snap.id, ...?snap.data()};
   }
 
-  /// قراءة DocumentSnapshot مباشرة (لو تحتاجه كما هو)
+  /// قراءة DocumentSnapshot مباشرة
   Future<DocumentSnapshot<Map<String, dynamic>>> getWarrantyDoc(String id) {
     return _db.collection('Warranties').doc(id).get();
   }
 
-  /// ستريم ضمانات المستخدم (مفيدة لـ StreamBuilder<QuerySnapshot<...>>)
-  /// ملاحظة: where(user_id) + orderBy(end_date) قد يحتاج Composite Index:
+  /// ستريم ضمانات المستخدم
+  /// where(user_id) + orderBy(end_date) قد يحتاج Composite Index:
   /// user_id ASC + end_date DESC (أو ASC حسب ترتيبك)
   Stream<QuerySnapshot<Map<String, dynamic>>> streamWarrantiesSnapshot({
     required String userId,
@@ -86,7 +86,7 @@ class WarrantyService {
     return q.snapshots();
   }
 
-  /// ستريم كقائمة Maps جاهزة (مفيدة لـ StreamBuilder<List<Map>>)
+  /// ستريم كـ List<Map>
   Stream<List<Map<String, dynamic>>> streamWarranties({
     required String userId,
     bool descending = true,

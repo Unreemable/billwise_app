@@ -8,16 +8,16 @@ import '../../bills/data/bill_service.dart';
 class AddWarrantyPage extends StatefulWidget {
   const AddWarrantyPage({
     super.key,
-    required this.billId,
+    this.billId,               // ← صارت اختيارية (null = ضمان بدون فاتورة)
     this.defaultStartDate,
     this.defaultEndDate,
-    this.warrantyId,       // لو نبي تعديل
-    this.initialProvider,  // اسم مزوّد مبدئي (اختياري)
+    this.warrantyId,           // للتعديل
+    this.initialProvider,      // اسم مزوّد مبدئي (اختياري)
   });
 
   static const route = '/add-warranty';
 
-  final String billId;
+  final String? billId;        // ← nullable
   final DateTime? defaultStartDate;
   final DateTime? defaultEndDate;
 
@@ -37,11 +37,11 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
   bool _saving = false;
 
   bool get isEdit => widget.warrantyId != null;
+  bool get hasBill => widget.billId != null;
 
   @override
   void initState() {
     super.initState();
-    // ما عاد "Jarir" افتراضي، بس نعرض اللي جاي من OCR أو نخلي الحقل فاضي
     _providerCtrl = TextEditingController(
       text: (widget.initialProvider ?? '').trim(),
     );
@@ -49,7 +49,6 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
     _start = widget.defaultStartDate ?? DateTime.now();
     _end   = widget.defaultEndDate   ?? DateTime.now().add(const Duration(days: 365));
 
-    // ضمان أن النهاية بعد/تساوي البداية
     if (_end.isBefore(_start)) {
       _end = _start.add(const Duration(days: 1));
     }
@@ -85,7 +84,6 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
         return;
       }
 
-      // تأكيد صحة التواريخ
       if (_end.isBefore(_start)) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('End date must be on/after start date')),
@@ -106,9 +104,9 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
           endDate: _end,
         );
       } else {
-        // إنشاء الضمان
+        // إنشاء الضمان (قد يكون بدون billId)
         await WarrantyService.instance.createWarranty(
-          billId: widget.billId,
+          billId: widget.billId,  // ← ممكن تكون null
           startDate: _start,
           endDate: _end,
           provider: provider,
@@ -116,13 +114,15 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
         );
       }
 
-      // في الحالتين: حدّث الفاتورة
-      await BillService.instance.updateBill(
-        billId: widget.billId,
-        warrantyCoverage: true,
-        warrantyStartDate: _start,
-        warrantyEndDate: _end,
-      );
+      // إذا كان للضمان فاتورة مرتبطة، حدّث الفاتورة
+      if (hasBill) {
+        await BillService.instance.updateBill(
+          billId: widget.billId!,
+          warrantyCoverage: true,
+          warrantyStartDate: _start,
+          warrantyEndDate: _end,
+        );
+      }
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -141,7 +141,7 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
   }
 
   Future<void> _delete() async {
-    if (!isEdit) return; // أمان
+    if (!isEdit) return;
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -159,13 +159,16 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
     try {
       // 1) حذف الضمان
       await WarrantyService.instance.deleteWarranty(widget.warrantyId!);
-      // 2) تحديث الفاتورة (تعطيل الضمان ومسح تواريخه)
-      await BillService.instance.updateBill(
-        billId: widget.billId,
-        warrantyCoverage: false,
-        warrantyStartDate: null,
-        warrantyEndDate: null,
-      );
+
+      // 2) إذا كان مربوطًا بفاتورة، ألغِ حالة الضمان فيها
+      if (hasBill) {
+        await BillService.instance.updateBill(
+          billId: widget.billId!,
+          warrantyCoverage: false,
+          warrantyStartDate: null,
+          warrantyEndDate: null,
+        );
+      }
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -202,6 +205,19 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            // تلميح صغير إذا كان الضمان غير مرتبط بفاتورة
+            if (!hasBill)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: const [
+                    Icon(Icons.info_outline, size: 18),
+                    SizedBox(width: 8),
+                    Expanded(child: Text('This warranty is not linked to a bill.')),
+                  ],
+                ),
+              ),
+
             TextField(
               controller: _providerCtrl,
               decoration: const InputDecoration(labelText: 'Provider / Store'),
@@ -210,7 +226,7 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
 
             ListTile(
               title: const Text('Warranty start date'),
-              subtitle: Text(_fmt.format(_start)),
+              subtitle: Text(DateFormat('yyyy-MM-dd').format(_start)),
               trailing: const Icon(Icons.date_range),
               onTap: () => _pickDate(
                 initial: _start,
@@ -225,7 +241,7 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
 
             ListTile(
               title: const Text('Warranty end date'),
-              subtitle: Text(_fmt.format(_end)),
+              subtitle: Text(DateFormat('yyyy-MM-dd').format(_end)),
               trailing: const Icon(Icons.verified_user),
               onTap: () => _pickDate(
                 initial: _end.isBefore(_start) ? _start : _end,
