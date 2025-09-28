@@ -1,8 +1,8 @@
 import 'package:flutter/foundation.dart';
 
-/// Simple bill model used by UI routes.
 @immutable
 class BillDetails {
+  final String id;                 // 👈 مهم: document id
   final String title;
   final String? product;
   final double? amount;
@@ -13,6 +13,8 @@ class BillDetails {
   final DateTime? warrantyExpiry;
 
   const BillDetails({
+
+    required this.id,              // 👈 لازم تمرره
     required this.title,
     this.product,
     this.amount,
@@ -24,17 +26,18 @@ class BillDetails {
   });
 }
 
-/// Simple warranty model used by UI routes.
 @immutable
 class WarrantyDetails {
   final String title;
+  final String? id;
   final String product;
   final DateTime warrantyStart;
   final DateTime warrantyExpiry;
-  final DateTime? returnDeadline; // optional: if you ever store it with bill
-  final DateTime? reminderDate;   // kept nullable for future use (unused now)
+  final DateTime? returnDeadline;
+  final DateTime? reminderDate;
 
   const WarrantyDetails({
+    required this.id,
     required this.title,
     required this.product,
     required this.warrantyStart,

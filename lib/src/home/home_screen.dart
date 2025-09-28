@@ -6,11 +6,21 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../auth/login_screen.dart';
 import '../bills/ui/bill_list_page.dart';
 import '../bills/ui/add_bill_page.dart';
+import '../bills/ui/bill_detail_page.dart';
 import '../warranties/ui/warranty_list_page.dart';
 import '../warranties/ui/add_warranty_page.dart';
+import '../warranties/ui/warranty_detail_page.dart';
 import '../ocr/scan_receipt_page.dart';
 
 import '../bills/data/bill_service.dart';
+import '../common/models.dart';
+
+/// عنصر داخلي موحّد لقائمة "All"
+class _HomeItem {
+  final DateTime? expiry;
+  final Widget tile;
+  const _HomeItem({required this.expiry, required this.tile});
+}
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -20,10 +30,10 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-enum HomeFilter { bills, warranties }
+enum HomeFilter { all, bills, warranties }
 
 class _HomeScreenState extends State<HomeScreen> {
-  HomeFilter _filter = HomeFilter.bills;
+  HomeFilter _filter = HomeFilter.all;
   final _searchCtrl = TextEditingController();
 
   @override
@@ -67,7 +77,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
 
-        // زر الإضافة → نافذة اختيار
         floatingActionButton: FloatingActionButton(
           onPressed: () => _openAddChooser(context),
           child: const Icon(Icons.add),
@@ -105,12 +114,19 @@ class _HomeScreenState extends State<HomeScreen> {
                       searchCtrl: _searchCtrl,
                     ),
                     const SizedBox(height: 16),
-                    Text(
-                      _filter == HomeFilter.bills ? 'Recent bills' : 'Recent warranties',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 8),
-                    _buildRecentList(userId: user?.uid),
+
+                    if (_filter == HomeFilter.all) ...[
+                      Text('All (nearest expiry first)', style: Theme.of(context).textTheme.titleMedium),
+                      const SizedBox(height: 8),
+                      _AllMixedList(userId: user?.uid, query: _searchCtrl.text),
+                    ] else ...[
+                      Text(
+                        _filter == HomeFilter.bills ? 'Recent bills' : 'Recent warranties',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 8),
+                      _buildRecentList(userId: user?.uid),
+                    ],
                   ],
                 ),
               ),
@@ -121,110 +137,30 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ستريم الفواتير
+  // ===== Streams (عامة) =====
   Stream<QuerySnapshot<Map<String, dynamic>>> _billsStream({String? userId}) {
     final col = FirebaseFirestore.instance.collection('Bills');
-    final baseQuery = userId != null ? col.where('user_id', isEqualTo: userId) : col;
-    return baseQuery.orderBy('created_at', descending: true).limit(25).snapshots();
+    final base = userId != null ? col.where('user_id', isEqualTo: userId) : col;
+    return base.orderBy('created_at', descending: true).limit(25).snapshots();
   }
 
-  // ستريم الضمانات
   Stream<QuerySnapshot<Map<String, dynamic>>> _warrantiesStream({String? userId}) {
     final col = FirebaseFirestore.instance.collection('Warranties');
-    final baseQuery = userId != null ? col.where('user_id', isEqualTo: userId) : col;
-    return baseQuery.orderBy('start_date', descending: true).limit(25).snapshots();
+    final base = userId != null ? col.where('user_id', isEqualTo: userId) : col;
+    // مطابق للفهرس الحالي: user_id ASC + end_date DESC
+    return base.orderBy('end_date', descending: true).limit(25).snapshots();
   }
 
-  // القائمة على الرئيسية
+  // ===== Recent list (قسم واحد حسب الفلتر) =====
   Widget _buildRecentList({String? userId}) {
     if (_filter == HomeFilter.bills) {
-      return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: _billsStream(userId: userId),
-        builder: (context, s) {
-          if (s.hasError) return Center(child: Text('Error: ${s.error}'));
-          if (s.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          var docs = s.data?.docs ?? <QueryDocumentSnapshot<Map<String, dynamic>>>[];
-          final q = _searchCtrl.text.trim().toLowerCase();
-          if (q.isNotEmpty) {
-            docs = docs.where((d) {
-              final data = d.data();
-              final title = (data['title'] ?? '').toString().toLowerCase();
-              final shop  = (data['shop_name'] ?? '').toString().toLowerCase();
-              return title.contains(q) || shop.contains(q);
-            }).toList();
-          }
-
-          if (docs.isEmpty) return const _EmptyHint(text: 'No bills found.');
-
-          final toShow = docs.take(8).toList();
-          return Column(
-            children: toShow.map((doc) {
-              final d = doc.data();
-              final title  = (d['title'] ?? '—').toString();
-              final shop   = (d['shop_name'] ?? '—').toString();
-              final amount = d['total_amount'];
-              return _ItemTile(
-                title: title,
-                subtitle: '$shop • ${amount ?? '-'}',
-                meta: 'Tap to view or edit',
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const BillListPage()),
-                ),
-              );
-            }).toList(),
-          );
-        },
-      );
+      return _RecentBillsList(userId: userId, query: _searchCtrl.text);
     } else {
-      return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: _warrantiesStream(userId: userId),
-        builder: (context, s) {
-          if (s.hasError) return Center(child: Text('Error: ${s.error}'));
-          if (s.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          var docs = s.data?.docs ?? <QueryDocumentSnapshot<Map<String, dynamic>>>[];
-          final q = _searchCtrl.text.trim().toLowerCase();
-          if (q.isNotEmpty) {
-            docs = docs.where((d) {
-              final data = d.data();
-              final provider = (data['provider'] ?? '').toString().toLowerCase();
-              final title = (data['title'] ?? '').toString().toLowerCase();
-              return provider.contains(q) || title.contains(q);
-            }).toList();
-          }
-
-          if (docs.isEmpty) return const _EmptyHint(text: 'No warranties found.');
-
-          final toShow = docs.take(8).toList();
-          return Column(
-            children: toShow.map((doc) {
-              final d = doc.data();
-              final provider = (d['provider'] ?? 'Warranty').toString();
-              return _ItemTile(
-                title: provider,
-                subtitle: 'Tap to view',
-                meta: '—',
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const WarrantyListPage()),
-                ),
-              );
-            }).toList(),
-          );
-        },
-      );
+      return _RecentWarrantiesList(userId: userId, query: _searchCtrl.text);
     }
   }
 
-  // نافذة اختيار: Bill / Warranty (+ OCR)
+  // ===== Add chooser =====
   Future<void> _openAddChooser(BuildContext context) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
 
@@ -253,10 +189,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 child: Text(
                   'Bill Information',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleLarge
-                      ?.copyWith(color: Colors.white),
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Colors.white),
                 ),
               ),
               const SizedBox(height: 16),
@@ -309,7 +242,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // خيارات الضمان: ربط/إضافة ضمان فقط
   Future<void> _openWarrantyOptions(BuildContext context, String? uid) async {
     await showModalBottomSheet<void>(
       context: context,
@@ -356,7 +288,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   context,
                   MaterialPageRoute(
                     builder: (_) => AddWarrantyPage(
-                      billId: null, // بدون فاتورة
+                      billId: null,
                       defaultStartDate: DateTime.now(),
                       defaultEndDate: DateTime.now().add(const Duration(days: 365)),
                     ),
@@ -379,6 +311,12 @@ class _HomeScreenState extends State<HomeScreen> {
         shrinkWrap: true,
         children: [
           RadioListTile<HomeFilter>(
+            value: HomeFilter.all,
+            groupValue: _filter,
+            title: const Text('All'),
+            onChanged: (v) => Navigator.pop(context, v),
+          ),
+          RadioListTile<HomeFilter>(
             value: HomeFilter.warranties,
             groupValue: _filter,
             title: const Text('Warranties'),
@@ -397,7 +335,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// ===== Widgets مساعدة =====
+// ===== UI helpers =====
 
 class _HeaderGradient extends StatelessWidget {
   const _HeaderGradient();
@@ -432,6 +370,12 @@ class _HeaderCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    String label = switch (filter) {
+      HomeFilter.all => 'All',
+      HomeFilter.bills => 'Bills',
+      HomeFilter.warranties => 'Warranties',
+    };
+
     return Card(
       elevation: 0,
       child: Padding(
@@ -469,10 +413,7 @@ class _HeaderCard extends StatelessWidget {
             const SizedBox(height: 8),
             Row(
               children: [
-                Chip(
-                  label: Text(filter == HomeFilter.bills ? 'Bills' : 'Warranties'),
-                  avatar: const Icon(Icons.filter_list),
-                ),
+                Chip(label: Text(label), avatar: const Icon(Icons.filter_list)),
                 const Spacer(),
                 Text(userEmail, style: Theme.of(context).textTheme.bodySmall),
               ],
@@ -539,7 +480,6 @@ class _EmptyHint extends StatelessWidget {
   }
 }
 
-// زر كبير لخيارات الإضافة
 class _BigActionButton extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -587,7 +527,7 @@ class _BigActionButton extends StatelessWidget {
   }
 }
 
-// Bottom sheet لاختيار فاتورة موجودة
+// ===== Bottom sheet: pick an existing bill to link warranty =====
 class _BillPickerSheet extends StatefulWidget {
   final String? userId;
   const _BillPickerSheet({required this.userId});
@@ -658,7 +598,7 @@ class _BillPickerSheetState extends State<_BillPickerSheet> {
                       final doc = docs[i];
                       final d = doc.data();
                       final title = (d['title'] ?? '—').toString();
-                      final shop  = (d['shop_name'] ?? '—').toString();
+                      final shop = (d['shop_name'] ?? '—').toString();
                       final amount = d['total_amount'];
                       return ListTile(
                         title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
@@ -674,6 +614,310 @@ class _BillPickerSheetState extends State<_BillPickerSheet> {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ===== Small lists used on Home =====
+
+class _RecentBillsList extends StatelessWidget {
+  final String? userId;
+  final String query;
+  const _RecentBillsList({required this.userId, required this.query});
+
+  @override
+  Widget build(BuildContext context) {
+    final col = FirebaseFirestore.instance.collection('Bills');
+    final base = userId != null ? col.where('user_id', isEqualTo: userId) : col;
+    final stream = base.orderBy('created_at', descending: true).limit(8).snapshots();
+
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: stream,
+      builder: (context, s) {
+        if (s.hasError) return const _EmptyHint(text: 'Error loading bills.');
+        if (!s.hasData) return const Center(child: CircularProgressIndicator());
+
+        var docs = s.data!.docs;
+        final q = query.trim().toLowerCase();
+        if (q.isNotEmpty) {
+          docs = docs.where((d) {
+            final data = d.data();
+            final title = (data['title'] ?? '').toString().toLowerCase();
+            final shop = (data['shop_name'] ?? '').toString().toLowerCase();
+            return title.contains(q) || shop.contains(q);
+          }).toList();
+        }
+        if (docs.isEmpty) return const _EmptyHint(text: 'No bills found.');
+
+        return Column(
+          children: docs.map((doc) {
+            final d = doc.data();
+            final title = (d['title'] ?? '—').toString();
+            final shop = (d['shop_name'] ?? '—').toString();
+            final amountN = (d['total_amount'] as num?);
+            final amount = amountN?.toDouble();
+
+            final purchase = (d['purchase_date'] as Timestamp?)?.toDate().toLocal();
+            final ret = (d['return_deadline'] as Timestamp?)?.toDate().toLocal();
+            final wEnd = (d['warranty_end_date'] as Timestamp?)?.toDate().toLocal();
+
+            final details = BillDetails(
+              id: doc.id, // ✅ إضافة المعرّف
+              title: title,
+              product: shop,
+              amount: amount ?? 0,
+              purchaseDate: purchase ?? DateTime.now(),
+              returnDeadline: ret,
+              warrantyExpiry: wEnd,
+            );
+
+            return _ItemTile(
+              title: title,
+              subtitle: '$shop • ${amount ?? '-'}',
+              meta: 'Tap to view or edit',
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.pushNamed(
+                context,
+                BillDetailPage.route,
+                arguments: details,
+              ),
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+}
+
+class _RecentWarrantiesList extends StatelessWidget {
+  final String? userId;
+  final String query;
+  const _RecentWarrantiesList({required this.userId, required this.query});
+
+  String _fmt(DateTime? dt) =>
+      dt == null ? '—' : '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+
+  @override
+  Widget build(BuildContext context) {
+    final col = FirebaseFirestore.instance.collection('Warranties');
+    final base = userId != null ? col.where('user_id', isEqualTo: userId) : col;
+    final stream = base.orderBy('end_date', descending: true).limit(8).snapshots();
+
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: stream,
+      builder: (context, s) {
+        if (s.hasError) return const _EmptyHint(text: 'Error loading warranties.');
+        if (!s.hasData) return const Center(child: CircularProgressIndicator());
+
+        var docs = s.data!.docs;
+        final q = query.trim().toLowerCase();
+        if (q.isNotEmpty) {
+          docs = docs.where((d) {
+            final data = d.data();
+            final provider = (data['provider'] ?? '').toString().toLowerCase();
+            final title = (data['title'] ?? '').toString().toLowerCase();
+            return provider.contains(q) || title.contains(q);
+          }).toList();
+        }
+        if (docs.isEmpty) return const _EmptyHint(text: 'No warranties found.');
+
+        return Column(
+          children: docs.map((doc) {
+            final d = doc.data();
+
+            final provider =
+            (d['provider']?.toString().trim().isNotEmpty == true) ? d['provider'].toString().trim() : 'Warranty';
+            final wTitle =
+            (d['title']?.toString().trim().isNotEmpty == true) ? d['title'].toString().trim() : provider;
+
+            final start = (d['start_date'] as Timestamp?)?.toDate().toLocal();
+            final end = (d['end_date'] as Timestamp?)?.toDate().toLocal();
+
+            return _ItemTile(
+              title: provider,
+              subtitle: wTitle,
+              meta: '${_fmt(start)} → ${_fmt(end)}',
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                final details = WarrantyDetails(
+                  id: doc.id,
+                  product: provider,
+                  title: wTitle,
+                  warrantyStart: start ?? DateTime.now(),
+                  warrantyExpiry: end ?? DateTime.now(),
+                  returnDeadline: null,
+                );
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => WarrantyDetailPage(details: details)),
+                );
+              },
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+}
+
+/// قائمة مدموجة (Bills + Warranties) مرتبة حسب أقرب انتهاء
+class _AllMixedList extends StatelessWidget {
+  final String? userId;
+  final String query;
+  const _AllMixedList({required this.userId, required this.query});
+
+  DateTime? _asDateOnly(DateTime? d) => d == null ? null : DateTime(d.year, d.month, d.day);
+
+  DateTime? _minDate(DateTime? a, DateTime? b) {
+    if (a == null) return _asDateOnly(b);
+    if (b == null) return _asDateOnly(a);
+    final aa = _asDateOnly(a)!;
+    final bb = _asDateOnly(b)!;
+    return aa.isBefore(bb) ? aa : bb;
+  }
+
+  // أقرب انتهاء للفاتورة (الأقرب بين الإرجاع والضمان)
+  DateTime? _expiryForBill(Map<String, dynamic> d) {
+    final ret = (d['return_deadline'] as Timestamp?)?.toDate().toLocal();
+    final wEnd = (d['warranty_end_date'] as Timestamp?)?.toDate().toLocal();
+    return _minDate(ret, wEnd);
+  }
+
+  // انتهاء الضمان
+  DateTime? _expiryForWarranty(Map<String, dynamic> d) {
+    final end = (d['end_date'] as Timestamp?)?.toDate().toLocal();
+    return _asDateOnly(end);
+  }
+
+  String _fmt(DateTime? dt) =>
+      dt == null ? '—' : '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+
+  @override
+  Widget build(BuildContext context) {
+    final uid = userId;
+    final billsCol = FirebaseFirestore.instance.collection('Bills');
+    final warrCol = FirebaseFirestore.instance.collection('Warranties');
+
+    final billsBase = uid != null ? billsCol.where('user_id', isEqualTo: uid) : billsCol;
+    final warrBase = uid != null ? warrCol.where('user_id', isEqualTo: uid) : warrCol;
+
+    // نجلب كمية مناسبة ثم ندمج ونرتّب محلياً
+    final billsStream = billsBase.orderBy('created_at', descending: true).limit(25).snapshots();
+    final warrStream = warrBase.orderBy('end_date', descending: true).limit(25).snapshots();
+
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: billsStream,
+      builder: (context, bSnap) {
+        if (bSnap.hasError) return const _EmptyHint(text: 'Error loading bills.');
+        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: warrStream,
+          builder: (context, wSnap) {
+            if (wSnap.hasError) return const _EmptyHint(text: 'Error loading warranties.');
+            if (!bSnap.hasData || !wSnap.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            final q = query.trim().toLowerCase();
+            final items = <_HomeItem>[];
+
+            // Bills -> _HomeItem
+            for (final doc in bSnap.data!.docs) {
+              final d = doc.data();
+              final title = (d['title'] ?? '—').toString();
+              final shop = (d['shop_name'] ?? '—').toString();
+              if (q.isNotEmpty) {
+                final t = title.toLowerCase();
+                final s = shop.toLowerCase();
+                if (!(t.contains(q) || s.contains(q))) continue;
+              }
+
+              final amountN = (d['total_amount'] as num?);
+              final amount = amountN?.toDouble();
+              final purchase = (d['purchase_date'] as Timestamp?)?.toDate().toLocal();
+              final ret = (d['return_deadline'] as Timestamp?)?.toDate().toLocal();
+              final wEnd = (d['warranty_end_date'] as Timestamp?)?.toDate().toLocal();
+
+              final details = BillDetails(
+                id: doc.id, // ✅ بدل docId بـ id
+                title: title,
+                product: shop,
+                amount: amount ?? 0,
+                purchaseDate: purchase ?? DateTime.now(),
+                returnDeadline: ret,
+                warrantyExpiry: wEnd,
+              );
+
+              final tile = _ItemTile(
+                title: title,
+                subtitle: '$shop • ${amount ?? '-'}',
+                meta: 'Bill • Return: ${_fmt(ret)}  •  Warranty: ${_fmt(wEnd)}',
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.pushNamed(context, BillDetailPage.route, arguments: details),
+              );
+
+              items.add(_HomeItem(expiry: _expiryForBill(d), tile: tile));
+            }
+
+            // Warranties -> _HomeItem
+            for (final doc in wSnap.data!.docs) {
+              final d = doc.data();
+              final provider = (d['provider']?.toString().trim().isNotEmpty == true)
+                  ? d['provider'].toString().trim()
+                  : 'Warranty';
+              final wTitle = (d['title']?.toString().trim().isNotEmpty == true)
+                  ? d['title'].toString().trim()
+                  : provider;
+
+              if (q.isNotEmpty) {
+                final p = provider.toLowerCase();
+                final t = wTitle.toLowerCase();
+                if (!(p.contains(q) || t.contains(q))) continue;
+              }
+
+              final start = (d['start_date'] as Timestamp?)?.toDate().toLocal();
+              final end = (d['end_date'] as Timestamp?)?.toDate().toLocal();
+
+              final details = WarrantyDetails(
+                id: doc.id,
+                product: provider,
+                title: wTitle,
+                warrantyStart: start ?? DateTime.now(),
+                warrantyExpiry: end ?? DateTime.now(),
+                returnDeadline: null,
+              );
+
+              final tile = _ItemTile(
+                title: provider,
+                subtitle: wTitle,
+                meta: 'Warranty • ${_fmt(start)} → ${_fmt(end)}',
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => WarrantyDetailPage(details: details)),
+                ),
+              );
+
+              items.add(_HomeItem(expiry: _expiryForWarranty(d), tile: tile));
+            }
+
+            if (items.isEmpty) return const _EmptyHint(text: 'No items found.');
+
+            // الترتيب: أقرب انتهاء أولاً (nulls في النهاية)
+            items.sort((a, b) {
+              final ax = a.expiry;
+              final bx = b.expiry;
+              if (ax == null && bx == null) return 0;
+              if (ax == null) return 1;
+              if (bx == null) return -1;
+              return ax.compareTo(bx); // تصاعدي = الأقرب أول
+            });
+
+            // نعرض أول 12 عنصر
+            final toShow = items.take(12).map((e) => e.tile).toList();
+            return Column(children: toShow);
+          },
+        );
+      },
     );
   }
 }

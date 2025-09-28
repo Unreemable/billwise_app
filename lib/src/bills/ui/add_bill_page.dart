@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -10,8 +11,8 @@ import '../data/bill_service.dart';
 class AddBillPage extends StatefulWidget {
   const AddBillPage({
     super.key,
-    this.billId,                // تعديل إن وجد
-    this.prefill,               // بيانات OCR (للإضافة)
+    this.billId,                // إذا كان موجود = تعديل
+    this.prefill,               // بيانات من OCR عند الإضافة
     this.suggestWarranty = false,
   });
 
@@ -26,46 +27,48 @@ class AddBillPage extends StatefulWidget {
 }
 
 class _AddBillPageState extends State<AddBillPage> {
+  // ===== Controllers =====
   final _titleCtrl  = TextEditingController();
   final _shopCtrl   = TextEditingController();
   final _amountCtrl = TextEditingController();
 
-  // التواريخ (nullable في الإضافة اليدوية)
+  // ===== Dates =====
   DateTime? _purchaseDate;
   DateTime? _returnDeadline;
   DateTime? _exchangeDeadline;
 
-  // سويتش فقط — بدون حقول تواريخ للضمان في هذه الصفحة
+  // Warranty flag only (لا ندير تواريخ الضمان هنا)
   bool _hasWarranty = false;
 
-  // من OCR فقط لاستخدامها كتاريخ افتراضي في صفحة الضمان
+  // OCR-based default warranty dates to pass to AddWarrantyPage
   DateTime? _ocrWarrantyStart;
   DateTime? _ocrWarrantyEnd;
 
-  // أيام السياسات المستنتجة من OCR
-  int? _retDays; // الاسترجاع
-  int? _exDays;  // الاستبدال
+  // Policy days extracted from OCR
+  int? _retDays; // return
+  int? _exDays;  // exchange
 
-  // المرفق
+  // Attachment
   final _picker = ImagePicker();
   String? _receiptImagePath;
 
   final _fmt = DateFormat('yyyy-MM-dd');
-  bool _saving = false;
 
-  // تحميل فاتورة موجودة (وضع التعديل)
+  bool _saving = false;
   bool _loadingExisting = false;
 
-  // فحص وجود ضمان مرتبط بهذه الفاتورة (في وضع التعديل)
+  // For edit mode: detect existing warranty linked to this bill
   bool _checkingWarranty = false;
   bool _hasExistingWarranty = false;
 
-  // ================= Helpers =================
+  // ============ Small helpers ============
   DateTime? _parseDate(dynamic v) {
     if (v == null) return null;
-    final d = v is DateTime ? v : DateTime.tryParse(v.toString());
+    if (v is Timestamp) return v.toDate();
+    if (v is DateTime) return v;
+    final d = DateTime.tryParse(v.toString());
     if (d == null) return null;
-    if (d.year < 2015 || d.year > 2100) return null; // حماية
+    if (d.year < 2015 || d.year > 2100) return null; // sanity
     return d;
   }
 
@@ -80,7 +83,7 @@ class _AddBillPageState extends State<AddBillPage> {
     if (v == null) return null;
     var normalized = v.toString().trim();
 
-    // تحويل أرقام عربية
+    // convert Arabic numerals
     const eastern = '٠١٢٣٤٥٦٧٨٩';
     for (var i = 0; i < eastern.length; i++) {
       normalized = normalized.replaceAll(eastern[i], i.toString());
@@ -107,18 +110,16 @@ class _AddBillPageState extends State<AddBillPage> {
 
   String _fmtOrDash(DateTime? d) => d == null ? '—' : _fmt.format(d);
 
-  // ================= تحميل/دمج البيانات =================
+  // ============ Lifecycle / data bootstrapping ============
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
 
-    // لو في billId = تعديل → حمّل الفاتورة وتوقف عن استخدام prefill
     if (widget.billId != null && !_loadingExisting) {
       _loadExisting(widget.billId!);
       return;
     }
 
-    // في حالة الإضافة فقط: دمج prefill من constructor أو من Route args
     if (widget.billId == null) {
       _applyPrefillOnce();
     }
@@ -140,20 +141,20 @@ class _AddBillPageState extends State<AddBillPage> {
         return;
       }
 
-      // تعبئة الحقول الأساسية فقط
       _titleCtrl.text  = (data['title'] ?? '').toString();
       _shopCtrl.text   = (data['shop_name'] ?? '').toString();
-      final amount     = data['total_amount'];
+
+      final amount = data['total_amount'];
       if (amount != null) _amountCtrl.text = amount.toString();
 
-      _purchaseDate     = (data['purchase_date'] as Timestamp?)?.toDate();
-      _returnDeadline   = (data['return_deadline'] as Timestamp?)?.toDate();
-      _exchangeDeadline = (data['exchange_deadline'] as Timestamp?)?.toDate();
+      _purchaseDate     = _parseDate(data['purchase_date']);
+      _returnDeadline   = _parseDate(data['return_deadline']);
+      _exchangeDeadline = _parseDate(data['exchange_deadline']);
 
       _hasWarranty      = (data['warranty_coverage'] as bool?) ?? false;
       _receiptImagePath = (data['receipt_image_path'] as String?);
 
-      // ✅ فحص هل يوجد Warranty مرتبط بهذه الفاتورة
+      // Check if a warranty exists for this bill
       final snap = await FirebaseFirestore.instance
           .collection('Warranties')
           .where('bill_id', isEqualTo: billId)
@@ -195,18 +196,15 @@ class _AddBillPageState extends State<AddBillPage> {
       prefill = {...prefill, ...widget.prefill!};
     }
 
-    // نصوص
     _titleCtrl.text = (prefill['title'] ?? _titleCtrl.text).toString();
     _shopCtrl.text  = (prefill['store'] ?? _shopCtrl.text).toString();
     final amt = _parseAmount(prefill['amount']);
     if (amt != null) _amountCtrl.text = amt.toString();
 
-    // تواريخ
     _purchaseDate     ??= _parseDate(prefill['purchaseDate']);
     _returnDeadline   ??= _parseDate(prefill['returnDeadline']);
     _exchangeDeadline ??= _parseDate(prefill['exchangeDeadline']);
 
-    // سياسات مستخرجة من OCR
     _retDays ??= _extractDays(prefill['returnDays'] ?? prefill['returnPolicy'] ?? prefill['return_text'] ?? prefill['return'] ?? prefill['policy']);
     _exDays  ??= _extractDays(prefill['exchangeDays'] ?? prefill['exchangePolicy'] ?? prefill['exchange_text'] ?? prefill['exchange'] ?? prefill['policy']);
 
@@ -219,15 +217,12 @@ class _AddBillPageState extends State<AddBillPage> {
       }
     }
 
-    // الضمان من OCR (للتواريخ الافتراضية لاحقًا في صفحة الضمان فقط)
     _ocrWarrantyStart = _parseDate(prefill['warrantyStart']);
     _ocrWarrantyEnd   = _parseDate(prefill['warrantyEnd']);
 
-    // صورة
     final path = (prefill['receiptPath'] ?? '') as String;
     if (path.isNotEmpty) _receiptImagePath = path;
 
-    // تفعيل الضمان تلقائيًا لو طلبنا
     if (suggestWarranty && !_hasWarranty) {
       _hasWarranty = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -241,7 +236,7 @@ class _AddBillPageState extends State<AddBillPage> {
     setState(() {});
   }
 
-  // ================= Pickers =================
+  // ============ Pickers ============
   Future<void> _pickDate(
       BuildContext ctx,
       DateTime? initial,
@@ -289,7 +284,7 @@ class _AddBillPageState extends State<AddBillPage> {
     if (x != null) setState(() => _receiptImagePath = x.path);
   }
 
-  // ================= Save / Update / Delete =================
+  // ============ Save / Update / Delete ============
   Future<String?> _saveNewBill() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) {
@@ -328,7 +323,7 @@ class _AddBillPageState extends State<AddBillPage> {
         totalAmount: amount,
         returnDeadline: _returnDeadline!,
         exchangeDeadline: _exchangeDeadline!,
-        warrantyCoverage: _hasWarranty, // فقط العلم
+        warrantyCoverage: _hasWarranty,
         userId: uid,
         receiptImagePath: _receiptImagePath,
       );
@@ -381,8 +376,7 @@ class _AddBillPageState extends State<AddBillPage> {
         totalAmount: amount,
         returnDeadline: _returnDeadline!,
         exchangeDeadline: _exchangeDeadline!,
-        warrantyCoverage: _hasWarranty, // فقط العلم
-        // لا نمرّر تواريخ ضمان من صفحة الفاتورة
+        warrantyCoverage: _hasWarranty,
         receiptImagePath: _receiptImagePath,
       );
       if (!mounted) return;
@@ -483,7 +477,7 @@ class _AddBillPageState extends State<AddBillPage> {
     if (mounted) Navigator.of(context).pop();
   }
 
-  // ================= UI =================
+  // ============ UI ============
   @override
   void dispose() {
     _titleCtrl.dispose();
@@ -518,21 +512,24 @@ class _AddBillPageState extends State<AddBillPage> {
             TextField(
               controller: _titleCtrl,
               decoration: const InputDecoration(labelText: 'Bill title/description'),
+              textInputAction: TextInputAction.next,
             ),
             TextField(
               controller: _shopCtrl,
               decoration: const InputDecoration(labelText: 'Store name'),
+              textInputAction: TextInputAction.next,
             ),
             TextField(
               controller: _amountCtrl,
               decoration: const InputDecoration(labelText: 'Amount (SAR)'),
-              keyboardType: const TextInputType.numberWithOptions(
-                signed: false, decimal: true,
-              ),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+              ],
             ),
             const SizedBox(height: 12),
 
-            // صورة المرفق
+            // Attachment
             Row(
               children: [
                 ElevatedButton.icon(
@@ -551,7 +548,7 @@ class _AddBillPageState extends State<AddBillPage> {
             ),
             const SizedBox(height: 12),
 
-            // التواريخ
+            // Dates
             ListTile(
               title: const Text('Purchase date'),
               subtitle: Text(_fmtOrDash(_purchaseDate)),
@@ -587,7 +584,7 @@ class _AddBillPageState extends State<AddBillPage> {
 
             const Divider(),
 
-            // سويتش فقط — بدون أي حقول للضمان هنا
+            // Warranty flag only
             SwitchListTile(
               value: _hasWarranty,
               onChanged: (v) => setState(() => _hasWarranty = v),
@@ -607,9 +604,7 @@ class _AddBillPageState extends State<AddBillPage> {
                   color: Colors.orange.withOpacity(0.08),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Text(
-                  'A warranty already exists for this bill.',
-                ),
+                child: const Text('A warranty already exists for this bill.'),
               ),
 
             const SizedBox(height: 16),

@@ -23,23 +23,38 @@ class ParsedReceipt {
 }
 
 class ReceiptParser {
+  // كلمات ضمان
   static const _kwWarranty = [
     'warranty','warranties','guarantee','return','exchange',
     'ضمان','الضمان','استبدال','إرجاع','ارجاع'
   ];
 
+  // أشهر إنجليزي
   static const List<String> _enMonths = [
     'january','february','march','april','may','june',
     'july','august','september','october','november','december'
   ];
 
+  // أشهر عربي
   static const Map<String, int> _arMonthToNum = {
     'يناير': 1, 'فبراير': 2, 'مارس': 3, 'أبريل': 4, 'ابريل': 4, 'مايو': 5,
     'يونيو': 6, 'يوليو': 7, 'أغسطس': 8, 'اغسطس': 8, 'سبتمبر': 9,
     'أكتوبر': 10, 'اكتوبر': 10, 'نوفمبر': 11, 'ديسمبر': 12,
   };
 
-  // normalize Arabic-Indic digits to Western digits
+  // مفاتيح إيجابية/سلبية لاستخراج الإجمالي فقط
+  static const _positiveKeys = [
+    'total','grand total','amount due','balance due','payable','net total','net amount',
+    'الإجمالي','الاجمالي','المجموع','الصافي','الإجمالي مع الضريبة','المبلغ المستحق','المبلغ الإجمالي'
+  ];
+  static const _negativeKeys = [
+    'vat','v.a.t','tax','trn','tin','tax id','vat no','vat number',
+    'رقم الضريبة','الرقم الضريبي','قيمة الضريبة','نسبة الضريبة',
+    'خصم','discount','subtotal','sub total','delivery','shipping',
+    'quantity','qty','unit price'
+  ];
+
+  // أرقام عربية -> لاتينية
   static String _normalizeDigits(String s) {
     const ar = '٠١٢٣٤٥٦٧٨٩';
     final buf = StringBuffer();
@@ -51,11 +66,55 @@ class ReceiptParser {
     return buf.toString();
   }
 
-  static final RegExp _amountRegex = RegExp(
-    r'(?:SAR|ر\.?\s?س|﷼)?\s*([0-9]{1,3}(?:[.,][0-9]{3})*|[0-9]+)(?:[.,]([0-9]{2}))?',
-    caseSensitive: false,
-  );
+  // تنظـيف سطر: أرقام + توحيد رموز العملة + lower-case
+  static String _normalizeLine(String line) {
+    var L = _normalizeDigits(line)
+        .replaceAll('\u200f', '')
+        .replaceAll('\u200e', '')
+        .replaceAll('SAR', 'sar')
+        .replaceAll('ر.س', 'sar')
+        .replaceAll('﷼', 'sar')
+        .replaceAll('ريال', 'sar')
+        .toLowerCase();
+    L = L.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return L;
+  }
 
+  // استخراج أرقام مالية من سطر (يدعم 1,234.56 / 1234,56 / 1234)
+  static Iterable<double> _numbersIn(String line) sync* {
+    final cleaned = line.replaceAll('sar', '');
+    final re = RegExp(r'(?<!\d)(\d{1,3}(?:[,\s]\d{3})*|\d+)(?:[.,]\d{2})?(?!\d)');
+    for (final m in re.allMatches(cleaned)) {
+      var token = m.group(0)!;
+
+      // تجاهل نسب %
+      if (token.contains('%') || cleaned.contains('%')) continue;
+
+      // تحديد الفاصلة العشرية
+      final commas = RegExp(',').allMatches(token).length;
+      final dots = RegExp(r'\.').allMatches(token).length;
+      if (commas > 0 && dots == 0) {
+        // نمط أوروبي: 1.234,56 أو 1234,56
+        token = token.replaceAll('.', '').replaceAll(',', '.');
+      } else {
+        // نمط إنجليزي: 1,234.56 أو 1234.56
+        token = token.replaceAll(',', '');
+      }
+
+      final v = double.tryParse(token);
+      if (v != null) {
+        if (v <= 0) continue;
+        if (v > 1e9) continue; // احتمال رقم طويل مثل رقم ضريبي
+        yield v;
+      }
+    }
+  }
+
+  static bool _containsAny(String line, List<String> keys) {
+    return keys.any((k) => line.contains(k));
+  }
+
+  // ---------- تواريخ ----------
   static DateTime? _parseDayMonthYearSlash(String s) {
     final m = RegExp(r'\b(\d{1,2})/(\d{1,2})/(\d{4})\b').firstMatch(s);
     if (m == null) return null;
@@ -127,6 +186,7 @@ class ReceiptParser {
         _parseLooseYMD(s);
   }
 
+  // ---------- ضمان ----------
   static bool _containsWarrantyKeyword(String text) {
     final t = text.toLowerCase();
     return _kwWarranty.any((k) => t.contains(k));
@@ -146,16 +206,55 @@ class ReceiptParser {
     return null;
   }
 
+  // ---------- المتجر ----------
   static String? _guessStore(List<String> lines) {
-    for (int i = 0; i < lines.length && i < 5; i++) {
-      final l = lines[i].trim();
-      if (l.isEmpty) continue;
-      final digits = RegExp(r'\d').allMatches(l).length;
-      if (digits <= 2 && l.length <= 40) return l;
+    const blacklist = [
+      'vat','v.a.t','tax','trn','tin','tax id','vat no','vat number',
+      'رقم','ضريبة','الرقم الضريبي','فاتورة','invoice','bill',
+      'date','time','التاريخ','الوقت','subtotal','total','المجموع','الإجمالي',
+      'رقم الفاتورة','invoice no','po box','p.o. box'
+    ];
+
+    String? best;
+    int bestScore = -1;
+
+    for (int i = 0; i < lines.length && i < 8; i++) {
+      final raw = lines[i].trim();
+      if (raw.isEmpty) continue;
+
+      final l = _normalizeDigits(raw).toLowerCase();
+
+      if (blacklist.any((w) => l.contains(w))) continue;
+      if (RegExp(r'\b\d{5,}\b').hasMatch(l)) continue;
+
+      final label = RegExp(
+        r'^(store|shop|merchant|seller|branch|المتجر|المحل|البائع|الفرع)\s*[:\-]\s*',
+      ).firstMatch(l);
+      final candidate = label != null
+          ? raw.substring(label.group(0)!.length).trim()
+          : raw;
+
+      final digitCount  = RegExp(r'\d').allMatches(candidate).length;
+      final letterCount = RegExp(r'[A-Za-z\u0600-\u06FF]').allMatches(candidate).length;
+
+      var score = 0;
+      if (i <= 2) score += 3;
+      else if (i <= 5) score += 1;
+      if (letterCount >= 3) score += 3;
+      if (digitCount <= 2) score += 2;
+      if (candidate.length <= 30) score += 2;
+      if (RegExp(r'^(co|company|llc|ltd|inc|مؤسسة|شركة|مجموعة|محل|سوبر ماركت|صيدلية)',
+          caseSensitive: false).hasMatch(candidate)) score += 2;
+
+      if (score > bestScore) {
+        best = candidate;
+        bestScore = score;
+      }
     }
-    return null;
+    return best;
   }
 
+  // ---------- التاريخ ----------
   static DateTime? _firstDate(List<String> lines) {
     for (final l in lines) {
       final d = _tryParseDate(l);
@@ -173,22 +272,67 @@ class ReceiptParser {
     return null;
   }
 
-  static double? _bestAmount(String text) {
-    final t = _normalizeDigits(text);
-    double best = -1;
-    for (final m in _amountRegex.allMatches(t)) {
-      final whole = m.group(1) ?? '';
-      final cents = m.group(2);
-      final normalized = (whole.replaceAll(',', '').replaceAll('،', '')) +
-          (cents != null ? '.${cents}' : '');
-      final v = double.tryParse(normalized);
-      if (v != null && v > best) best = v;
+  // ---------- استخراج الإجمالي الذكي ----------
+  static double? _extractTotal(String fullText) {
+    if (fullText.trim().isEmpty) return null;
+
+    final lines = fullText
+        .split(RegExp(r'\r?\n'))
+        .map(_normalizeLine)
+        .where((l) => l.isNotEmpty)
+        .toList();
+
+    const extraPositive = [
+      'amount','grand amount','amount payable','amount paid',
+      'المبلغ','المبلغ الكلي','المبلغ النهائي','الإجمالي شامل الضريبة'
+    ];
+
+    final allPositives = [..._positiveKeys, ...extraPositive];
+
+    final scored = <double, int>{};
+    for (var i = 0; i < lines.length; i++) {
+      final line = lines[i];
+      if (_containsAny(line, allPositives) && !_containsAny(line, _negativeKeys)) {
+        for (final v in _numbersIn(line)) {
+          scored[v] = (scored[v] ?? 0) + 10;
+        }
+        if (i + 1 < lines.length) {
+          for (final n in _numbersIn(lines[i + 1])) {
+            scored[n] = (scored[n] ?? 0) + 8;
+          }
+        }
+        if (i - 1 >= 0) {
+          for (final p in _numbersIn(lines[i - 1])) {
+            scored[p] = (scored[p] ?? 0) + 6;
+          }
+        }
+      }
     }
-    return best > 0 ? best : null;
+
+    if (scored.isNotEmpty) {
+      final best = scored.entries.toList()
+        ..sort((a, b) {
+          final byScore = b.value.compareTo(a.value);
+          return byScore != 0 ? byScore : b.key.compareTo(a.key);
+        });
+      return best.first.key;
+    }
+
+    final candidates = <double>[];
+    for (final line in lines) {
+      if (_containsAny(line, _negativeKeys)) continue;
+      if (RegExp(r'\b\d{9,15}\b').hasMatch(line)) continue;
+      candidates.addAll(_numbersIn(line));
+    }
+    candidates.removeWhere((v) => v < 5);
+    candidates.sort();
+    return candidates.isNotEmpty ? candidates.last : null;
   }
 
+  // ---------- نقطة الدخول ----------
   static ParsedReceipt parse(String fullText) {
-    final lines = fullText
+    final raw = fullText;
+    final lines = raw
         .split('\n')
         .map((e) => e.trim())
         .where((e) => e.isNotEmpty)
@@ -196,9 +340,9 @@ class ReceiptParser {
 
     final store = _guessStore(lines);
     final date = _firstDate(lines);
-    final amount = _bestAmount(fullText);
-    final hasW = _containsWarrantyKeyword(fullText);
-    final months = _extractWarrantyMonths(fullText);
+    final amount = _extractTotal(raw);
+    final hasW = _containsWarrantyKeyword(raw);
+    final months = _extractWarrantyMonths(raw);
 
     DateTime? wStart;
     DateTime? wExpiry;
@@ -215,7 +359,7 @@ class ReceiptParser {
       warrantyMonths: months,
       warrantyStartDate: wStart,
       warrantyExpiryDate: wExpiry,
-      rawText: fullText,
+      rawText: raw,
     );
   }
 }

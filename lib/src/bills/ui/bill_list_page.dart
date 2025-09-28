@@ -31,7 +31,143 @@ class _BillListPageState extends State<BillListPage> {
   // ================= Helpers =================
   DateTime _onlyDate(DateTime d) => DateTime(d.year, d.month, d.day);
 
-  Chip _statusChip(DateTime? startUtc, DateTime? endUtc) {
+  // --- Return (3 أيام) ---
+  Color? _threeDayReturnColor(DateTime? startUtc, DateTime? endUtc) {
+    if (startUtc == null || endUtc == null) return null;
+    final s = _onlyDate(startUtc.toLocal());
+    final e = _onlyDate(endUtc.toLocal());
+    if (e.difference(s).inDays != 3) return null;
+
+    final today = _onlyDate(DateTime.now());
+    final diff = today.difference(s).inDays;
+
+    if (diff < 0) return Colors.blueGrey; // قبل البدء
+    if (diff == 0) return Colors.green;   // اليوم 1
+    if (diff == 1) return Colors.orange;  // اليوم 2
+    if (diff == 2) return Colors.red;     // اليوم 3 (الأخير)
+    return Colors.grey;                    // انتهى
+  }
+
+  String? _threeDayReturnLabel(DateTime? startUtc, DateTime? endUtc) {
+    if (startUtc == null || endUtc == null) return null;
+    final s = _onlyDate(startUtc.toLocal());
+    final e = _onlyDate(endUtc.toLocal());
+    if (e.difference(s).inDays != 3) return null;
+
+    final today = _onlyDate(DateTime.now());
+    final diff = today.difference(s).inDays;
+
+    if (diff < 0) return 'Starts soon';
+    if (diff == 0) return 'Day 1 of 3';
+    if (diff == 1) return 'Day 2 of 3';
+    if (diff == 2) return 'Final day (3 of 3)';
+    return 'Expired';
+  }
+
+  // --- Exchange (7 أيام) ---
+  Color? _sevenDayExchangeColor(DateTime? startUtc, DateTime? endUtc) {
+    if (startUtc == null || endUtc == null) return null;
+    final s = _onlyDate(startUtc.toLocal());
+    final e = _onlyDate(endUtc.toLocal());
+    if (e.difference(s).inDays != 7) return null;
+
+    final today = _onlyDate(DateTime.now());
+    final diff = today.difference(s).inDays + 1; // أول يوم = 1
+
+    if (diff <= 0) return Colors.blueGrey;
+    if (diff >= 1 && diff <= 3) return Colors.green;   // 1–3
+    if (diff >= 4 && diff <= 6) return Colors.orange;  // 4–6
+    if (diff == 7) return Colors.red;                  // 7
+    return Colors.grey;                                // انتهى
+  }
+
+  String? _sevenDayExchangeLabel(DateTime? startUtc, DateTime? endUtc) {
+    if (startUtc == null || endUtc == null) return null;
+    final s = _onlyDate(startUtc.toLocal());
+    final e = _onlyDate(endUtc.toLocal());
+    if (e.difference(s).inDays != 7) return null;
+
+    final today = _onlyDate(DateTime.now());
+    final diff = today.difference(s).inDays + 1;
+
+    if (diff <= 0) return 'Starts soon';
+    if (diff >= 1 && diff <= 3) return 'Days 1–3 of 7';
+    if (diff >= 4 && diff <= 6) return 'Days 4–6 of 7';
+    if (diff == 7) return 'Final day (7 of 7)';
+    return 'Expired';
+  }
+
+  // --- Warranty (3 أثلاث/سنتين) ---
+  int _monthsBetween(DateTime a, DateTime b) {
+    final aa = DateTime(a.year, a.month);
+    final bb = DateTime(b.year, b.month);
+    return (bb.year - aa.year) * 12 + (bb.month - aa.month);
+  }
+
+  Color? _warrantyColor(DateTime? startUtc, DateTime? endUtc) {
+    if (startUtc == null || endUtc == null) return null;
+
+    final s = _onlyDate(startUtc.toLocal());
+    final e = _onlyDate(endUtc.toLocal());
+    final today = _onlyDate(DateTime.now());
+
+    if (today.isBefore(s)) return Colors.blueGrey;
+    if (!today.isBefore(e)) return Colors.grey;
+
+    final totalMonths = _monthsBetween(s, e);
+    final elapsedMonths = _monthsBetween(s, today);
+
+    if (totalMonths >= 23 && totalMonths <= 25) {
+      if (elapsedMonths < 12) return Colors.green;
+      if (elapsedMonths < 18) return Colors.orange;
+      return Colors.red;
+    }
+
+    final totalDays = e.difference(s).inDays;
+    final elapsedDays = today.difference(s).inDays;
+    if (totalDays <= 0) return Colors.grey;
+
+    final t1 = (totalDays / 3).ceil();
+    final t2 = (2 * totalDays / 3).ceil();
+
+    if (elapsedDays < t1) return Colors.green;
+    if (elapsedDays < t2) return Colors.orange;
+    return Colors.red;
+  }
+
+  String? _warrantyLabel(DateTime? startUtc, DateTime? endUtc) {
+    if (startUtc == null || endUtc == null) return null;
+
+    final s = _onlyDate(startUtc.toLocal());
+    final e = _onlyDate(endUtc.toLocal());
+    final today = _onlyDate(DateTime.now());
+
+    if (today.isBefore(s)) return 'Starts soon';
+    if (!today.isBefore(e)) return 'Expired';
+
+    final totalMonths = _monthsBetween(s, e);
+    final elapsedMonths = _monthsBetween(s, today);
+
+    if (totalMonths >= 23 && totalMonths <= 25) {
+      if (elapsedMonths < 12) return 'Year 1 of 2';
+      if (elapsedMonths < 18) return 'Year 2 (first 6 months)';
+      return 'Year 2 (final 6 months)';
+    }
+
+    final totalDays = e.difference(s).inDays;
+    final elapsedDays = today.difference(s).inDays;
+    if (totalDays <= 0) return 'Expired';
+
+    final t1 = (totalDays / 3).ceil();
+    final t2 = (2 * totalDays / 3).ceil();
+
+    if (elapsedDays < t1) return 'First third';
+    if (elapsedDays < t2) return 'Second third';
+    return 'Final third';
+  }
+
+  // تقبّل لون مخصّص عند كونها "active"
+  Chip _statusChip(DateTime? startUtc, DateTime? endUtc, {Color? overrideColor}) {
     if (startUtc == null || endUtc == null) return const Chip(label: Text('—'));
 
     final s = _onlyDate(startUtc.toLocal());
@@ -52,7 +188,7 @@ class _BillListPageState extends State<BillListPage> {
       icon = Icons.close_rounded;
     } else {
       text = 'active';
-      color = Colors.green;
+      color = overrideColor ?? Colors.green;
       icon = Icons.check_circle_rounded;
     }
 
@@ -65,58 +201,82 @@ class _BillListPageState extends State<BillListPage> {
     );
   }
 
+  /// بلوك السياسة + شريط التقدّم + الحالة (اللون موحّد)
   Widget _policyBlock({
     required String title,
     required DateTime? start,
     required DateTime? end,
   }) {
     if (start == null || end == null) return const SizedBox.shrink();
+
+    final kind = title.toLowerCase();
+    final isReturn   = kind == 'return';
+    final isExchange = kind == 'exchange';
+    final isWarranty = kind == 'warranty';
+
+    final threeDayColor = isReturn   ? _threeDayReturnColor(start, end)   : null;
+    final threeDayLabel = isReturn   ? _threeDayReturnLabel(start, end)   : null;
+
+    final sevenDayColor = isExchange ? _sevenDayExchangeColor(start, end) : null;
+    final sevenDayLabel = isExchange ? _sevenDayExchangeLabel(start, end) : null;
+
+    final warrantyColor = isWarranty ? _warrantyColor(start, end)         : null;
+    final warrantyLabel = isWarranty ? _warrantyLabel(start, end)         : null;
+
+    // لون موحّد للشريط والشارة
+    final barColor = threeDayColor ?? sevenDayColor ?? warrantyColor;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // شريط التقدّم
+        if (threeDayColor != null) ...[
+          Row(
+            children: [
+              Container(width: 10, height: 10, decoration: BoxDecoration(color: threeDayColor, shape: BoxShape.circle)),
+              const SizedBox(width: 8),
+              Text(threeDayLabel ?? 'Return (3-day window)', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+            ],
+          ),
+          const SizedBox(height: 6),
+        ],
+        if (sevenDayColor != null) ...[
+          Row(
+            children: [
+              Container(width: 10, height: 10, decoration: BoxDecoration(color: sevenDayColor, shape: BoxShape.circle)),
+              const SizedBox(width: 8),
+              Text(sevenDayLabel ?? 'Exchange (7-day window)', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+            ],
+          ),
+          const SizedBox(height: 6),
+        ],
+        if (warrantyColor != null) ...[
+          Row(
+            children: [
+              Container(width: 10, height: 10, decoration: BoxDecoration(color: warrantyColor, shape: BoxShape.circle)),
+              const SizedBox(width: 8),
+              Text(warrantyLabel ?? 'Warranty (3 segments)', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+            ],
+          ),
+          const SizedBox(height: 6),
+        ],
+
+        // ⬅️ الشريط يأخذ نفس اللون، والضمان يُعرض بالأشهر
         ExpiryProgress(
           title: title,
           startDate: start,
           endDate: end,
           dense: true,
-          showInMonths: false,
+          showInMonths: isWarranty,
+          barColor: barColor,
         ),
         const SizedBox(height: 6),
-        // حالة الشريط (active / expired / upcoming)
+
         Align(
           alignment: Alignment.centerLeft,
-          child: _statusChip(start, end),
+          child: _statusChip(start, end, overrideColor: barColor),
         ),
       ],
     );
-  }
-
-  // تأكيد حذف الفاتورة + تنفيذ الحذف
-  Future<void> _confirmDeleteBill(BuildContext context, String billId, String titleForMsg) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Delete bill?'),
-        content: Text('Are you sure you want to delete “$titleForMsg”? This action cannot be undone.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
-        ],
-      ),
-    );
-    if (ok != true) return;
-
-    try {
-      await BillService.instance.deleteBill(billId);
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bill deleted')));
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
-      }
-    }
   }
 
   @override
@@ -167,7 +327,6 @@ class _BillListPageState extends State<BillListPage> {
 
                   var docs = s.data!.docs;
 
-                  // Filter by search (title/shop)
                   final q = _searchCtrl.text.trim().toLowerCase();
                   if (q.isNotEmpty) {
                     docs = docs.where((e) {
@@ -189,7 +348,6 @@ class _BillListPageState extends State<BillListPage> {
                     itemBuilder: (_, i) {
                       final doc = docs[i];
                       final d = doc.data();
-                      final billId = doc.id;
 
                       final title = (d['title'] ?? '—').toString();
                       final shop = (d['shop_name'] ?? '—').toString();
@@ -197,7 +355,7 @@ class _BillListPageState extends State<BillListPage> {
 
                       final purchase = (d['purchase_date'] as Timestamp?)?.toDate().toLocal();
                       final ret = (d['return_deadline'] as Timestamp?)?.toDate().toLocal();
-                      final ex = (d['exchange_deadline'] as Timestamp?)?.toDate().toLocal();
+                      final ex  = (d['exchange_deadline'] as Timestamp?)?.toDate().toLocal();
 
                       final hasWarranty = (d['warranty_coverage'] as bool?) ?? false;
                       final wEnd = (d['warranty_end_date'] as Timestamp?)?.toDate().toLocal();
@@ -205,14 +363,12 @@ class _BillListPageState extends State<BillListPage> {
                       return Card(
                         child: ListTile(
                           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          // العنوان = اسم المحل
                           title: Text(
                             shop,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(fontWeight: FontWeight.w600),
                           ),
-                          // سطر صغير: عنوان الفاتورة + المبلغ
                           subtitle: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -222,53 +378,29 @@ class _BillListPageState extends State<BillListPage> {
                               ),
                               const SizedBox(height: 10),
 
-                              // Return
-                              _policyBlock(title: 'Return', start: purchase, end: ret),
+                              _policyBlock(title: 'Return',   start: purchase, end: ret),
+                              const SizedBox(height: 10),
+                              _policyBlock(title: 'Exchange', start: purchase, end: ex),
                               const SizedBox(height: 10),
 
-                              // Exchange
-                              _policyBlock(title: 'Exchange', start: purchase, end: ex),
+                              if (hasWarranty && wEnd != null)
+                                _policyBlock(title: 'Warranty', start: purchase, end: wEnd),
                             ],
                           ),
-                          trailing: PopupMenuButton<String>(
-                            onSelected: (v) async {
-                              if (v == 'edit') {
-                                // لو عندك صفحة تعديل فعلها هنا
-                                await Navigator.push(
-                                  context,
-                                  MaterialPageRoute(builder: (_) => const AddBillPage()),
-                                );
-                                if (context.mounted) setState(() {});
-                              } else if (v == 'delete') {
-                                await _confirmDeleteBill(context, billId, title.isEmpty ? shop : title);
-                              }
-                            },
-                            itemBuilder: (_) => const [
-                              PopupMenuItem(
-                                value: 'edit',
-                                child: ListTile(
-                                  leading: Icon(Icons.edit, size: 18),
-                                  title: Text('Edit'),
-                                  dense: true,
-                                ),
-                              ),
-                              PopupMenuItem(
-                                value: 'delete',
-                                child: ListTile(
-                                  leading: Icon(Icons.delete_outline, size: 18),
-                                  title: Text('Delete'),
-                                  dense: true,
-                                ),
-                              ),
-                            ],
-                          ),
+
+                          // سهم للدخول
+                          trailing: const Icon(Icons.chevron_right),
+
                           onTap: () {
                             final details = BillDetails(
+                              id: doc.id,
                               title: title,
                               product: shop,
                               amount: amount ?? 0,
                               purchaseDate: purchase ?? DateTime.now(),
                               returnDeadline: ret,
+                              exchangeDeadline: ex,
+                              hasWarranty: hasWarranty,
                               warrantyExpiry: wEnd,
                             );
                             Navigator.pushNamed(

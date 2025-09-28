@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-import 'add_warranty_page.dart';
 import '../../common/models.dart';
 import '../../common/widgets/expiry_progress.dart';
 import '../data/warranty_service.dart';
@@ -51,40 +50,6 @@ class WarrantyListPage extends StatelessWidget {
     );
   }
 
-  Future<void> _confirmDelete(
-      BuildContext context, {
-        required String warrantyId,
-        required String titleForMsg,
-      }) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Delete warranty?'),
-        content: Text('Are you sure you want to delete “$titleForMsg”? This action cannot be undone.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
-        ],
-      ),
-    );
-    if (ok != true) return;
-
-    try {
-      await WarrantyService.instance.deleteWarranty(warrantyId);
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Warranty deleted')),
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -115,13 +80,11 @@ class WarrantyListPage extends StatelessWidget {
             separatorBuilder: (_, __) => const SizedBox(height: 8),
             itemBuilder: (_, i) {
               final doc = docs[i];
-              final id = doc.id;
               final d = doc.data();
 
               final start = (d['start_date'] as Timestamp?)?.toDate().toLocal();
-              final end = (d['end_date'] as Timestamp?)?.toDate().toLocal();
+              final end   = (d['end_date']   as Timestamp?)?.toDate().toLocal();
               final provider = (d['provider'] ?? 'Warranty').toString();
-              final billId = (d['bill_id'] as String?) ?? '';
 
               return Card(
                 child: ListTile(
@@ -155,54 +118,13 @@ class WarrantyListPage extends StatelessWidget {
                     ],
                   ),
 
-                  // === القائمة: Edit/Delete ===
-                  trailing: PopupMenuButton<String>(
-                    onSelected: (value) async {
-                      if (value == 'edit') {
-                        // افتح صفحة AddWarrantyPage بوضع التعديل
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => AddWarrantyPage(
-                              billId: billId,
-                              warrantyId: id,
-                              defaultStartDate: start,
-                              defaultEndDate: end,
-                              initialProvider: provider,
-                            ),
-                          ),
-                        );
-                      } else if (value == 'delete') {
-                        await _confirmDelete(
-                          context,
-                          warrantyId: id,
-                          titleForMsg: provider,
-                        );
-                      }
-                    },
-                    itemBuilder: (ctx) => const [
-                      PopupMenuItem(
-                        value: 'edit',
-                        child: ListTile(
-                          dense: true,
-                          leading: Icon(Icons.edit, size: 18),
-                          title: Text('Edit'),
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: 'delete',
-                        child: ListTile(
-                          dense: true,
-                          leading: Icon(Icons.delete_outline, size: 18),
-                          title: Text('Delete'),
-                        ),
-                      ),
-                    ],
-                  ),
+                  // 🔁 بدلنا النقاط بسهم للدخول
+                  trailing: const Icon(Icons.chevron_right),
 
-                  // === الضغط على البطاقة يفتح صفحة التفاصيل ===
+                  // فتح صفحة التفاصيل
                   onTap: () {
                     final details = WarrantyDetails(
+                      id: doc.id,
                       title: provider,
                       product: provider,
                       warrantyStart: start ?? DateTime.now(),
