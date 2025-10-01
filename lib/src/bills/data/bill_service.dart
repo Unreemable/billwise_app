@@ -14,13 +14,23 @@ class BillService {
     required String shopName,
     required DateTime purchaseDate,
     required num totalAmount,
-    required DateTime returnDeadline,
-    required DateTime exchangeDeadline,
+
+    /// صارت اختيارية
+    DateTime? returnDeadline,
+    DateTime? exchangeDeadline,
+
+    /// حالة وجود ضمان فقط (لا تُدار تواريخ الضمان هنا)
     required bool warrantyCoverage,
-    DateTime? warrantyStartDate,          // اختياري
-    DateTime? warrantyEndDate,            // اختياري
-    required String userId,               // إلزامي
-    String? receiptImagePath,             // اختياري
+
+    /// اختيارية
+    DateTime? warrantyStartDate,
+    DateTime? warrantyEndDate,
+
+    /// معرّف المستخدم: اختياري (بس عادة نمرّره)
+    String? userId,
+
+    /// مسار صورة الوصل: اختياري
+    String? receiptImagePath,
   }) async {
     final ref = _db.collection('Bills').doc();
 
@@ -29,11 +39,16 @@ class BillService {
       'shop_name': shopName,
       'purchase_date': _ts(purchaseDate),
       'total_amount': totalAmount,
-      'return_deadline': _ts(returnDeadline),
-      'exchange_deadline': _ts(exchangeDeadline),
+
+      // نضيفها فقط لو موجودة
+      if (returnDeadline != null)  'return_deadline': _ts(returnDeadline),
+      if (exchangeDeadline != null) 'exchange_deadline': _ts(exchangeDeadline),
+
       'warranty_coverage': warrantyCoverage,
+
       if (warrantyStartDate != null) 'warranty_start_date': _ts(warrantyStartDate),
       if (warrantyEndDate != null)   'warranty_end_date': _ts(warrantyEndDate),
+
       'receipt_image_path': receiptImagePath,
       'user_id': userId,
       'created_at': FieldValue.serverTimestamp(),
@@ -51,8 +66,11 @@ class BillService {
     String? shopName,
     DateTime? purchaseDate,
     num? totalAmount,
+
+    /// اختيارية
     DateTime? returnDeadline,
     DateTime? exchangeDeadline,
+
     bool? warrantyCoverage,
     DateTime? warrantyStartDate,
     DateTime? warrantyEndDate,
@@ -65,11 +83,15 @@ class BillService {
       if (shopName != null)          'shop_name': shopName,
       if (purchaseDate != null)      'purchase_date': _ts(purchaseDate),
       if (totalAmount != null)       'total_amount': totalAmount,
+
+      // لو أرسلت قيم يحدّثها، ولو ما أرسلت يتجاهلها
       if (returnDeadline != null)    'return_deadline': _ts(returnDeadline),
       if (exchangeDeadline != null)  'exchange_deadline': _ts(exchangeDeadline),
+
       if (warrantyCoverage != null)  'warranty_coverage': warrantyCoverage,
       if (warrantyStartDate != null) 'warranty_start_date': _ts(warrantyStartDate),
       if (warrantyEndDate != null)   'warranty_end_date': _ts(warrantyEndDate),
+
       if (receiptImagePath != null)  'receipt_image_path': receiptImagePath,
       'updated_at': FieldValue.serverTimestamp(),
     };
@@ -91,25 +113,26 @@ class BillService {
     return {'id': snap.id, ...?snap.data()};
   }
 
-  /// ستريم QuerySnapshot (لمكوّنات مثل StreamBuilder<QuerySnapshot<...>>)
+  /// ستريم QuerySnapshot (يناسب StreamBuilder<QuerySnapshot<...>>)
+  /// userId اختياري: لو null يرجع كل الفواتير (مفيد لبعض الشاشات الداخلية/الديبج)
   Stream<QuerySnapshot<Map<String, dynamic>>> streamBillsSnapshot({
-    required String userId,
+    String? userId,
     String orderBy = 'created_at',
     bool descending = true,
     int? limit,
   }) {
-    Query<Map<String, dynamic>> q = _db
-        .collection('Bills')
-        .where('user_id', isEqualTo: userId)
-        .orderBy(orderBy, descending: descending);
-
+    Query<Map<String, dynamic>> q = _db.collection('Bills');
+    if (userId != null) {
+      q = q.where('user_id', isEqualTo: userId);
+    }
+    q = q.orderBy(orderBy, descending: descending);
     if (limit != null) q = q.limit(limit);
     return q.snapshots();
   }
 
-  /// ستريم قائمة Maps جاهزة (لمكوّنات مثل StreamBuilder<List<Map>>)
+  /// ستريم قائمة Maps جاهزة (يناسب StreamBuilder<List<Map>>)
   Stream<List<Map<String, dynamic>>> streamBills({
-    required String userId,
+    String? userId,
     String orderBy = 'created_at',
     bool descending = true,
     int? limit,

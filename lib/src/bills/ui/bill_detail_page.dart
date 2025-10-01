@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
@@ -25,6 +26,11 @@ class _BillDetailPageState extends State<BillDetailPage> {
   late BillDetails _d;
   final _money = NumberFormat.currency(locale: 'en', symbol: 'SAR ', decimalDigits: 2);
 
+  // ===== receipt image state =====
+  String? _receiptPath;                // could be local path OR http url
+  bool _loadingReceipt = false;
+  String? _receiptError;
+
   DateTime? get _primaryEnd =>
       _d.returnDeadline ?? _d.exchangeDeadline ?? _d.warrantyExpiry;
 
@@ -32,6 +38,29 @@ class _BillDetailPageState extends State<BillDetailPage> {
   void initState() {
     super.initState();
     _d = widget.details;
+    _loadReceiptPath();
+  }
+
+  Future<void> _loadReceiptPath() async {
+    if (_d.id == null) return;
+    setState(() {
+      _loadingReceipt = true;
+      _receiptError = null;
+    });
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('Bills')
+          .doc(_d.id)
+          .get();
+      final path = snap.data()?['receipt_image_path'];
+      if (mounted) {
+        setState(() => _receiptPath = (path is String && path.trim().isNotEmpty) ? path : null);
+      }
+    } catch (e) {
+      if (mounted) setState(() => _receiptError = e.toString());
+    } finally {
+      if (mounted) setState(() => _loadingReceipt = false);
+    }
   }
 
   String _pretty(DateTime d) =>
@@ -240,6 +269,71 @@ class _BillDetailPageState extends State<BillDetailPage> {
     amountCtrl.dispose();
   }
 
+  // ===== UI helpers =====
+
+  Widget _receiptSection() {
+    if (_loadingReceipt) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 8),
+        child: LinearProgressIndicator(minHeight: 2),
+      );
+    }
+    if (_receiptError != null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Text('Failed to load receipt: $_receiptError', style: const TextStyle(color: Colors.red)),
+      );
+    }
+    if (_receiptPath == null) {
+      return const SizedBox.shrink(); // لا صورة محفوظة
+    }
+
+    final isNetwork = _receiptPath!.startsWith('http');
+    final imageWidget = ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: isNetwork
+          ? Image.network(_receiptPath!, height: 180, width: double.infinity, fit: BoxFit.cover)
+          : Image.file(File(_receiptPath!), height: 180, width: double.infinity, fit: BoxFit.cover),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 8),
+        Text('Receipt image', style: Theme.of(context).textTheme.titleSmall),
+        const SizedBox(height: 8),
+        GestureDetector(
+          onTap: _openFullScreenReceipt,
+          child: imageWidget,
+        ),
+        const SizedBox(height: 4),
+        TextButton.icon(
+          onPressed: _openFullScreenReceipt,
+          icon: const Icon(Icons.open_in_full),
+          label: const Text('Open'),
+        ),
+      ],
+    );
+  }
+
+  void _openFullScreenReceipt() {
+    if (_receiptPath == null) return;
+    final isNetwork = _receiptPath!.startsWith('http');
+    showDialog(
+      context: context,
+      builder: (_) => Dialog(
+        insetPadding: const EdgeInsets.all(12),
+        child: InteractiveViewer(
+          minScale: 0.5,
+          maxScale: 4,
+          child: isNetwork
+              ? Image.network(_receiptPath!, fit: BoxFit.contain)
+              : Image.file(File(_receiptPath!), fit: BoxFit.contain),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Directionality(
@@ -260,7 +354,7 @@ class _BillDetailPageState extends State<BillDetailPage> {
           ),
           title: const Text('Bill'),
           actions: const [
-            _LogoStub(), // اللوقو فوق
+            _LogoStub(),
           ],
         ),
 
@@ -322,6 +416,9 @@ class _BillDetailPageState extends State<BillDetailPage> {
                     if (_d.returnDeadline != null) _kv('Return deadline', _ymd(_d.returnDeadline)),
                     if (_d.exchangeDeadline != null) _kv('Exchange deadline', _ymd(_d.exchangeDeadline)),
                     if (_d.warrantyExpiry != null) _kv('Warranty expiry', _ymd(_d.warrantyExpiry)),
+
+                    // ===== receipt preview =====
+                    _receiptSection(),
                   ],
                 ),
               ),
@@ -329,7 +426,6 @@ class _BillDetailPageState extends State<BillDetailPage> {
           ],
         ),
 
-        // ===== زرار Edit + Delete تحت يمين =====
         floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
         floatingActionButton: Column(
           mainAxisSize: MainAxisSize.min,

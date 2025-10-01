@@ -1,25 +1,38 @@
+// ================== Home Screen (fixed filter/sort + no overflow) ==================
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../auth/login_screen.dart';
+import '../ocr/scan_receipt_page.dart';
+
 import '../bills/ui/bill_list_page.dart';
 import '../bills/ui/add_bill_page.dart';
 import '../bills/ui/bill_detail_page.dart';
+import '../bills/data/bill_service.dart';
+
 import '../warranties/ui/warranty_list_page.dart';
 import '../warranties/ui/add_warranty_page.dart';
 import '../warranties/ui/warranty_detail_page.dart';
-import '../ocr/scan_receipt_page.dart';
 
-import '../bills/data/bill_service.dart';
 import '../common/models.dart';
 
-/// عنصر داخلي موحّد لقائمة "All"
+// نوع العنصر في تبويب "الكل"
+enum _ItemType { bill, warranty }
+
+// عنصر داخلي موحّد لقائمة "All"
 class _HomeItem {
-  final DateTime? expiry;
+  final _ItemType type;
+  final DateTime? created; // created_at
+  final DateTime? expiry;  // أقرب انتهاء
   final Widget tile;
-  const _HomeItem({required this.expiry, required this.tile});
+  const _HomeItem({
+    required this.type,
+    required this.created,
+    required this.expiry,
+    required this.tile,
+  });
 }
 
 class HomeScreen extends StatefulWidget {
@@ -31,9 +44,12 @@ class HomeScreen extends StatefulWidget {
 }
 
 enum HomeFilter { all, bills, warranties }
+enum SortOption { newest, oldest, billsNear, warrantiesNear }
 
 class _HomeScreenState extends State<HomeScreen> {
   HomeFilter _filter = HomeFilter.all;
+  SortOption _sort = SortOption.newest;
+
   final _searchCtrl = TextEditingController();
 
   @override
@@ -110,23 +126,37 @@ class _HomeScreenState extends State<HomeScreen> {
                     _HeaderCard(
                       userEmail: user?.email ?? 'Guest',
                       filter: _filter,
-                      onChangeFilter: () => _showFilterSheet(context),
+                      sort: _sort,
+                      onPickFilter: _pickFilter,
+                      onPickSort: _pickSort,
                       searchCtrl: _searchCtrl,
                     ),
                     const SizedBox(height: 16),
 
-                    if (_filter == HomeFilter.all) ...[
-                      Text('All (nearest expiry first)', style: Theme.of(context).textTheme.titleMedium),
-                      const SizedBox(height: 8),
-                      _AllMixedList(userId: user?.uid, query: _searchCtrl.text),
-                    ] else ...[
-                      Text(
-                        _filter == HomeFilter.bills ? 'Recent bills' : 'Recent warranties',
-                        style: Theme.of(context).textTheme.titleMedium,
+                    Text(
+                      _sectionTitle(),
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 8),
+
+                    if (_filter == HomeFilter.all)
+                      _AllMixedList(
+                        userId: user?.uid,
+                        query: _searchCtrl.text,
+                        sort: _sort,
+                      )
+                    else if (_filter == HomeFilter.bills)
+                      _RecentBillsList(
+                        userId: user?.uid,
+                        query: _searchCtrl.text,
+                        sort: _sort,
+                      )
+                    else
+                      _RecentWarrantiesList(
+                        userId: user?.uid,
+                        query: _searchCtrl.text,
+                        sort: _sort,
                       ),
-                      const SizedBox(height: 8),
-                      _buildRecentList(userId: user?.uid),
-                    ],
                   ],
                 ),
               ),
@@ -137,26 +167,67 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ===== Streams (عامة) =====
-  Stream<QuerySnapshot<Map<String, dynamic>>> _billsStream({String? userId}) {
-    final col = FirebaseFirestore.instance.collection('Bills');
-    final base = userId != null ? col.where('user_id', isEqualTo: userId) : col;
-    return base.orderBy('created_at', descending: true).limit(25).snapshots();
+  // ===== Helpers =====
+  String _labelForFilter(HomeFilter f) => switch (f) {
+    HomeFilter.all => 'All',
+    HomeFilter.bills => 'Bills',
+    HomeFilter.warranties => 'Warranties',
+  };
+
+  String _labelForSort(SortOption s) => switch (s) {
+    SortOption.newest => 'Newest',
+    SortOption.oldest => 'Oldest',
+    SortOption.billsNear => 'Bills near expiry',
+    SortOption.warrantiesNear => 'Warranties near expiry',
+  };
+
+  String _sectionTitle() => '${_labelForFilter(_filter)} • ${_labelForSort(_sort).toLowerCase()}';
+
+  void _pickFilter() async {
+    final picked = await showModalBottomSheet<HomeFilter>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => ListView(
+        shrinkWrap: true,
+        children: [
+          for (final f in HomeFilter.values)
+            RadioListTile<HomeFilter>(
+              value: f,
+              groupValue: _filter,
+              title: Text(_labelForFilter(f)),
+              onChanged: (v) => Navigator.pop(context, v),
+            ),
+        ],
+      ),
+    );
+    if (picked != null) {
+      setState(() => _filter = picked);
+    }
   }
 
-  Stream<QuerySnapshot<Map<String, dynamic>>> _warrantiesStream({String? userId}) {
-    final col = FirebaseFirestore.instance.collection('Warranties');
-    final base = userId != null ? col.where('user_id', isEqualTo: userId) : col;
-    // مطابق للفهرس الحالي: user_id ASC + end_date DESC
-    return base.orderBy('end_date', descending: true).limit(25).snapshots();
-  }
-
-  // ===== Recent list (قسم واحد حسب الفلتر) =====
-  Widget _buildRecentList({String? userId}) {
-    if (_filter == HomeFilter.bills) {
-      return _RecentBillsList(userId: userId, query: _searchCtrl.text);
-    } else {
-      return _RecentWarrantiesList(userId: userId, query: _searchCtrl.text);
+  void _pickSort() async {
+    final picked = await showModalBottomSheet<SortOption>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => ListView(
+        shrinkWrap: true,
+        children: [
+          for (final s in SortOption.values)
+            RadioListTile<SortOption>(
+              value: s,
+              groupValue: _sort,
+              title: Text(_labelForSort(s)),
+              onChanged: (v) => Navigator.pop(context, v),
+            ),
+        ],
+      ),
+    );
+    if (picked != null) {
+      setState(() {
+        _sort = picked;
+        if (_sort == SortOption.billsNear) _filter = HomeFilter.bills;
+        if (_sort == SortOption.warrantiesNear) _filter = HomeFilter.warranties;
+      });
     }
   }
 
@@ -288,7 +359,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   context,
                   MaterialPageRoute(
                     builder: (_) => AddWarrantyPage(
-                      billId: null,
+                      billId: null, // بدون فاتورة
                       defaultStartDate: DateTime.now(),
                       defaultEndDate: DateTime.now().add(const Duration(days: 365)),
                     ),
@@ -301,37 +372,6 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       },
     );
-  }
-
-  void _showFilterSheet(BuildContext context) async {
-    final picked = await showModalBottomSheet<HomeFilter>(
-      context: context,
-      showDragHandle: true,
-      builder: (_) => ListView(
-        shrinkWrap: true,
-        children: [
-          RadioListTile<HomeFilter>(
-            value: HomeFilter.all,
-            groupValue: _filter,
-            title: const Text('All'),
-            onChanged: (v) => Navigator.pop(context, v),
-          ),
-          RadioListTile<HomeFilter>(
-            value: HomeFilter.warranties,
-            groupValue: _filter,
-            title: const Text('Warranties'),
-            onChanged: (v) => Navigator.pop(context, v),
-          ),
-          RadioListTile<HomeFilter>(
-            value: HomeFilter.bills,
-            groupValue: _filter,
-            title: const Text('Bills'),
-            onChanged: (v) => Navigator.pop(context, v),
-          ),
-        ],
-      ),
-    );
-    if (picked != null) setState(() => _filter = picked);
   }
 }
 
@@ -358,64 +398,88 @@ class _HeaderGradient extends StatelessWidget {
 class _HeaderCard extends StatelessWidget {
   final String userEmail;
   final HomeFilter filter;
-  final VoidCallback onChangeFilter;
+  final SortOption sort;
+  final VoidCallback onPickFilter;
+  final VoidCallback onPickSort;
   final TextEditingController searchCtrl;
 
   const _HeaderCard({
     required this.userEmail,
     required this.filter,
-    required this.onChangeFilter,
+    required this.sort,
+    required this.onPickFilter,
+    required this.onPickSort,
     required this.searchCtrl,
   });
 
+  String _labelForFilter(HomeFilter f) => switch (f) {
+    HomeFilter.all => 'All',
+    HomeFilter.bills => 'Bills',
+    HomeFilter.warranties => 'Warranties',
+  };
+
+  String _labelForSort(SortOption s) => switch (s) {
+    SortOption.newest => 'Newest',
+    SortOption.oldest => 'Oldest',
+    SortOption.billsNear => 'Bills near expiry',
+    SortOption.warrantiesNear => 'Warranties near expiry',
+  };
+
   @override
   Widget build(BuildContext context) {
-    String label = switch (filter) {
-      HomeFilter.all => 'All',
-      HomeFilter.bills => 'Bills',
-      HomeFilter.warranties => 'Warranties',
-    };
-
     return Card(
       elevation: 0,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: searchCtrl,
-                    decoration: const InputDecoration(
-                      hintText: 'Search by title / store / provider',
-                      prefixIcon: Icon(Icons.search),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                IconButton(
-                  tooltip: 'Filter',
-                  onPressed: onChangeFilter,
-                  icon: const Icon(Icons.tune),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            FilledButton.icon(
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const ScanReceiptPage()),
+            // Search
+            TextField(
+              controller: searchCtrl,
+              decoration: const InputDecoration(
+                hintText: 'Search by title / store / provider',
+                prefixIcon: Icon(Icons.search),
               ),
-              icon: const Icon(Icons.center_focus_strong),
-              label: const Text('Quick Add (OCR)'),
             ),
-            const SizedBox(height: 8),
-            Row(
+            const SizedBox(height: 10),
+
+            // Quick add
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FilledButton.icon(
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const ScanReceiptPage()),
+                ),
+                icon: const Icon(Icons.center_focus_strong),
+                label: const Text('Quick Add (OCR)'),
+              ),
+            ),
+
+            const SizedBox(height: 10),
+
+            // Filter + Sort chips (simple, clear) + email under Wrap to avoid overflow
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                Chip(label: Text(label), avatar: const Icon(Icons.filter_list)),
-                const Spacer(),
-                Text(userEmail, style: Theme.of(context).textTheme.bodySmall),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.filter_list),
+                  label: Text(_labelForFilter(filter)),
+                  onPressed: onPickFilter,
+                ),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.sort),
+                  label: Text(_labelForSort(sort)),
+                  onPressed: onPickSort,
+                ),
+                Text(
+                  userEmail,
+                  style: Theme.of(context).textTheme.bodySmall,
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
               ],
             ),
           ],
@@ -446,11 +510,11 @@ class _ItemTile extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 10),
       child: ListTile(
         onTap: onTap,
-        title: Text(title),
+        title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(subtitle),
+            Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
             const SizedBox(height: 6),
             Text(meta, style: Theme.of(context).textTheme.bodySmall),
           ],
@@ -566,7 +630,6 @@ class _BillPickerSheetState extends State<_BillPickerSheet> {
               ),
             ),
             const SizedBox(height: 8),
-
             Expanded(
               child: uid == null
                   ? const Center(child: Text('Please sign in to pick a bill.'))
@@ -623,13 +686,21 @@ class _BillPickerSheetState extends State<_BillPickerSheet> {
 class _RecentBillsList extends StatelessWidget {
   final String? userId;
   final String query;
-  const _RecentBillsList({required this.userId, required this.query});
+  final SortOption sort;
+  const _RecentBillsList({required this.userId, required this.query, required this.sort});
+
+  DateTime? _minDate(DateTime? a, DateTime? b) {
+    if (a == null) return b;
+    if (b == null) return a;
+    return a.isBefore(b) ? a : b;
+  }
 
   @override
   Widget build(BuildContext context) {
     final col = FirebaseFirestore.instance.collection('Bills');
     final base = userId != null ? col.where('user_id', isEqualTo: userId) : col;
-    final stream = base.orderBy('created_at', descending: true).limit(8).snapshots();
+
+    final stream = base.orderBy('created_at', descending: true).limit(50).snapshots();
 
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: stream,
@@ -637,7 +708,9 @@ class _RecentBillsList extends StatelessWidget {
         if (s.hasError) return const _EmptyHint(text: 'Error loading bills.');
         if (!s.hasData) return const Center(child: CircularProgressIndicator());
 
-        var docs = s.data!.docs;
+        var docs = s.data!.docs.toList();
+
+        // بحث
         final q = query.trim().toLowerCase();
         if (q.isNotEmpty) {
           docs = docs.where((d) {
@@ -648,6 +721,36 @@ class _RecentBillsList extends StatelessWidget {
           }).toList();
         }
         if (docs.isEmpty) return const _EmptyHint(text: 'No bills found.');
+
+        // فرز محلي
+        docs.sort((a, b) {
+          final da = a.data(); final db = b.data();
+          final ca = (da['created_at'] as Timestamp?)?.toDate();
+          final cb = (db['created_at'] as Timestamp?)?.toDate();
+          final ra = (da['return_deadline'] as Timestamp?)?.toDate();
+          final rb = (db['return_deadline'] as Timestamp?)?.toDate();
+          final wa = (da['warranty_end_date'] as Timestamp?)?.toDate();
+          final wb = (db['warranty_end_date'] as Timestamp?)?.toDate();
+
+          switch (sort) {
+            case SortOption.newest:
+              return (cb ?? DateTime(0)).compareTo(ca ?? DateTime(0));
+            case SortOption.oldest:
+              return (ca ?? DateTime(0)).compareTo(cb ?? DateTime(0));
+            case SortOption.billsNear:
+              final ea = _minDate(ra, wa);
+              final eb = _minDate(rb, wb);
+              if (ea == null && eb == null) return 0;
+              if (ea == null) return 1;
+              if (eb == null) return -1;
+              return ea.compareTo(eb);
+            case SortOption.warrantiesNear:
+            // لا معنى داخل Bills؛ اعتبرها newest
+              return (cb ?? DateTime(0)).compareTo(ca ?? DateTime(0));
+          }
+        });
+
+        docs = docs.take(12).toList();
 
         return Column(
           children: docs.map((doc) {
@@ -662,7 +765,7 @@ class _RecentBillsList extends StatelessWidget {
             final wEnd = (d['warranty_end_date'] as Timestamp?)?.toDate().toLocal();
 
             final details = BillDetails(
-              id: doc.id, // ✅ إضافة المعرّف
+              id: doc.id,
               title: title,
               product: shop,
               amount: amount ?? 0,
@@ -676,11 +779,7 @@ class _RecentBillsList extends StatelessWidget {
               subtitle: '$shop • ${amount ?? '-'}',
               meta: 'Tap to view or edit',
               trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.pushNamed(
-                context,
-                BillDetailPage.route,
-                arguments: details,
-              ),
+              onTap: () => Navigator.pushNamed(context, BillDetailPage.route, arguments: details),
             );
           }).toList(),
         );
@@ -692,7 +791,8 @@ class _RecentBillsList extends StatelessWidget {
 class _RecentWarrantiesList extends StatelessWidget {
   final String? userId;
   final String query;
-  const _RecentWarrantiesList({required this.userId, required this.query});
+  final SortOption sort;
+  const _RecentWarrantiesList({required this.userId, required this.query, required this.sort});
 
   String _fmt(DateTime? dt) =>
       dt == null ? '—' : '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
@@ -701,7 +801,8 @@ class _RecentWarrantiesList extends StatelessWidget {
   Widget build(BuildContext context) {
     final col = FirebaseFirestore.instance.collection('Warranties');
     final base = userId != null ? col.where('user_id', isEqualTo: userId) : col;
-    final stream = base.orderBy('end_date', descending: true).limit(8).snapshots();
+
+    final stream = base.orderBy('created_at', descending: true).limit(50).snapshots();
 
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: stream,
@@ -709,7 +810,9 @@ class _RecentWarrantiesList extends StatelessWidget {
         if (s.hasError) return const _EmptyHint(text: 'Error loading warranties.');
         if (!s.hasData) return const Center(child: CircularProgressIndicator());
 
-        var docs = s.data!.docs;
+        var docs = s.data!.docs.toList();
+
+        // بحث
         final q = query.trim().toLowerCase();
         if (q.isNotEmpty) {
           docs = docs.where((d) {
@@ -720,6 +823,32 @@ class _RecentWarrantiesList extends StatelessWidget {
           }).toList();
         }
         if (docs.isEmpty) return const _EmptyHint(text: 'No warranties found.');
+
+        // فرز
+        docs.sort((a, b) {
+          final da = a.data(); final db = b.data();
+          final ca = (da['created_at'] as Timestamp?)?.toDate();
+          final cb = (db['created_at'] as Timestamp?)?.toDate();
+          final ea = (da['end_date'] as Timestamp?)?.toDate();
+          final eb = (db['end_date'] as Timestamp?)?.toDate();
+
+          switch (sort) {
+            case SortOption.newest:
+              return (cb ?? DateTime(0)).compareTo(ca ?? DateTime(0));
+            case SortOption.oldest:
+              return (ca ?? DateTime(0)).compareTo(cb ?? DateTime(0));
+            case SortOption.warrantiesNear:
+              if (ea == null && eb == null) return 0;
+              if (ea == null) return 1;
+              if (eb == null) return -1;
+              return ea.compareTo(eb);
+            case SortOption.billsNear:
+            // لا معنى داخل Warranties؛ اعتبرها newest
+              return (cb ?? DateTime(0)).compareTo(ca ?? DateTime(0));
+          }
+        });
+
+        docs = docs.take(12).toList();
 
         return Column(
           children: docs.map((doc) {
@@ -760,37 +889,22 @@ class _RecentWarrantiesList extends StatelessWidget {
   }
 }
 
-/// قائمة مدموجة (Bills + Warranties) مرتبة حسب أقرب انتهاء
+/// قائمة مدموجة (Bills + Warranties) مع فرز بحسب الخيار
 class _AllMixedList extends StatelessWidget {
   final String? userId;
   final String query;
-  const _AllMixedList({required this.userId, required this.query});
+  final SortOption sort;
+  const _AllMixedList({required this.userId, required this.query, required this.sort});
 
-  DateTime? _asDateOnly(DateTime? d) => d == null ? null : DateTime(d.year, d.month, d.day);
+  DateTime? _dateOnly(DateTime? d) => d == null ? null : DateTime(d.year, d.month, d.day);
 
   DateTime? _minDate(DateTime? a, DateTime? b) {
-    if (a == null) return _asDateOnly(b);
-    if (b == null) return _asDateOnly(a);
-    final aa = _asDateOnly(a)!;
-    final bb = _asDateOnly(b)!;
+    if (a == null) return _dateOnly(b);
+    if (b == null) return _dateOnly(a);
+    final aa = _dateOnly(a)!;
+    final bb = _dateOnly(b)!;
     return aa.isBefore(bb) ? aa : bb;
   }
-
-  // أقرب انتهاء للفاتورة (الأقرب بين الإرجاع والضمان)
-  DateTime? _expiryForBill(Map<String, dynamic> d) {
-    final ret = (d['return_deadline'] as Timestamp?)?.toDate().toLocal();
-    final wEnd = (d['warranty_end_date'] as Timestamp?)?.toDate().toLocal();
-    return _minDate(ret, wEnd);
-  }
-
-  // انتهاء الضمان
-  DateTime? _expiryForWarranty(Map<String, dynamic> d) {
-    final end = (d['end_date'] as Timestamp?)?.toDate().toLocal();
-    return _asDateOnly(end);
-  }
-
-  String _fmt(DateTime? dt) =>
-      dt == null ? '—' : '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
 
   @override
   Widget build(BuildContext context) {
@@ -799,11 +913,13 @@ class _AllMixedList extends StatelessWidget {
     final warrCol = FirebaseFirestore.instance.collection('Warranties');
 
     final billsBase = uid != null ? billsCol.where('user_id', isEqualTo: uid) : billsCol;
-    final warrBase = uid != null ? warrCol.where('user_id', isEqualTo: uid) : warrCol;
+    final warrBase  = uid != null ? warrCol.where('user_id', isEqualTo: uid) : warrCol;
 
-    // نجلب كمية مناسبة ثم ندمج ونرتّب محلياً
-    final billsStream = billsBase.orderBy('created_at', descending: true).limit(25).snapshots();
-    final warrStream = warrBase.orderBy('end_date', descending: true).limit(25).snapshots();
+    final billsStream = billsBase.orderBy('created_at', descending: true).limit(50).snapshots();
+    final warrStream  = warrBase.orderBy('created_at', descending: true).limit(50).snapshots();
+
+    String _fmt(DateTime? dt) =>
+        dt == null ? '—' : '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
 
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: billsStream,
@@ -820,11 +936,12 @@ class _AllMixedList extends StatelessWidget {
             final q = query.trim().toLowerCase();
             final items = <_HomeItem>[];
 
-            // Bills -> _HomeItem
+            // Bills
             for (final doc in bSnap.data!.docs) {
               final d = doc.data();
               final title = (d['title'] ?? '—').toString();
-              final shop = (d['shop_name'] ?? '—').toString();
+              final shop  = (d['shop_name'] ?? '—').toString();
+
               if (q.isNotEmpty) {
                 final t = title.toLowerCase();
                 final s = shop.toLowerCase();
@@ -832,13 +949,15 @@ class _AllMixedList extends StatelessWidget {
               }
 
               final amountN = (d['total_amount'] as num?);
-              final amount = amountN?.toDouble();
+              final amount  = amountN?.toDouble();
+
+              final created = (d['created_at'] as Timestamp?)?.toDate().toLocal();
               final purchase = (d['purchase_date'] as Timestamp?)?.toDate().toLocal();
-              final ret = (d['return_deadline'] as Timestamp?)?.toDate().toLocal();
+              final ret  = (d['return_deadline'] as Timestamp?)?.toDate().toLocal();
               final wEnd = (d['warranty_end_date'] as Timestamp?)?.toDate().toLocal();
 
               final details = BillDetails(
-                id: doc.id, // ✅ بدل docId بـ id
+                id: doc.id,
                 title: title,
                 product: shop,
                 amount: amount ?? 0,
@@ -855,18 +974,21 @@ class _AllMixedList extends StatelessWidget {
                 onTap: () => Navigator.pushNamed(context, BillDetailPage.route, arguments: details),
               );
 
-              items.add(_HomeItem(expiry: _expiryForBill(d), tile: tile));
+              items.add(_HomeItem(
+                type: _ItemType.bill,
+                created: created,
+                expiry: _minDate(ret, wEnd),
+                tile: tile,
+              ));
             }
 
-            // Warranties -> _HomeItem
+            // Warranties
             for (final doc in wSnap.data!.docs) {
               final d = doc.data();
-              final provider = (d['provider']?.toString().trim().isNotEmpty == true)
-                  ? d['provider'].toString().trim()
-                  : 'Warranty';
-              final wTitle = (d['title']?.toString().trim().isNotEmpty == true)
-                  ? d['title'].toString().trim()
-                  : provider;
+              final provider =
+              (d['provider']?.toString().trim().isNotEmpty == true) ? d['provider'].toString().trim() : 'Warranty';
+              final wTitle =
+              (d['title']?.toString().trim().isNotEmpty == true) ? d['title'].toString().trim() : provider;
 
               if (q.isNotEmpty) {
                 final p = provider.toLowerCase();
@@ -874,8 +996,9 @@ class _AllMixedList extends StatelessWidget {
                 if (!(p.contains(q) || t.contains(q))) continue;
               }
 
-              final start = (d['start_date'] as Timestamp?)?.toDate().toLocal();
-              final end = (d['end_date'] as Timestamp?)?.toDate().toLocal();
+              final created = (d['created_at'] as Timestamp?)?.toDate().toLocal();
+              final start   = (d['start_date'] as Timestamp?)?.toDate().toLocal();
+              final end     = (d['end_date'] as Timestamp?)?.toDate().toLocal();
 
               final details = WarrantyDetails(
                 id: doc.id,
@@ -897,23 +1020,42 @@ class _AllMixedList extends StatelessWidget {
                 ),
               );
 
-              items.add(_HomeItem(expiry: _expiryForWarranty(d), tile: tile));
+              items.add(_HomeItem(
+                type: _ItemType.warranty,
+                created: created,
+                expiry: end,
+                tile: tile,
+              ));
             }
 
             if (items.isEmpty) return const _EmptyHint(text: 'No items found.');
 
-            // الترتيب: أقرب انتهاء أولاً (nulls في النهاية)
-            items.sort((a, b) {
-              final ax = a.expiry;
-              final bx = b.expiry;
-              if (ax == null && bx == null) return 0;
-              if (ax == null) return 1;
-              if (bx == null) return -1;
-              return ax.compareTo(bx); // تصاعدي = الأقرب أول
-            });
+            // فرز بحسب الخيار
+            int _cmpDateDesc(DateTime? a, DateTime? b) =>
+                (b ?? DateTime(0)).compareTo(a ?? DateTime(0));
+            int _cmpDateAsc(DateTime? a, DateTime? b) =>
+                (a ?? DateTime(9999, 12, 31)).compareTo(b ?? DateTime(9999, 12, 31));
 
-            // نعرض أول 12 عنصر
-            final toShow = items.take(12).map((e) => e.tile).toList();
+            List<_HomeItem> list = items;
+
+            switch (sort) {
+              case SortOption.newest:
+                list.sort((a, b) => _cmpDateDesc(a.created, b.created));
+                break;
+              case SortOption.oldest:
+                list.sort((a, b) => _cmpDateAsc(a.created, b.created));
+                break;
+              case SortOption.billsNear:
+                list = items.where((e) => e.type == _ItemType.bill).toList()
+                  ..sort((a, b) => _cmpDateAsc(a.expiry, b.expiry));
+                break;
+              case SortOption.warrantiesNear:
+                list = items.where((e) => e.type == _ItemType.warranty).toList()
+                  ..sort((a, b) => _cmpDateAsc(a.expiry, b.expiry));
+                break;
+            }
+
+            final toShow = list.take(12).map((e) => e.tile).toList();
             return Column(children: toShow);
           },
         );

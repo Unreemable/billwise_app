@@ -34,8 +34,8 @@ class _AddBillPageState extends State<AddBillPage> {
 
   // ===== Dates =====
   DateTime? _purchaseDate;
-  DateTime? _returnDeadline;
-  DateTime? _exchangeDeadline;
+  DateTime? _returnDeadline;   // اختيارية الآن
+  DateTime? _exchangeDeadline; // اختيارية الآن
 
   // Warranty flag only (لا ندير تواريخ الضمان هنا)
   bool _hasWarranty = false;
@@ -294,12 +294,11 @@ class _AddBillPageState extends State<AddBillPage> {
       return null;
     }
 
+    // الحقول المطلوبة فقط: العنوان + المتجر + المبلغ + تاريخ الشراء
     if (_titleCtrl.text.trim().isEmpty ||
         _shopCtrl.text.trim().isEmpty  ||
         _amountCtrl.text.trim().isEmpty||
-        _purchaseDate == null          ||
-        _returnDeadline == null        ||
-        _exchangeDeadline == null) {
+        _purchaseDate == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please complete all required fields')),
       );
@@ -321,8 +320,11 @@ class _AddBillPageState extends State<AddBillPage> {
         shopName: _shopCtrl.text.trim(),
         purchaseDate: _purchaseDate!,
         totalAmount: amount,
-        returnDeadline: _returnDeadline!,
-        exchangeDeadline: _exchangeDeadline!,
+
+        // اختيارية الآن
+        returnDeadline: _returnDeadline,
+        exchangeDeadline: _exchangeDeadline,
+
         warrantyCoverage: _hasWarranty,
         userId: uid,
         receiptImagePath: _receiptImagePath,
@@ -349,9 +351,7 @@ class _AddBillPageState extends State<AddBillPage> {
     if (_titleCtrl.text.trim().isEmpty ||
         _shopCtrl.text.trim().isEmpty  ||
         _amountCtrl.text.trim().isEmpty||
-        _purchaseDate == null          ||
-        _returnDeadline == null        ||
-        _exchangeDeadline == null) {
+        _purchaseDate == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please complete all required fields')),
       );
@@ -374,8 +374,11 @@ class _AddBillPageState extends State<AddBillPage> {
         shopName: _shopCtrl.text.trim(),
         purchaseDate: _purchaseDate!,
         totalAmount: amount,
-        returnDeadline: _returnDeadline!,
-        exchangeDeadline: _exchangeDeadline!,
+
+        // اختيارية الآن
+        returnDeadline: _returnDeadline,
+        exchangeDeadline: _exchangeDeadline,
+
         warrantyCoverage: _hasWarranty,
         receiptImagePath: _receiptImagePath,
       );
