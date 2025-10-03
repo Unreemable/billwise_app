@@ -1,3 +1,4 @@
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -34,8 +35,12 @@ class _AddBillPageState extends State<AddBillPage> {
 
   // ===== Dates =====
   DateTime? _purchaseDate;
-  DateTime? _returnDeadline;   // اختيارية الآن
-  DateTime? _exchangeDeadline; // اختيارية الآن
+  DateTime? _returnDeadline;   // اختيارية
+  DateTime? _exchangeDeadline; // اختيارية
+
+  // هل عدّلها المستخدم يدويًا؟ (عشان ما نعيد حسابها تلقائيًا)
+  bool _returnManual = false;
+  bool _exchangeManual = false;
 
   // Warranty flag only (لا ندير تواريخ الضمان هنا)
   bool _hasWarranty = false;
@@ -44,7 +49,7 @@ class _AddBillPageState extends State<AddBillPage> {
   DateTime? _ocrWarrantyStart;
   DateTime? _ocrWarrantyEnd;
 
-  // Policy days extracted from OCR
+  // Policy days extracted from OCR (لو موجودة نفضّلها على 3/7)
   int? _retDays; // return
   int? _exDays;  // exchange
 
@@ -110,6 +115,16 @@ class _AddBillPageState extends State<AddBillPage> {
 
   String _fmtOrDash(DateTime? d) => d == null ? '—' : _fmt.format(d);
 
+  // احسب افتراض 3/7 أيام بناءً على تاريخ الشراء
+  void _applyAutoWindowsFromPurchase(DateTime purchase) {
+    final defRet = _retDays ?? 3;
+    final defEx  = _exDays  ?? 7;
+
+    if (!_returnManual)   _returnDeadline   = _deadlineFrom(purchase, defRet, includeStart: false);
+    if (!_exchangeManual) _exchangeDeadline = _deadlineFrom(purchase, defEx,  includeStart: false);
+
+  }
+
   // ============ Lifecycle / data bootstrapping ============
   @override
   void didChangeDependencies() {
@@ -150,6 +165,10 @@ class _AddBillPageState extends State<AddBillPage> {
       _purchaseDate     = _parseDate(data['purchase_date']);
       _returnDeadline   = _parseDate(data['return_deadline']);
       _exchangeDeadline = _parseDate(data['exchange_deadline']);
+
+      // بما إن الفاتورة قديمة، نعتبر التواريخ الحالية "يدوية" حتى لا نعيد حسابها تلقائيًا لو تغيّر الشراء
+      _returnManual   = _returnDeadline != null;
+      _exchangeManual = _exchangeDeadline != null;
 
       _hasWarranty      = (data['warranty_coverage'] as bool?) ?? false;
       _receiptImagePath = (data['receipt_image_path'] as String?);
@@ -208,13 +227,10 @@ class _AddBillPageState extends State<AddBillPage> {
     _retDays ??= _extractDays(prefill['returnDays'] ?? prefill['returnPolicy'] ?? prefill['return_text'] ?? prefill['return'] ?? prefill['policy']);
     _exDays  ??= _extractDays(prefill['exchangeDays'] ?? prefill['exchangePolicy'] ?? prefill['exchange_text'] ?? prefill['exchange'] ?? prefill['policy']);
 
+    // إن وُجد تاريخ شراء ولم تُعط تواريخ، نحسب 3/7 تلقائيًا
     if (_purchaseDate != null) {
-      if (_retDays != null && _returnDeadline == null) {
-        _returnDeadline = _deadlineFrom(_purchaseDate!, _retDays!, includeStart: true);
-      }
-      if (_exDays != null && _exchangeDeadline == null) {
-        _exchangeDeadline = _deadlineFrom(_purchaseDate!, _exDays!, includeStart: true);
-      }
+      if (_returnDeadline == null)   _returnDeadline   = _deadlineFrom(_purchaseDate!, (_retDays ?? 3), includeStart: false);
+      if (_exchangeDeadline == null) _exchangeDeadline = _deadlineFrom(_purchaseDate!, (_exDays  ?? 7), includeStart: false);
     }
 
     _ocrWarrantyStart = _parseDate(prefill['warrantyStart']);
@@ -526,9 +542,7 @@ class _AddBillPageState extends State<AddBillPage> {
               controller: _amountCtrl,
               decoration: const InputDecoration(labelText: 'Amount (SAR)'),
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
-              ],
+              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
             ),
             const SizedBox(height: 12),
 
@@ -559,12 +573,7 @@ class _AddBillPageState extends State<AddBillPage> {
               onTap: () => _pickDate(context, _purchaseDate, (d) {
                 setState(() {
                   _purchaseDate = d;
-                  if (_retDays != null) {
-                    _returnDeadline = _deadlineFrom(d, _retDays!, includeStart: true);
-                  }
-                  if (_exDays != null) {
-                    _exchangeDeadline = _deadlineFrom(d, _exDays!, includeStart: true);
-                  }
+                  _applyAutoWindowsFromPurchase(d); // هذا يكفي
                 });
               }),
             ),
@@ -572,17 +581,45 @@ class _AddBillPageState extends State<AddBillPage> {
               title: const Text('Return deadline'),
               subtitle: Text(_fmtOrDash(_returnDeadline)),
               trailing: const Icon(Icons.event),
-              onTap: () => _pickDate(context, _returnDeadline, (d) {
-                setState(() => _returnDeadline = d);
-              }),
+              onTap: () => _pickDate(
+                context,
+                _returnDeadline ?? _purchaseDate ?? DateTime.now(),
+                    (d) => setState(() {
+                  _returnManual = true;   // ◀️ صار يدوي
+                  _returnDeadline = d;
+                }),
+              ),
+              onLongPress: () {
+                setState(() {
+                  _returnManual = false;
+                  _returnDeadline = null;
+                });
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Return deadline cleared')),
+                );
+              },
             ),
             ListTile(
               title: const Text('Exchange deadline'),
               subtitle: Text(_fmtOrDash(_exchangeDeadline)),
               trailing: const Icon(Icons.event_repeat),
-              onTap: () => _pickDate(context, _exchangeDeadline, (d) {
-                setState(() => _exchangeDeadline = d);
-              }),
+              onTap: () => _pickDate(
+                context,
+                _exchangeDeadline ?? _purchaseDate ?? DateTime.now(),
+                    (d) => setState(() {
+                  _exchangeManual = true; // ◀️ صار يدوي
+                  _exchangeDeadline = d;
+                }),
+              ),
+              onLongPress: () {
+                setState(() {
+                  _exchangeManual = false;
+                  _exchangeDeadline = null;
+                });
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Exchange deadline cleared')),
+                );
+              },
             ),
 
             const Divider(),
