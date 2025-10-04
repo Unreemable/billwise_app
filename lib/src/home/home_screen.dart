@@ -1,4 +1,4 @@
-// ================== Home Screen (fixed filter/sort + no overflow) ==================
+// ================== Home Screen (Wave header, search+actions, MIXED expiring list w/ search, fixed FAB vs keyboard) ==================
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -9,30 +9,35 @@ import '../ocr/scan_receipt_page.dart';
 
 import '../bills/ui/bill_list_page.dart';
 import '../bills/ui/add_bill_page.dart';
-import '../bills/ui/bill_detail_page.dart';
-import '../bills/data/bill_service.dart';
+import '../bills/ui/bill_detail_page.dart'; // تفاصيل الفاتورة
+import '../bills/data/bill_service.dart';    // BillService لبيكر الضمان
+import '../common/models.dart';              // BillDetails & WarrantyDetails
 
 import '../warranties/ui/warranty_list_page.dart';
 import '../warranties/ui/add_warranty_page.dart';
-import '../warranties/ui/warranty_detail_page.dart';
+import '../warranties/ui/warranty_detail_page.dart'; // تفاصيل الضمان
 
-import '../common/models.dart';
+// تدرّج موحّد للهيدر والشريط السفلي وزر الهوم
+const LinearGradient _kAppGradient = LinearGradient(
+  colors: [Color(0xFF6A73FF), Color(0xFFE6E9FF)],
+  begin: Alignment.topRight,
+  end: Alignment.bottomLeft,
+);
 
-// نوع العنصر في تبويب "الكل"
-enum _ItemType { bill, warranty }
+// ارتفاع الهيدر المموّج
+const double _kHeaderHeight = 200;
 
-// عنصر داخلي موحّد لقائمة "All"
-class _HomeItem {
-  final _ItemType type;
-  final DateTime? created; // created_at
-  final DateTime? expiry;  // أقرب انتهاء
-  final Widget tile;
-  const _HomeItem({
-    required this.type,
-    required this.created,
-    required this.expiry,
-    required this.tile,
-  });
+/// يمنع تحريك زر الـ FAB عند SnackBar/BottomSheet (توقيع Flutter الحديث)
+class _NoShiftFabAnimator extends FloatingActionButtonAnimator {
+  const _NoShiftFabAnimator();
+  @override
+  Offset getOffset({required Offset begin, required Offset end, required double progress}) => begin;
+  @override
+  Animation<double> getScaleAnimation({required Animation<double> parent}) =>
+      const AlwaysStoppedAnimation<double>(1.0);
+  @override
+  Animation<double> getRotationAnimation({required Animation<double> parent}) =>
+      const AlwaysStoppedAnimation<double>(0.0);
 }
 
 class HomeScreen extends StatefulWidget {
@@ -43,25 +48,28 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-enum HomeFilter { all, bills, warranties }
-enum SortOption { newest, oldest, billsNear, warrantiesNear }
-
 class _HomeScreenState extends State<HomeScreen> {
-  HomeFilter _filter = HomeFilter.all;
-  SortOption _sort = SortOption.newest;
-
   final _searchCtrl = TextEditingController();
+  int _selectedTab = 0; // 0=Home, 1=Warranties, 2=Bills
 
   @override
   void initState() {
     super.initState();
-    _searchCtrl.addListener(() => setState(() {}));
+    _searchCtrl.addListener(() => setState(() {})); // تشغيل الفلترة مباشرة
   }
 
   @override
   void dispose() {
     _searchCtrl.dispose();
     super.dispose();
+  }
+
+  String _greetName(User? u) {
+    final dn = u?.displayName?.trim();
+    if (dn != null && dn.isNotEmpty) return dn;
+    final email = u?.email ?? '';
+    if (email.contains('@')) return email.split('@').first;
+    return 'there';
   }
 
   @override
@@ -72,91 +80,72 @@ class _HomeScreenState extends State<HomeScreen> {
       textDirection: ui.TextDirection.ltr,
       child: Scaffold(
         extendBodyBehindAppBar: true,
-        appBar: AppBar(
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          actions: [
-            IconButton(
-              tooltip: 'Sign out',
-              onPressed: () async {
-                await FirebaseAuth.instance.signOut();
-                if (context.mounted) {
-                  Navigator.pushNamedAndRemoveUntil(
-                    context,
-                    LoginScreen.route,
-                        (_) => false,
-                  );
-                }
-              },
-              icon: const Icon(Icons.logout),
-            ),
-          ],
+        extendBody: true,
+        resizeToAvoidBottomInset: false, // ← يثبّت زر الهوم والشريط السفلي مع ظهور الكيبورد
+        floatingActionButtonAnimator: const _NoShiftFabAnimator(),
+        appBar: AppBar(backgroundColor: Colors.transparent, elevation: 0, toolbarHeight: 0),
+
+        // زر الهوم في المنتصف
+        floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+        floatingActionButton: _CenterHomeButton(
+          selected: _selectedTab == 0,
+          onTap: () => setState(() => _selectedTab = 0),
         ),
 
-        floatingActionButton: FloatingActionButton(
-          onPressed: () => _openAddChooser(context),
-          child: const Icon(Icons.add),
-        ),
-
-        bottomNavigationBar: NavigationBar(
-          selectedIndex: 0,
-          destinations: const [
-            NavigationDestination(icon: Icon(Icons.home_outlined), label: 'Home'),
-            NavigationDestination(icon: Icon(Icons.receipt_long), label: 'Bills'),
-            NavigationDestination(icon: Icon(Icons.verified), label: 'Warranties'),
-          ],
-          onDestinationSelected: (i) async {
-            if (i == 1) {
-              await Navigator.push(context, MaterialPageRoute(builder: (_) => const BillListPage()));
-            } else if (i == 2) {
-              await Navigator.push(context, MaterialPageRoute(builder: (_) => const WarrantyListPage()));
-            }
+        // الشريط السفلي المنحني
+        bottomNavigationBar: _CurvedBottomBar(
+          selectedTab: _selectedTab,
+          onTapLeft: () async {
+            setState(() => _selectedTab = 1);
+            await Navigator.push(context, MaterialPageRoute(builder: (_) => const WarrantyListPage()));
+            if (!context.mounted) return;
+            setState(() => _selectedTab = 0);
+          },
+          onTapRight: () async {
+            setState(() => _selectedTab = 2);
+            await Navigator.push(context, MaterialPageRoute(builder: (_) => const BillListPage()));
+            if (!context.mounted) return;
+            setState(() => _selectedTab = 0);
           },
         ),
 
         body: Stack(
           children: [
-            const _HeaderGradient(),
+            // الهيدر
+            _WaveHeader(
+              name: _greetName(user),
+              onLogout: () async {
+                await FirebaseAuth.instance.signOut();
+                if (!context.mounted) return;
+                Navigator.pushNamedAndRemoveUntil(context, LoginScreen.route, (_) => false);
+              },
+              onNotifications: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Notifications coming soon')),
+                );
+              },
+            ),
+
+            // المحتوى تحت الهيدر
             SafeArea(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
+                padding: EdgeInsets.fromLTRB(16, _kHeaderHeight - 24, 16, 32),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    _HeaderCard(
-                      userEmail: user?.email ?? 'Guest',
-                      filter: _filter,
-                      sort: _sort,
-                      onPickFilter: _pickFilter,
-                      onPickSort: _pickSort,
+                    _SearchAndActions(
                       searchCtrl: _searchCtrl,
+                      onQuickOCR: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ScanReceiptPage())),
+                      onAddBill:  () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AddBillPage())),
+                      onAddWarranty: () => _openWarrantyOptions(context, user?.uid),
                     ),
+
                     const SizedBox(height: 16),
 
-                    Text(
-                      _sectionTitle(),
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 8),
+                    // ===== قائمة مشتركة: أقرب 3 عناصر (فواتير + ضمانات) مع البحث =====
+                    _ExpiringMixed3(userId: user?.uid, query: _searchCtrl.text),
 
-                    if (_filter == HomeFilter.all)
-                      _AllMixedList(
-                        userId: user?.uid,
-                        query: _searchCtrl.text,
-                        sort: _sort,
-                      )
-                    else if (_filter == HomeFilter.bills)
-                      _RecentBillsList(
-                        userId: user?.uid,
-                        query: _searchCtrl.text,
-                        sort: _sort,
-                      )
-                    else
-                      _RecentWarrantiesList(
-                        userId: user?.uid,
-                        query: _searchCtrl.text,
-                        sort: _sort,
-                      ),
+                    const SizedBox(height: 16),
                   ],
                 ),
               ),
@@ -167,152 +156,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ===== Helpers =====
-  String _labelForFilter(HomeFilter f) => switch (f) {
-    HomeFilter.all => 'All',
-    HomeFilter.bills => 'Bills',
-    HomeFilter.warranties => 'Warranties',
-  };
-
-  String _labelForSort(SortOption s) => switch (s) {
-    SortOption.newest => 'Newest',
-    SortOption.oldest => 'Oldest',
-    SortOption.billsNear => 'Bills near expiry',
-    SortOption.warrantiesNear => 'Warranties near expiry',
-  };
-
-  String _sectionTitle() => '${_labelForFilter(_filter)} • ${_labelForSort(_sort).toLowerCase()}';
-
-  void _pickFilter() async {
-    final picked = await showModalBottomSheet<HomeFilter>(
-      context: context,
-      showDragHandle: true,
-      builder: (_) => ListView(
-        shrinkWrap: true,
-        children: [
-          for (final f in HomeFilter.values)
-            RadioListTile<HomeFilter>(
-              value: f,
-              groupValue: _filter,
-              title: Text(_labelForFilter(f)),
-              onChanged: (v) => Navigator.pop(context, v),
-            ),
-        ],
-      ),
-    );
-    if (picked != null) {
-      setState(() => _filter = picked);
-    }
-  }
-
-  void _pickSort() async {
-    final picked = await showModalBottomSheet<SortOption>(
-      context: context,
-      showDragHandle: true,
-      builder: (_) => ListView(
-        shrinkWrap: true,
-        children: [
-          for (final s in SortOption.values)
-            RadioListTile<SortOption>(
-              value: s,
-              groupValue: _sort,
-              title: Text(_labelForSort(s)),
-              onChanged: (v) => Navigator.pop(context, v),
-            ),
-        ],
-      ),
-    );
-    if (picked != null) {
-      setState(() {
-        _sort = picked;
-        if (_sort == SortOption.billsNear) _filter = HomeFilter.bills;
-        if (_sort == SortOption.warrantiesNear) _filter = HomeFilter.warranties;
-      });
-    }
-  }
-
-  // ===== Add chooser =====
-  Future<void> _openAddChooser(BuildContext context) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) {
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF6A73FF), Color(0xFFE6E9FF)],
-                    begin: Alignment.topRight,
-                    end: Alignment.bottomLeft,
-                  ),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Text(
-                  'Bill Information',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Colors.white),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: _BigActionButton(
-                      icon: Icons.receipt_long,
-                      title: 'Bill',
-                      subtitle: 'Return & exchange',
-                      onTap: () {
-                        Navigator.pop(ctx);
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => const AddBillPage()),
-                        );
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _BigActionButton(
-                      icon: Icons.verified_user,
-                      title: 'Warranty',
-                      subtitle: 'Any warranty',
-                      onTap: () {
-                        Navigator.pop(ctx);
-                        _openWarrantyOptions(context, uid);
-                      },
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              TextButton.icon(
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const ScanReceiptPage()),
-                  );
-                },
-                icon: const Icon(Icons.center_focus_strong),
-                label: const Text('Quick Add (OCR)'),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
+  // ===== Bottom sheet (Warranty: link or add only) =====
   Future<void> _openWarrantyOptions(BuildContext context, String? uid) async {
     await showModalBottomSheet<void>(
       context: context,
@@ -334,7 +178,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   builder: (_) => _BillPickerSheet(userId: uid),
                 );
                 if (billId == null) return;
-                if (!mounted) return;
+                if (!context.mounted) return;
 
                 await Navigator.push(
                   context,
@@ -359,7 +203,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   context,
                   MaterialPageRoute(
                     builder: (_) => AddWarrantyPage(
-                      billId: null, // بدون فاتورة
+                      billId: null,
                       defaultStartDate: DateTime.now(),
                       defaultEndDate: DateTime.now().add(const Duration(days: 365)),
                     ),
@@ -375,217 +219,598 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// ===== UI helpers =====
+// ================= Wave Header =================
 
-class _HeaderGradient extends StatelessWidget {
-  const _HeaderGradient();
+class _WaveHeader extends StatelessWidget {
+  final String name;
+  final VoidCallback onLogout;
+  final VoidCallback onNotifications;
 
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 220,
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Color(0xFF6A73FF), Color(0xFFE6E9FF)],
-          begin: Alignment.topRight,
-          end: Alignment.bottomLeft,
-        ),
-      ),
-    );
-  }
-}
-
-class _HeaderCard extends StatelessWidget {
-  final String userEmail;
-  final HomeFilter filter;
-  final SortOption sort;
-  final VoidCallback onPickFilter;
-  final VoidCallback onPickSort;
-  final TextEditingController searchCtrl;
-
-  const _HeaderCard({
-    required this.userEmail,
-    required this.filter,
-    required this.sort,
-    required this.onPickFilter,
-    required this.onPickSort,
-    required this.searchCtrl,
+  const _WaveHeader({
+    required this.name,
+    required this.onLogout,
+    required this.onNotifications,
   });
 
-  String _labelForFilter(HomeFilter f) => switch (f) {
-    HomeFilter.all => 'All',
-    HomeFilter.bills => 'Bills',
-    HomeFilter.warranties => 'Warranties',
-  };
-
-  String _labelForSort(SortOption s) => switch (s) {
-    SortOption.newest => 'Newest',
-    SortOption.oldest => 'Oldest',
-    SortOption.billsNear => 'Bills near expiry',
-    SortOption.warrantiesNear => 'Warranties near expiry',
-  };
-
   @override
   Widget build(BuildContext context) {
-    return Card(
-      elevation: 0,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            // Search
-            TextField(
-              controller: searchCtrl,
-              decoration: const InputDecoration(
-                hintText: 'Search by title / store / provider',
-                prefixIcon: Icon(Icons.search),
-              ),
-            ),
-            const SizedBox(height: 10),
-
-            // Quick add
-            Align(
-              alignment: Alignment.centerLeft,
-              child: FilledButton.icon(
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const ScanReceiptPage()),
-                ),
-                icon: const Icon(Icons.center_focus_strong),
-                label: const Text('Quick Add (OCR)'),
-              ),
-            ),
-
-            const SizedBox(height: 10),
-
-            // Filter + Sort chips (simple, clear) + email under Wrap to avoid overflow
-            Wrap(
-              spacing: 8,
-              runSpacing: 6,
-              crossAxisAlignment: WrapCrossAlignment.center,
+    return ClipPath(
+      clipper: _WaveClipper(),
+      child: Container(
+        height: _kHeaderHeight,
+        decoration: BoxDecoration(gradient: _kAppGradient),
+        child: SafeArea(
+          bottom: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.filter_list),
-                  label: Text(_labelForFilter(filter)),
-                  onPressed: onPickFilter,
+                Row(
+                  children: [
+                    Expanded(
+                      child: Row(
+                        children: [
+                          _ProfileAvatar(name: name),
+                          const SizedBox(width: 10),
+                          Flexible(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Hello,', style: Theme.of(context).textTheme.labelLarge?.copyWith(color: Colors.white)),
+                                Text(
+                                  name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        _BellButton(onTap: onNotifications),
+                        const SizedBox(width: 4),
+                        IconButton(
+                          tooltip: 'Sign out',
+                          onPressed: onLogout,
+                          icon: const Icon(Icons.logout, color: Colors.white),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.sort),
-                  label: Text(_labelForSort(sort)),
-                  onPressed: onPickSort,
-                ),
-                Text(
-                  userEmail,
-                  style: Theme.of(context).textTheme.bodySmall,
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                ),
+                const Spacer(),
               ],
             ),
-          ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _ItemTile extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final String meta;
-  final Widget trailing;
-  final VoidCallback onTap;
+class _WaveClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) {
+    final Path path = Path();
+    path.lineTo(0, size.height - 50);
 
-  const _ItemTile({
-    required this.title,
-    required this.subtitle,
-    required this.meta,
-    required this.trailing,
-    required this.onTap,
+    final firstControlPoint = Offset(size.width * 0.25, size.height - 15);
+    final firstEndPoint     = Offset(size.width * 0.5,  size.height - 28);
+    path.quadraticBezierTo(firstControlPoint.dx, firstControlPoint.dy, firstEndPoint.dx, firstEndPoint.dy);
+
+    final secondControlPoint = Offset(size.width * 0.75, size.height - 42);
+    final secondEndPoint     = Offset(size.width,       size.height - 18);
+    path.quadraticBezierTo(secondControlPoint.dx, secondControlPoint.dy, secondEndPoint.dx, secondEndPoint.dy);
+
+    path.lineTo(size.width, 0);
+    path.close();
+    return path;
+  }
+
+  @override
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
+}
+
+class _ProfileAvatar extends StatelessWidget {
+  final String name;
+  const _ProfileAvatar({required this.name});
+
+  @override
+  Widget build(BuildContext context) {
+    String initials = 'U';
+    final parts = name.trim().split(' ');
+    if (parts.isNotEmpty && parts.first.isNotEmpty) {
+      initials = parts.first.characters.first.toUpperCase();
+    }
+    return Container(
+      width: 42,
+      height: 42,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.white.withValues(alpha: 0.9),
+        boxShadow: [
+          BoxShadow(
+            blurRadius: 10,
+            color: Colors.black.withValues(alpha: 0.08),
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        initials,
+        style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Colors.black87, fontWeight: FontWeight.w700),
+      ),
+    );
+  }
+}
+
+class _BellButton extends StatelessWidget {
+  final VoidCallback onTap;
+  const _BellButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        IconButton(tooltip: 'Notifications', onPressed: onTap, icon: const Icon(Icons.notifications, color: Colors.white)),
+        Positioned(
+          right: 8,
+          top: 8,
+          child: Container(width: 8, height: 8, decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle)),
+        ),
+      ],
+    );
+  }
+}
+
+// =================== Search + Round Actions ===================
+
+class _SearchAndActions extends StatelessWidget {
+  final TextEditingController searchCtrl;
+  final VoidCallback onQuickOCR;
+  final VoidCallback onAddBill;
+  final VoidCallback onAddWarranty;
+
+  const _SearchAndActions({
+    required this.searchCtrl,
+    required this.onQuickOCR,
+    required this.onAddBill,
+    required this.onAddWarranty,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      child: ListTile(
-        onTap: onTap,
-        title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
+      children: [
+        TextField(
+          controller: searchCtrl,
+          decoration: InputDecoration(
+            hintText: 'Search by title / store / provider',
+            prefixIcon: const Icon(Icons.search),
+            filled: true,
+            fillColor: Colors.white,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(color: Colors.black.withValues(alpha: 0.08)),
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
-            const SizedBox(height: 6),
-            Text(meta, style: Theme.of(context).textTheme.bodySmall),
+            _RoundAction(icon: Icons.center_focus_strong, label: 'Quick Add\n(OCR)', onTap: onQuickOCR),
+            _RoundAction(icon: Icons.receipt_long, label: 'Bill', onTap: onAddBill),
+            _RoundAction(icon: Icons.verified_user, label: 'Warranty', onTap: onAddWarranty),
           ],
         ),
-        trailing: trailing,
-      ),
+      ],
     );
   }
 }
 
-class _EmptyHint extends StatelessWidget {
-  final String text;
-  const _EmptyHint({required this.text});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 24),
-      child: Center(
-        child: Text(
-          text,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey),
-          textAlign: TextAlign.center,
-        ),
-      ),
-    );
-  }
-}
-
-class _BigActionButton extends StatelessWidget {
+class _RoundAction extends StatelessWidget {
   final IconData icon;
-  final String title;
-  final String subtitle;
+  final String label;
   final VoidCallback onTap;
 
-  const _BigActionButton({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
+  const _RoundAction({required this.icon, required this.label, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Ink(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surface,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              blurRadius: 8,
-              color: Colors.black.withOpacity(0.05),
-              offset: const Offset(0, 2),
+      borderRadius: BorderRadius.circular(56),
+      child: Column(
+        children: [
+          Ink(
+            width: 88,
+            height: 88,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  blurRadius: 10,
+                  color: Colors.black.withValues(alpha: 0.06),
+                  offset: const Offset(0, 2),
+                ),
+              ],
             ),
-          ],
+            child: Icon(icon, size: 34, color: Colors.black87),
+          ),
+          const SizedBox(height: 8),
+          Text(label, textAlign: TextAlign.center, style: theme.textTheme.bodySmall?.copyWith(color: Colors.black87)),
+        ],
+      ),
+    );
+  }
+}
+
+// ================= القائمة المشتركة (فواتير + ضمانات) — 3 فقط + بحث =================
+
+class _ExpiringMixed3 extends StatelessWidget {
+  final String? userId;
+  final String query;
+  const _ExpiringMixed3({required this.userId, required this.query});
+
+  String _fmt(DateTime dt) =>
+      '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+  DateTime _only(DateTime d) => DateTime(d.year, d.month, d.day);
+
+  @override
+  Widget build(BuildContext context) {
+    final uid = userId;
+    final billsCol = FirebaseFirestore.instance.collection('Bills');
+    final warrCol  = FirebaseFirestore.instance.collection('Warranties');
+
+    final billsBase = uid != null ? billsCol.where('user_id', isEqualTo: uid) : billsCol;
+    final warrBase  = uid != null ? warrCol.where('user_id', isEqualTo: uid) : warrCol;
+
+    final billsStream = billsBase.orderBy('created_at', descending: true).limit(200).snapshots();
+    final warrStream  = warrBase.orderBy('created_at', descending: true).limit(200).snapshots();
+
+    String status(DateTime todayOnly, DateTime e) {
+      final diff = e.difference(todayOnly).inDays;
+      if (diff == 0) return 'Due today';
+      if (diff > 0) return 'In $diff day${diff == 1 ? '' : 's'}';
+      final a = diff.abs();
+      return '$a day${a == 1 ? '' : 's'} ago';
+    }
+
+    Color sColor(DateTime todayOnly, DateTime e) {
+      final diff = e.difference(todayOnly).inDays;
+      if (diff < 0) return Colors.red;
+      if (diff == 0 || diff <= 7) return Colors.orange;
+      return Colors.green;
+    }
+
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: billsStream,
+      builder: (context, bSnap) {
+        if (bSnap.hasError) return const SizedBox.shrink();
+        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: warrStream,
+          builder: (context, wSnap) {
+            if (wSnap.hasError) return const SizedBox.shrink();
+            if (!bSnap.hasData || !wSnap.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            final now = DateTime.now();
+            final todayOnly = DateTime(now.year, now.month, now.day);
+
+            // نجمع الكل
+            final items = <Map<String, dynamic>>[];
+
+            // Bills
+            for (final doc in bSnap.data!.docs) {
+              final d = doc.data();
+              final title = (d['title'] ?? '—').toString();
+              final shop  = (d['shop_name'] ?? '').toString();
+
+              final purchase = (d['purchase_date'] as Timestamp?)?.toDate().toLocal();
+              final ret  = (d['return_deadline'] as Timestamp?)?.toDate().toLocal();
+              final wEnd = (d['warranty_end_date'] as Timestamp?)?.toDate().toLocal();
+
+              // أقرب انتهاء للفواتير
+              DateTime? expiry;
+              if (ret != null && wEnd != null) {
+                expiry = ret.isBefore(wEnd) ? ret : wEnd;
+              } else {
+                expiry = ret ?? wEnd;
+              }
+              if (expiry == null) continue;
+
+              final amountN = (d['total_amount'] as num?);
+              final amount  = amountN?.toDouble() ?? 0.0;
+
+              items.add({
+                'type': 'bill',
+                'id': doc.id,
+                'title': title,
+                'subtitle': shop,
+                'purchase': purchase,
+                'ret': ret,
+                'wEnd': wEnd,
+                'amount': amount,
+                'expiry': _only(expiry),
+              });
+            }
+
+            // Warranties
+            for (final doc in wSnap.data!.docs) {
+              final d = doc.data();
+              final provider = (d['provider']?.toString().trim().isNotEmpty == true)
+                  ? d['provider'].toString().trim()
+                  : 'Warranty';
+              final wTitle = (d['title']?.toString().trim().isNotEmpty == true)
+                  ? d['title'].toString().trim()
+                  : provider;
+
+              final start = (d['start_date'] as Timestamp?)?.toDate().toLocal();
+              final end   = (d['end_date']   as Timestamp?)?.toDate().toLocal();
+              if (end == null) continue;
+
+              items.add({
+                'type': 'warranty',
+                'id': doc.id,
+                'title': provider,
+                'subtitle': wTitle,
+                'start': start,
+                'end': _only(end),
+                'expiry': _only(end),
+              });
+            }
+
+            // -------- البحث --------
+            final q = query.trim().toLowerCase();
+            if (q.isNotEmpty) {
+              items.retainWhere((e) {
+                final t = (e['title'] as String).toLowerCase();
+                final s = (e['subtitle'] as String).toLowerCase();
+                return t.contains(q) || s.contains(q);
+              });
+            }
+            // -----------------------
+
+            if (items.isEmpty) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text('Expiring soon', style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  Card(
+                    elevation: 0,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text(
+                        q.isEmpty ? 'No items with deadlines.' : 'No results for "$q".',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            }
+
+            // فرز وتحديد 3 فقط: نفضّل المستقبلية ثم نكمّل من المنتهية
+            final upcoming = items.where((e) => !(e['expiry'] as DateTime).isBefore(todayOnly)).toList()
+              ..sort((a, b) => (a['expiry'] as DateTime).compareTo(b['expiry'] as DateTime));
+            final past = items.where((e) => (e['expiry'] as DateTime).isBefore(todayOnly)).toList()
+              ..sort((a, b) => (b['expiry'] as DateTime).compareTo(a['expiry'] as DateTime));
+
+            final selected = <Map<String, dynamic>>[]
+              ..addAll(upcoming.take(3));
+            if (selected.length < 3) selected.addAll(past.take(3 - selected.length));
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('Expiring soon', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                ...selected.map((e) {
+                  final type = e['type'] as String;
+                  final expiry = e['expiry'] as DateTime;
+                  final stx = status(todayOnly, expiry);
+                  final scolor = sColor(todayOnly, expiry);
+
+                  final leadingIcon = type == 'bill' ? Icons.receipt_long : Icons.verified_user;
+
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: ListTile(
+                      leading: Icon(leadingIcon),
+                      title: Text(e['title'] as String, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      subtitle: Text((e['subtitle'] as String).isEmpty ? '—' : (e['subtitle'] as String),
+                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                      trailing: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(_fmt(expiry), style: Theme.of(context).textTheme.labelMedium),
+                          const SizedBox(height: 2),
+                          Text(stx, style: TextStyle(fontSize: 11, color: scolor)),
+                        ],
+                      ),
+                      onTap: () {
+                        if (type == 'bill') {
+                          final details = BillDetails(
+                            id: e['id'] as String,
+                            title: e['title'] as String,
+                            product: e['subtitle'] as String,
+                            amount: (e['amount'] as double?) ?? 0.0,
+                            purchaseDate: (e['purchase'] as DateTime?) ?? DateTime.now(),
+                            returnDeadline: e['ret'] as DateTime?,
+                            warrantyExpiry: e['wEnd'] as DateTime?,
+                          );
+                          Navigator.pushNamed(context, BillDetailPage.route, arguments: details);
+                        } else {
+                          final details = WarrantyDetails(
+                            id: e['id'] as String,
+                            product: e['title'] as String,   // provider
+                            title: e['subtitle'] as String,  // warranty title
+                            warrantyStart: (e['start'] as DateTime?) ?? DateTime.now(),
+                            warrantyExpiry: expiry,
+                            returnDeadline: null,
+                          );
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => WarrantyDetailPage(details: details)),
+                          );
+                        }
+                      },
+                    ),
+                  );
+                }),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+// ================= Bottom curved bar + center Home button =================
+
+class _CurvedBottomBar extends StatelessWidget {
+  final int selectedTab; // 0 home, 1 warr, 2 bills
+  final VoidCallback onTapLeft;
+  final VoidCallback onTapRight;
+
+  const _CurvedBottomBar({
+    required this.selectedTab,
+    required this.onTapLeft,
+    required this.onTapRight,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return BottomAppBar(
+      shape: const AutomaticNotchedShape(
+        RoundedRectangleBorder(
+          borderRadius: BorderRadius.only(topLeft: Radius.circular(26), topRight: Radius.circular(26)),
         ),
+        CircleBorder(),
+      ),
+      clipBehavior: Clip.antiAlias,
+      notchMargin: 8,
+      elevation: 12,
+      child: DecoratedBox(
+        decoration: BoxDecoration(gradient: _kAppGradient),
+        child: SafeArea(
+          top: false,
+          child: SizedBox(
+            height: 64,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: _BottomItem(
+                        icon: Icons.verified,
+                        label: 'Warranties',
+                        selected: selectedTab == 1,
+                        onTap: onTapLeft,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 64),
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: _BottomItem(
+                        icon: Icons.receipt_long,
+                        label: 'Bills',
+                        selected: selectedTab == 2,
+                        onTap: onTapRight,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BottomItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _BottomItem({required this.icon, required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final textStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
+      color: Colors.white,
+      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+    );
+
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        transform: Matrix4.translationValues(0, selected ? -4 : 0, 0),
+        padding: const EdgeInsets.only(bottom: 4),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 32),
-            const SizedBox(height: 8),
-            Text(title, style: theme.textTheme.titleMedium),
-            const SizedBox(height: 4),
-            Text(subtitle, style: theme.textTheme.bodySmall),
+            Icon(icon, color: Colors.white, size: selected ? 26 : 24),
+            const SizedBox(height: 2),
+            Text(label, style: textStyle),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _CenterHomeButton extends StatelessWidget {
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _CenterHomeButton({required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        transform: Matrix4.translationValues(0, selected ? -6 : 0, 0),
+        width: 64,
+        height: 64,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: _kAppGradient,
+          border: Border.all(color: Colors.white, width: 4),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 12, offset: const Offset(0, 4)),
+          ],
+        ),
+        child: const Icon(Icons.home_filled, color: Colors.white, size: 28),
       ),
     );
   }
@@ -622,10 +847,7 @@ class _BillPickerSheetState extends State<_BillPickerSheet> {
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
               child: TextField(
                 controller: _search,
-                decoration: const InputDecoration(
-                  hintText: 'Search bills...',
-                  prefixIcon: Icon(Icons.search),
-                ),
+                decoration: const InputDecoration(hintText: 'Search bills...', prefixIcon: Icon(Icons.search)),
                 onChanged: (_) => setState(() {}),
               ),
             ),
@@ -650,9 +872,7 @@ class _BillPickerSheetState extends State<_BillPickerSheet> {
                     }).toList();
                   }
 
-                  if (docs.isEmpty) {
-                    return const Center(child: Text('No bills found.'));
-                  }
+                  if (docs.isEmpty) return const Center(child: Text('No bills found.'));
 
                   return ListView.separated(
                     itemCount: docs.length,
@@ -677,389 +897,6 @@ class _BillPickerSheetState extends State<_BillPickerSheet> {
           ],
         ),
       ),
-    );
-  }
-}
-
-// ===== Small lists used on Home =====
-
-class _RecentBillsList extends StatelessWidget {
-  final String? userId;
-  final String query;
-  final SortOption sort;
-  const _RecentBillsList({required this.userId, required this.query, required this.sort});
-
-  DateTime? _minDate(DateTime? a, DateTime? b) {
-    if (a == null) return b;
-    if (b == null) return a;
-    return a.isBefore(b) ? a : b;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final col = FirebaseFirestore.instance.collection('Bills');
-    final base = userId != null ? col.where('user_id', isEqualTo: userId) : col;
-
-    final stream = base.orderBy('created_at', descending: true).limit(50).snapshots();
-
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: stream,
-      builder: (context, s) {
-        if (s.hasError) return const _EmptyHint(text: 'Error loading bills.');
-        if (!s.hasData) return const Center(child: CircularProgressIndicator());
-
-        var docs = s.data!.docs.toList();
-
-        // بحث
-        final q = query.trim().toLowerCase();
-        if (q.isNotEmpty) {
-          docs = docs.where((d) {
-            final data = d.data();
-            final title = (data['title'] ?? '').toString().toLowerCase();
-            final shop = (data['shop_name'] ?? '').toString().toLowerCase();
-            return title.contains(q) || shop.contains(q);
-          }).toList();
-        }
-        if (docs.isEmpty) return const _EmptyHint(text: 'No bills found.');
-
-        // فرز محلي
-        docs.sort((a, b) {
-          final da = a.data(); final db = b.data();
-          final ca = (da['created_at'] as Timestamp?)?.toDate();
-          final cb = (db['created_at'] as Timestamp?)?.toDate();
-          final ra = (da['return_deadline'] as Timestamp?)?.toDate();
-          final rb = (db['return_deadline'] as Timestamp?)?.toDate();
-          final wa = (da['warranty_end_date'] as Timestamp?)?.toDate();
-          final wb = (db['warranty_end_date'] as Timestamp?)?.toDate();
-
-          switch (sort) {
-            case SortOption.newest:
-              return (cb ?? DateTime(0)).compareTo(ca ?? DateTime(0));
-            case SortOption.oldest:
-              return (ca ?? DateTime(0)).compareTo(cb ?? DateTime(0));
-            case SortOption.billsNear:
-              final ea = _minDate(ra, wa);
-              final eb = _minDate(rb, wb);
-              if (ea == null && eb == null) return 0;
-              if (ea == null) return 1;
-              if (eb == null) return -1;
-              return ea.compareTo(eb);
-            case SortOption.warrantiesNear:
-            // لا معنى داخل Bills؛ اعتبرها newest
-              return (cb ?? DateTime(0)).compareTo(ca ?? DateTime(0));
-          }
-        });
-
-        docs = docs.take(12).toList();
-
-        return Column(
-          children: docs.map((doc) {
-            final d = doc.data();
-            final title = (d['title'] ?? '—').toString();
-            final shop = (d['shop_name'] ?? '—').toString();
-            final amountN = (d['total_amount'] as num?);
-            final amount = amountN?.toDouble();
-
-            final purchase = (d['purchase_date'] as Timestamp?)?.toDate().toLocal();
-            final ret = (d['return_deadline'] as Timestamp?)?.toDate().toLocal();
-            final wEnd = (d['warranty_end_date'] as Timestamp?)?.toDate().toLocal();
-
-            final details = BillDetails(
-              id: doc.id,
-              title: title,
-              product: shop,
-              amount: amount ?? 0,
-              purchaseDate: purchase ?? DateTime.now(),
-              returnDeadline: ret,
-              warrantyExpiry: wEnd,
-            );
-
-            return _ItemTile(
-              title: title,
-              subtitle: '$shop • ${amount ?? '-'}',
-              meta: 'Tap to view or edit',
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.pushNamed(context, BillDetailPage.route, arguments: details),
-            );
-          }).toList(),
-        );
-      },
-    );
-  }
-}
-
-class _RecentWarrantiesList extends StatelessWidget {
-  final String? userId;
-  final String query;
-  final SortOption sort;
-  const _RecentWarrantiesList({required this.userId, required this.query, required this.sort});
-
-  String _fmt(DateTime? dt) =>
-      dt == null ? '—' : '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
-
-  @override
-  Widget build(BuildContext context) {
-    final col = FirebaseFirestore.instance.collection('Warranties');
-    final base = userId != null ? col.where('user_id', isEqualTo: userId) : col;
-
-    final stream = base.orderBy('created_at', descending: true).limit(50).snapshots();
-
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: stream,
-      builder: (context, s) {
-        if (s.hasError) return const _EmptyHint(text: 'Error loading warranties.');
-        if (!s.hasData) return const Center(child: CircularProgressIndicator());
-
-        var docs = s.data!.docs.toList();
-
-        // بحث
-        final q = query.trim().toLowerCase();
-        if (q.isNotEmpty) {
-          docs = docs.where((d) {
-            final data = d.data();
-            final provider = (data['provider'] ?? '').toString().toLowerCase();
-            final title = (data['title'] ?? '').toString().toLowerCase();
-            return provider.contains(q) || title.contains(q);
-          }).toList();
-        }
-        if (docs.isEmpty) return const _EmptyHint(text: 'No warranties found.');
-
-        // فرز
-        docs.sort((a, b) {
-          final da = a.data(); final db = b.data();
-          final ca = (da['created_at'] as Timestamp?)?.toDate();
-          final cb = (db['created_at'] as Timestamp?)?.toDate();
-          final ea = (da['end_date'] as Timestamp?)?.toDate();
-          final eb = (db['end_date'] as Timestamp?)?.toDate();
-
-          switch (sort) {
-            case SortOption.newest:
-              return (cb ?? DateTime(0)).compareTo(ca ?? DateTime(0));
-            case SortOption.oldest:
-              return (ca ?? DateTime(0)).compareTo(cb ?? DateTime(0));
-            case SortOption.warrantiesNear:
-              if (ea == null && eb == null) return 0;
-              if (ea == null) return 1;
-              if (eb == null) return -1;
-              return ea.compareTo(eb);
-            case SortOption.billsNear:
-            // لا معنى داخل Warranties؛ اعتبرها newest
-              return (cb ?? DateTime(0)).compareTo(ca ?? DateTime(0));
-          }
-        });
-
-        docs = docs.take(12).toList();
-
-        return Column(
-          children: docs.map((doc) {
-            final d = doc.data();
-
-            final provider =
-            (d['provider']?.toString().trim().isNotEmpty == true) ? d['provider'].toString().trim() : 'Warranty';
-            final wTitle =
-            (d['title']?.toString().trim().isNotEmpty == true) ? d['title'].toString().trim() : provider;
-
-            final start = (d['start_date'] as Timestamp?)?.toDate().toLocal();
-            final end = (d['end_date'] as Timestamp?)?.toDate().toLocal();
-
-            return _ItemTile(
-              title: provider,
-              subtitle: wTitle,
-              meta: '${_fmt(start)} → ${_fmt(end)}',
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                final details = WarrantyDetails(
-                  id: doc.id,
-                  product: provider,
-                  title: wTitle,
-                  warrantyStart: start ?? DateTime.now(),
-                  warrantyExpiry: end ?? DateTime.now(),
-                  returnDeadline: null,
-                );
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => WarrantyDetailPage(details: details)),
-                );
-              },
-            );
-          }).toList(),
-        );
-      },
-    );
-  }
-}
-
-/// قائمة مدموجة (Bills + Warranties) مع فرز بحسب الخيار
-class _AllMixedList extends StatelessWidget {
-  final String? userId;
-  final String query;
-  final SortOption sort;
-  const _AllMixedList({required this.userId, required this.query, required this.sort});
-
-  DateTime? _dateOnly(DateTime? d) => d == null ? null : DateTime(d.year, d.month, d.day);
-
-  DateTime? _minDate(DateTime? a, DateTime? b) {
-    if (a == null) return _dateOnly(b);
-    if (b == null) return _dateOnly(a);
-    final aa = _dateOnly(a)!;
-    final bb = _dateOnly(b)!;
-    return aa.isBefore(bb) ? aa : bb;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final uid = userId;
-    final billsCol = FirebaseFirestore.instance.collection('Bills');
-    final warrCol = FirebaseFirestore.instance.collection('Warranties');
-
-    final billsBase = uid != null ? billsCol.where('user_id', isEqualTo: uid) : billsCol;
-    final warrBase  = uid != null ? warrCol.where('user_id', isEqualTo: uid) : warrCol;
-
-    final billsStream = billsBase.orderBy('created_at', descending: true).limit(50).snapshots();
-    final warrStream  = warrBase.orderBy('created_at', descending: true).limit(50).snapshots();
-
-    String _fmt(DateTime? dt) =>
-        dt == null ? '—' : '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
-
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: billsStream,
-      builder: (context, bSnap) {
-        if (bSnap.hasError) return const _EmptyHint(text: 'Error loading bills.');
-        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: warrStream,
-          builder: (context, wSnap) {
-            if (wSnap.hasError) return const _EmptyHint(text: 'Error loading warranties.');
-            if (!bSnap.hasData || !wSnap.hasData) {
-              return const Center(child: CircularProgressIndicator());
-            }
-
-            final q = query.trim().toLowerCase();
-            final items = <_HomeItem>[];
-
-            // Bills
-            for (final doc in bSnap.data!.docs) {
-              final d = doc.data();
-              final title = (d['title'] ?? '—').toString();
-              final shop  = (d['shop_name'] ?? '—').toString();
-
-              if (q.isNotEmpty) {
-                final t = title.toLowerCase();
-                final s = shop.toLowerCase();
-                if (!(t.contains(q) || s.contains(q))) continue;
-              }
-
-              final amountN = (d['total_amount'] as num?);
-              final amount  = amountN?.toDouble();
-
-              final created = (d['created_at'] as Timestamp?)?.toDate().toLocal();
-              final purchase = (d['purchase_date'] as Timestamp?)?.toDate().toLocal();
-              final ret  = (d['return_deadline'] as Timestamp?)?.toDate().toLocal();
-              final wEnd = (d['warranty_end_date'] as Timestamp?)?.toDate().toLocal();
-
-              final details = BillDetails(
-                id: doc.id,
-                title: title,
-                product: shop,
-                amount: amount ?? 0,
-                purchaseDate: purchase ?? DateTime.now(),
-                returnDeadline: ret,
-                warrantyExpiry: wEnd,
-              );
-
-              final tile = _ItemTile(
-                title: title,
-                subtitle: '$shop • ${amount ?? '-'}',
-                meta: 'Bill • Return: ${_fmt(ret)}  •  Warranty: ${_fmt(wEnd)}',
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => Navigator.pushNamed(context, BillDetailPage.route, arguments: details),
-              );
-
-              items.add(_HomeItem(
-                type: _ItemType.bill,
-                created: created,
-                expiry: _minDate(ret, wEnd),
-                tile: tile,
-              ));
-            }
-
-            // Warranties
-            for (final doc in wSnap.data!.docs) {
-              final d = doc.data();
-              final provider =
-              (d['provider']?.toString().trim().isNotEmpty == true) ? d['provider'].toString().trim() : 'Warranty';
-              final wTitle =
-              (d['title']?.toString().trim().isNotEmpty == true) ? d['title'].toString().trim() : provider;
-
-              if (q.isNotEmpty) {
-                final p = provider.toLowerCase();
-                final t = wTitle.toLowerCase();
-                if (!(p.contains(q) || t.contains(q))) continue;
-              }
-
-              final created = (d['created_at'] as Timestamp?)?.toDate().toLocal();
-              final start   = (d['start_date'] as Timestamp?)?.toDate().toLocal();
-              final end     = (d['end_date'] as Timestamp?)?.toDate().toLocal();
-
-              final details = WarrantyDetails(
-                id: doc.id,
-                product: provider,
-                title: wTitle,
-                warrantyStart: start ?? DateTime.now(),
-                warrantyExpiry: end ?? DateTime.now(),
-                returnDeadline: null,
-              );
-
-              final tile = _ItemTile(
-                title: provider,
-                subtitle: wTitle,
-                meta: 'Warranty • ${_fmt(start)} → ${_fmt(end)}',
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => WarrantyDetailPage(details: details)),
-                ),
-              );
-
-              items.add(_HomeItem(
-                type: _ItemType.warranty,
-                created: created,
-                expiry: end,
-                tile: tile,
-              ));
-            }
-
-            if (items.isEmpty) return const _EmptyHint(text: 'No items found.');
-
-            // فرز بحسب الخيار
-            int _cmpDateDesc(DateTime? a, DateTime? b) =>
-                (b ?? DateTime(0)).compareTo(a ?? DateTime(0));
-            int _cmpDateAsc(DateTime? a, DateTime? b) =>
-                (a ?? DateTime(9999, 12, 31)).compareTo(b ?? DateTime(9999, 12, 31));
-
-            List<_HomeItem> list = items;
-
-            switch (sort) {
-              case SortOption.newest:
-                list.sort((a, b) => _cmpDateDesc(a.created, b.created));
-                break;
-              case SortOption.oldest:
-                list.sort((a, b) => _cmpDateAsc(a.created, b.created));
-                break;
-              case SortOption.billsNear:
-                list = items.where((e) => e.type == _ItemType.bill).toList()
-                  ..sort((a, b) => _cmpDateAsc(a.expiry, b.expiry));
-                break;
-              case SortOption.warrantiesNear:
-                list = items.where((e) => e.type == _ItemType.warranty).toList()
-                  ..sort((a, b) => _cmpDateAsc(a.expiry, b.expiry));
-                break;
-            }
-
-            final toShow = list.take(12).map((e) => e.tile).toList();
-            return Column(children: toShow);
-          },
-        );
-      },
     );
   }
 }
