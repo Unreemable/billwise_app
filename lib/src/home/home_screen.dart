@@ -1,4 +1,4 @@
-// ================== Home Screen (Wave header, search+actions, MIXED expiring list w/ search, fixed FAB vs keyboard) ==================
+// ================== Home Screen (Wave header, search+actions = Add Bill / Add Warranty, MIXED expiring list w/ search, fixed FAB) ==================
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -9,25 +9,22 @@ import '../ocr/scan_receipt_page.dart';
 
 import '../bills/ui/bill_list_page.dart';
 import '../bills/ui/add_bill_page.dart';
-import '../bills/ui/bill_detail_page.dart'; // تفاصيل الفاتورة
-import '../bills/data/bill_service.dart';    // BillService لبيكر الضمان
-import '../common/models.dart';              // BillDetails & WarrantyDetails
+import '../bills/ui/bill_detail_page.dart';
+import '../bills/data/bill_service.dart';
+import '../common/models.dart';
 
 import '../warranties/ui/warranty_list_page.dart';
 import '../warranties/ui/add_warranty_page.dart';
-import '../warranties/ui/warranty_detail_page.dart'; // تفاصيل الضمان
+import '../warranties/ui/warranty_detail_page.dart';
 
-// تدرّج موحّد للهيدر والشريط السفلي وزر الهوم
 const LinearGradient _kAppGradient = LinearGradient(
   colors: [Color(0xFF6A73FF), Color(0xFFE6E9FF)],
   begin: Alignment.topRight,
   end: Alignment.bottomLeft,
 );
 
-// ارتفاع الهيدر المموّج
 const double _kHeaderHeight = 200;
 
-/// يمنع تحريك زر الـ FAB عند SnackBar/BottomSheet (توقيع Flutter الحديث)
 class _NoShiftFabAnimator extends FloatingActionButtonAnimator {
   const _NoShiftFabAnimator();
   @override
@@ -55,7 +52,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _searchCtrl.addListener(() => setState(() {})); // تشغيل الفلترة مباشرة
+    _searchCtrl.addListener(() => setState(() {}));
   }
 
   @override
@@ -72,6 +69,19 @@ class _HomeScreenState extends State<HomeScreen> {
     return 'there';
   }
 
+  void _addWarrantyDirect() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AddWarrantyPage(
+          billId: null,
+          defaultStartDate: DateTime.now(),
+          defaultEndDate: DateTime.now().add(const Duration(days: 365)),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
@@ -81,18 +91,16 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Scaffold(
         extendBodyBehindAppBar: true,
         extendBody: true,
-        resizeToAvoidBottomInset: false, // ← يثبّت زر الهوم والشريط السفلي مع ظهور الكيبورد
+        resizeToAvoidBottomInset: false,
         floatingActionButtonAnimator: const _NoShiftFabAnimator(),
         appBar: AppBar(backgroundColor: Colors.transparent, elevation: 0, toolbarHeight: 0),
 
-        // زر الهوم في المنتصف
         floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
         floatingActionButton: _CenterHomeButton(
           selected: _selectedTab == 0,
           onTap: () => setState(() => _selectedTab = 0),
         ),
 
-        // الشريط السفلي المنحني
         bottomNavigationBar: _CurvedBottomBar(
           selectedTab: _selectedTab,
           onTapLeft: () async {
@@ -111,7 +119,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
         body: Stack(
           children: [
-            // الهيدر
             _WaveHeader(
               name: _greetName(user),
               onLogout: () async {
@@ -126,7 +133,6 @@ class _HomeScreenState extends State<HomeScreen> {
               },
             ),
 
-            // المحتوى تحت الهيدر
             SafeArea(
               child: SingleChildScrollView(
                 padding: EdgeInsets.fromLTRB(16, _kHeaderHeight - 24, 16, 32),
@@ -137,12 +143,12 @@ class _HomeScreenState extends State<HomeScreen> {
                       searchCtrl: _searchCtrl,
                       onQuickOCR: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ScanReceiptPage())),
                       onAddBill:  () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AddBillPage())),
-                      onAddWarranty: () => _openWarrantyOptions(context, user?.uid),
+                      onAddWarranty: _addWarrantyDirect,                           // tap = Add Warranty مباشرة
+                      onWarrantyOptions: () => _openWarrantyOptions(context, user?.uid), // long-press = خيارات الربط
                     ),
 
                     const SizedBox(height: 16),
 
-                    // ===== قائمة مشتركة: أقرب 3 عناصر (فواتير + ضمانات) مع البحث =====
                     _ExpiringMixed3(userId: user?.uid, query: _searchCtrl.text),
 
                     const SizedBox(height: 16),
@@ -156,7 +162,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ===== Bottom sheet (Warranty: link or add only) =====
   Future<void> _openWarrantyOptions(BuildContext context, String? uid) async {
     await showModalBottomSheet<void>(
       context: context,
@@ -199,16 +204,7 @@ class _HomeScreenState extends State<HomeScreen> {
               subtitle: const Text('Save a warranty without linking a bill'),
               onTap: () {
                 Navigator.pop(ctx);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => AddWarrantyPage(
-                      billId: null,
-                      defaultStartDate: DateTime.now(),
-                      defaultEndDate: DateTime.now().add(const Duration(days: 365)),
-                    ),
-                  ),
-                );
+                _addWarrantyDirect();
               },
             ),
             const SizedBox(height: 12),
@@ -379,13 +375,15 @@ class _SearchAndActions extends StatelessWidget {
   final TextEditingController searchCtrl;
   final VoidCallback onQuickOCR;
   final VoidCallback onAddBill;
-  final VoidCallback onAddWarranty;
+  final VoidCallback onAddWarranty;      // tap = add directly
+  final VoidCallback? onWarrantyOptions; // long-press = options (optional)
 
   const _SearchAndActions({
     required this.searchCtrl,
     required this.onQuickOCR,
     required this.onAddBill,
     required this.onAddWarranty,
+    this.onWarrantyOptions,
   });
 
   @override
@@ -411,8 +409,13 @@ class _SearchAndActions extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             _RoundAction(icon: Icons.center_focus_strong, label: 'Quick Add\n(OCR)', onTap: onQuickOCR),
-            _RoundAction(icon: Icons.receipt_long, label: 'Bill', onTap: onAddBill),
-            _RoundAction(icon: Icons.verified_user, label: 'Warranty', onTap: onAddWarranty),
+            _RoundAction(icon: Icons.receipt_long, label: 'Add Bill', onTap: onAddBill),
+            _RoundAction(
+              icon: Icons.verified_user,
+              label: 'Add Warranty',
+              onTap: onAddWarranty,
+              onLongPress: onWarrantyOptions,
+            ),
           ],
         ),
       ],
@@ -424,14 +427,21 @@ class _RoundAction extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
 
-  const _RoundAction({required this.icon, required this.label, required this.onTap});
+  const _RoundAction({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.onLongPress,
+  });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return InkWell(
       onTap: onTap,
+      onLongPress: onLongPress,
       borderRadius: BorderRadius.circular(56),
       child: Column(
         children: [
@@ -512,7 +522,6 @@ class _ExpiringMixed3 extends StatelessWidget {
             final now = DateTime.now();
             final todayOnly = DateTime(now.year, now.month, now.day);
 
-            // نجمع الكل
             final items = <Map<String, dynamic>>[];
 
             // Bills
@@ -525,7 +534,6 @@ class _ExpiringMixed3 extends StatelessWidget {
               final ret  = (d['return_deadline'] as Timestamp?)?.toDate().toLocal();
               final wEnd = (d['warranty_end_date'] as Timestamp?)?.toDate().toLocal();
 
-              // أقرب انتهاء للفواتير
               DateTime? expiry;
               if (ret != null && wEnd != null) {
                 expiry = ret.isBefore(wEnd) ? ret : wEnd;
@@ -575,7 +583,7 @@ class _ExpiringMixed3 extends StatelessWidget {
               });
             }
 
-            // -------- البحث --------
+            // البحث
             final q = query.trim().toLowerCase();
             if (q.isNotEmpty) {
               items.retainWhere((e) {
@@ -584,7 +592,6 @@ class _ExpiringMixed3 extends StatelessWidget {
                 return t.contains(q) || s.contains(q);
               });
             }
-            // -----------------------
 
             if (items.isEmpty) {
               return Column(
@@ -606,7 +613,6 @@ class _ExpiringMixed3 extends StatelessWidget {
               );
             }
 
-            // فرز وتحديد 3 فقط: نفضّل المستقبلية ثم نكمّل من المنتهية
             final upcoming = items.where((e) => !(e['expiry'] as DateTime).isBefore(todayOnly)).toList()
               ..sort((a, b) => (a['expiry'] as DateTime).compareTo(b['expiry'] as DateTime));
             final past = items.where((e) => (e['expiry'] as DateTime).isBefore(todayOnly)).toList()
@@ -624,8 +630,10 @@ class _ExpiringMixed3 extends StatelessWidget {
                 ...selected.map((e) {
                   final type = e['type'] as String;
                   final expiry = e['expiry'] as DateTime;
-                  final stx = status(todayOnly, expiry);
-                  final scolor = sColor(todayOnly, expiry);
+                  final diff = expiry.difference(todayOnly).inDays;
+                  String stx =
+                  diff == 0 ? 'Due today' : (diff > 0 ? 'In $diff day${diff == 1 ? '' : 's'}' : '${diff.abs()} day${diff.abs() == 1 ? '' : 's'} ago');
+                  final scolor = diff < 0 ? Colors.red : (diff == 0 || diff <= 7 ? Colors.orange : Colors.green);
 
                   final leadingIcon = type == 'bill' ? Icons.receipt_long : Icons.verified_user;
 
@@ -640,7 +648,8 @@ class _ExpiringMixed3 extends StatelessWidget {
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
-                          Text(_fmt(expiry), style: Theme.of(context).textTheme.labelMedium),
+                          Text('${expiry.year}-${expiry.month.toString().padLeft(2, '0')}-${expiry.day.toString().padLeft(2, '0')}',
+                              style: Theme.of(context).textTheme.labelMedium),
                           const SizedBox(height: 2),
                           Text(stx, style: TextStyle(fontSize: 11, color: scolor)),
                         ],
@@ -660,8 +669,8 @@ class _ExpiringMixed3 extends StatelessWidget {
                         } else {
                           final details = WarrantyDetails(
                             id: e['id'] as String,
-                            product: e['title'] as String,   // provider
-                            title: e['subtitle'] as String,  // warranty title
+                            product: e['title'] as String,
+                            title: e['subtitle'] as String,
                             warrantyStart: (e['start'] as DateTime?) ?? DateTime.now(),
                             warrantyExpiry: expiry,
                             returnDeadline: null,
