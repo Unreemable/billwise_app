@@ -1,27 +1,30 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<?xml version="1.0" encoding="utf-8"?>
+<manifest
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- للاتصال بالإنترنت (Firebase، رفع الصور، إلخ) -->
+    <!-- Permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
-
-    <!-- الكاميرا -->
     <uses-permission android:name="android.permission.CAMERA" />
-
-    <!-- قراءة الصور:
-         - Android 13+ (API 33+): READ_MEDIA_IMAGES
-         - Android 12 وما قبله: READ_EXTERNAL_STORAGE مع maxSdkVersion=32 -->
+    <!-- Android 13+ notification permission -->
+    <uses-permission
+        android:name="android.permission.POST_NOTIFICATIONS"
+        tools:targetApi="33" />
+    <!-- Images on Android 13+ -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <!-- Legacy images on Android 12- -->
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
 
-    <!-- لا تستبعدي الأجهزة بدون كاميرا (مفيد للمحاكي) -->
+    <!-- لا نجبر وجود الكاميرا (مفيد للمحاكي) -->
     <uses-feature
         android:name="android.hardware.camera.any"
         android:required="false" />
 
     <application
-        android:label="Billwise"
         android:name="${applicationName}"
+        android:label="BillWise"
         android:icon="@mipmap/ic_launcher"
         android:supportsRtl="true">
 
@@ -35,7 +38,7 @@
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize">
 
-            <!-- Theme يظهر فور تشغيل العملية قبل رسم Flutter -->
+            <!-- Theme يظهر قبل رسم Flutter -->
             <meta-data
                 android:name="io.flutter.embedding.android.NormalTheme"
                 android:resource="@style/NormalTheme" />
@@ -52,7 +55,7 @@
             android:value="2" />
     </application>
 
-    <!-- (اختياري) استعلام عن أنشطة معالجة النص—يستخدمه Flutter داخليًا أحيانًا -->
+    <!-- (اختياري) استعلام عن أنشطة معالجة النص -->
     <queries>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT" />

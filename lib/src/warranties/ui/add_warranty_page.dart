@@ -5,6 +5,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../data/warranty_service.dart';
 import '../../bills/data/bill_service.dart';
 
+// إشعارات (جديد)
+import 'package:hhhh/src/notifications/notifications_service.dart';
+
 class AddWarrantyPage extends StatefulWidget {
   const AddWarrantyPage({
     super.key,
@@ -36,6 +39,9 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
   final _fmt = DateFormat('yyyy-MM-dd');
   bool _saving = false;
 
+  // Notifications singleton
+  final _notifs = NotificationsService.I; // أو NotificationsService.instance
+
   bool get isEdit => widget.warrantyId != null;
   bool get hasBill => widget.billId != null;
 
@@ -52,6 +58,11 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
     if (_end.isBefore(_start)) {
       _end = _start.add(const Duration(days: 1));
     }
+
+    // نطلب صلاحيات الإشعار
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _notifs.requestPermissions(context);
+    });
   }
 
   @override
@@ -95,6 +106,7 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
           ? 'Unknown'
           : _providerCtrl.text.trim();
 
+      String warrantyId;
       if (isEdit) {
         // تعديل الضمان
         await WarrantyService.instance.updateWarranty(
@@ -103,9 +115,10 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
           startDate: _start,
           endDate: _end,
         );
+        warrantyId = widget.warrantyId!;
       } else {
         // إنشاء الضمان (قد يكون بدون billId)
-        await WarrantyService.instance.createWarranty(
+        warrantyId = await WarrantyService.instance.createWarranty(
           billId: widget.billId,  // ← ممكن تكون null
           startDate: _start,
           endDate: _end,
@@ -123,6 +136,14 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
           warrantyEndDate: _end,
         );
       }
+
+      // جدولة / إعادة جدولة تذكير نهاية الضمان
+      await _notifs.rescheduleWarrantyReminder(
+        warrantyId: warrantyId,
+        provider: provider,
+        start: _start,
+        end: _end,
+      );
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -169,6 +190,9 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
           warrantyEndDate: null,
         );
       }
+
+      // 3) إلغاء تذكير الضمان
+      await _notifs.cancelWarrantyReminder(widget.warrantyId!);
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

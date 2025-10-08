@@ -23,11 +23,19 @@ import 'src/common/models.dart';
 // OCR
 import 'src/ocr/scan_receipt_page.dart';
 
+// Notifications
+import 'src/notifications/notifications_service.dart';
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+
+
+
+
   runApp(const App());
 }
 
@@ -43,15 +51,9 @@ class App extends StatelessWidget {
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF3C7EFF)),
       ),
-      home: StreamBuilder<User?>(
-        stream: FirebaseAuth.instance.authStateChanges(),
-        builder: (context, snap) {
-          if (snap.connectionState == ConnectionState.waiting) {
-            return const Scaffold(body: Center(child: CircularProgressIndicator()));
-          }
-          return snap.hasData ? const HomeScreen() : const LoginScreen();
-        },
-      ),
+      // غيّرت الـ home إلى ويدجت صغيرة تطلب صلاحية الإشعارات مرة واحدة
+      home: const _RootGate(),
+
       routes: {
         LoginScreen.route: (_) => const LoginScreen(),
         RegisterScreen.route: (_) => const RegisterScreen(),
@@ -93,6 +95,43 @@ class App extends StatelessWidget {
           );
         }
         return null;
+      },
+    );
+  }
+}
+
+/// ويدجت صغيرة: تعرض شاشة الدخول/الرئيسية + تطلب صلاحية الإشعارات مرة واحدة
+class _RootGate extends StatefulWidget {
+  const _RootGate();
+
+  @override
+  State<_RootGate> createState() => _RootGateState();
+}
+
+class _RootGateState extends State<_RootGate> {
+  bool _asked = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // نطلب السماح للإشعارات (Android 13+) بعد أول فريم
+    if (!_asked) {
+      _asked = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        NotificationsService.I.requestPermissions(context);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        }
+        return snap.hasData ? const HomeScreen() : const LoginScreen();
       },
     );
   }

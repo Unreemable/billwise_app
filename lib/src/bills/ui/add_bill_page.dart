@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -8,6 +7,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../warranties/ui/add_warranty_page.dart';
 import '../data/bill_service.dart';
+
+// إشعارات (جديد)
+import 'package:hhhh/src/notifications/notifications_service.dart';
 
 class AddBillPage extends StatefulWidget {
   const AddBillPage({
@@ -32,6 +34,9 @@ class _AddBillPageState extends State<AddBillPage> {
   final _titleCtrl  = TextEditingController();
   final _shopCtrl   = TextEditingController();
   final _amountCtrl = TextEditingController();
+
+  // ===== Notifications singleton =====
+  final _notifs = NotificationsService.I; // أو NotificationsService.instance
 
   // ===== Dates =====
   DateTime? _purchaseDate;
@@ -65,6 +70,16 @@ class _AddBillPageState extends State<AddBillPage> {
   // For edit mode: detect existing warranty linked to this bill
   bool _checkingWarranty = false;
   bool _hasExistingWarranty = false;
+
+  // ====== lifecycle ======
+  @override
+  void initState() {
+    super.initState();
+    // نطلب صلاحيات الإشعار بعد أول فريم
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _notifs.requestPermissions(context);
+    });
+  }
 
   // ============ Small helpers ============
   DateTime? _parseDate(dynamic v) {
@@ -106,8 +121,8 @@ class _AddBillPageState extends State<AddBillPage> {
     return int.tryParse(lower.replaceAll(RegExp(r'[^0-9]'), ''));
   }
 
-  // يحسب الديدلاين ويشمل يوم الشراء (31/03 + 3 أيام ⇒ 02/04)
-  DateTime _deadlineFrom(DateTime start, int days, {bool includeStart = true}) {
+  // يحسب الديدلاين ويستثني يوم الشراء (31/03 + 3 أيام ⇒ 03/04)
+  DateTime _deadlineFrom(DateTime start, int days, {bool includeStart = false}) {
     final base = DateTime(start.year, start.month, start.day);
     final add = includeStart ? (days - 1) : days;
     return base.add(Duration(days: add));
@@ -122,7 +137,6 @@ class _AddBillPageState extends State<AddBillPage> {
 
     if (!_returnManual)   _returnDeadline   = _deadlineFrom(purchase, defRet, includeStart: false);
     if (!_exchangeManual) _exchangeDeadline = _deadlineFrom(purchase, defEx,  includeStart: false);
-
   }
 
   // ============ Lifecycle / data bootstrapping ============
@@ -345,6 +359,17 @@ class _AddBillPageState extends State<AddBillPage> {
         userId: uid,
         receiptImagePath: _receiptImagePath,
       );
+
+      // جدولة التذكيرات بعد الإنشاء
+      await _notifs.rescheduleBillReminders(
+        billId: id,
+        title: _titleCtrl.text.trim(),
+        shop: _shopCtrl.text.trim(),
+        purchaseDate: _purchaseDate!,
+        returnDeadline: _returnDeadline,
+        exchangeDeadline: _exchangeDeadline,
+      );
+
       if (!mounted) return id;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Bill saved ✅')),
@@ -398,6 +423,17 @@ class _AddBillPageState extends State<AddBillPage> {
         warrantyCoverage: _hasWarranty,
         receiptImagePath: _receiptImagePath,
       );
+
+      // إعادة جدولة التذكيرات بعد التحديث
+      await _notifs.rescheduleBillReminders(
+        billId: widget.billId!,
+        title: _titleCtrl.text.trim(),
+        shop: _shopCtrl.text.trim(),
+        purchaseDate: _purchaseDate!,
+        returnDeadline: _returnDeadline,
+        exchangeDeadline: _exchangeDeadline,
+      );
+
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Bill updated ✅')),
@@ -430,6 +466,9 @@ class _AddBillPageState extends State<AddBillPage> {
 
     try {
       await BillService.instance.deleteBill(widget.billId!);
+      // إلغاء أي تذكيرات مرتبطة
+      await _notifs.cancelBillReminders(widget.billId!);
+
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Bill deleted ✅')),
@@ -573,7 +612,7 @@ class _AddBillPageState extends State<AddBillPage> {
               onTap: () => _pickDate(context, _purchaseDate, (d) {
                 setState(() {
                   _purchaseDate = d;
-                  _applyAutoWindowsFromPurchase(d); // هذا يكفي
+                  _applyAutoWindowsFromPurchase(d);
                 });
               }),
             ),
@@ -585,7 +624,7 @@ class _AddBillPageState extends State<AddBillPage> {
                 context,
                 _returnDeadline ?? _purchaseDate ?? DateTime.now(),
                     (d) => setState(() {
-                  _returnManual = true;   // ◀️ صار يدوي
+                  _returnManual = true;   // صار يدوي
                   _returnDeadline = d;
                 }),
               ),
@@ -607,7 +646,7 @@ class _AddBillPageState extends State<AddBillPage> {
                 context,
                 _exchangeDeadline ?? _purchaseDate ?? DateTime.now(),
                     (d) => setState(() {
-                  _exchangeManual = true; // ◀️ صار يدوي
+                  _exchangeManual = true; // صار يدوي
                   _exchangeDeadline = d;
                 }),
               ),
