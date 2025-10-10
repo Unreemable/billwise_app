@@ -8,8 +8,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../warranties/ui/add_warranty_page.dart';
 import '../data/bill_service.dart';
 
-// إشعارات (جديد)
-import 'package:hhhh/src/notifications/notifications_service.dart';
+// إشعارات (تم تعديل الاستيراد لمسار نسبي ليتوافق مع أي اسم باكيج)
+import '../../notifications/notifications_service.dart';
 
 class AddBillPage extends StatefulWidget {
   const AddBillPage({
@@ -36,7 +36,7 @@ class _AddBillPageState extends State<AddBillPage> {
   final _amountCtrl = TextEditingController();
 
   // ===== Notifications singleton =====
-  final _notifs = NotificationsService.I; // أو NotificationsService.instance
+  final _notifs = NotificationsService.I;
 
   // ===== Dates =====
   DateTime? _purchaseDate;
@@ -71,7 +71,6 @@ class _AddBillPageState extends State<AddBillPage> {
   bool _checkingWarranty = false;
   bool _hasExistingWarranty = false;
 
-  // ====== lifecycle ======
   @override
   void initState() {
     super.initState();
@@ -345,6 +344,10 @@ class _AddBillPageState extends State<AddBillPage> {
 
     setState(() => _saving = true);
     try {
+      // ✅ ضمان 3/7 أيام لو كانت فاضية
+      _returnDeadline   ??= _deadlineFrom(_purchaseDate!, (_retDays ?? 3));
+      _exchangeDeadline ??= _deadlineFrom(_purchaseDate!, (_exDays  ?? 7));
+
       final id = await BillService.instance.createBill(
         title: _titleCtrl.text.trim(),
         shopName: _shopCtrl.text.trim(),
@@ -409,6 +412,10 @@ class _AddBillPageState extends State<AddBillPage> {
 
     setState(() => _saving = true);
     try {
+      // ✅ ضمان 3/7 أيام لو كانت فاضية
+      _returnDeadline   ??= _deadlineFrom(_purchaseDate!, (_retDays ?? 3));
+      _exchangeDeadline ??= _deadlineFrom(_purchaseDate!, (_exDays  ?? 7));
+
       await BillService.instance.updateBill(
         billId: widget.billId!,
         title: _titleCtrl.text.trim(),

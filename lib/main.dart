@@ -25,17 +25,13 @@ import 'src/ocr/scan_receipt_page.dart';
 
 // Notifications
 import 'src/notifications/notifications_service.dart';
+import 'src/notifications/notifications_page.dart'; // <-- NEW
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-
-
-
-
-
   runApp(const App());
 }
 
@@ -51,7 +47,7 @@ class App extends StatelessWidget {
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF3C7EFF)),
       ),
-      // غيّرت الـ home إلى ويدجت صغيرة تطلب صلاحية الإشعارات مرة واحدة
+      // شاشة جذر: تختار بين تسجيل الدخول والهوم + تطلب صلاحية الإشعارات مرة واحدة
       home: const _RootGate(),
 
       routes: {
@@ -62,7 +58,11 @@ class App extends StatelessWidget {
         WarrantyListPage.route: (_) => const WarrantyListPage(),
         ScanReceiptPage.route: (_) => const ScanReceiptPage(),
         AddBillPage.route: (_) => const AddBillPage(),
+
+        // <-- NEW: Notifications route
+        NotificationsPage.route: (_) => const NotificationsPage(),
       },
+
       onGenerateRoute: (settings) {
         if (settings.name == BillDetailPage.route && settings.arguments is BillDetails) {
           return MaterialPageRoute(
@@ -100,7 +100,7 @@ class App extends StatelessWidget {
   }
 }
 
-/// ويدجت صغيرة: تعرض شاشة الدخول/الرئيسية + تطلب صلاحية الإشعارات مرة واحدة
+/// جذر التطبيق: يختار الشاشة المناسبة ويطلب صلاحية الإشعارات (Android 13+) مرّة واحدة
 class _RootGate extends StatefulWidget {
   const _RootGate();
 
@@ -114,10 +114,10 @@ class _RootGateState extends State<_RootGate> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // نطلب السماح للإشعارات (Android 13+) بعد أول فريم
     if (!_asked) {
       _asked = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        // يطلب صلاحية الإشعارات بهدوء (لو متاحة للنظام)
         NotificationsService.I.requestPermissions(context);
       });
     }

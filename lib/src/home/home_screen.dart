@@ -1,4 +1,5 @@
 // ================== Home Screen (Wave header, search+actions, MIXED expiring list w/ search, fixed FAB vs keyboard) ==================
+import 'dart:async';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -17,8 +18,11 @@ import '../warranties/ui/warranty_list_page.dart';
 import '../warranties/ui/add_warranty_page.dart';
 import '../warranties/ui/warranty_detail_page.dart'; // تفاصيل الضمان
 
-// إشعارات محلية
+// إشعارات محلية (ممكن نحتاجها لاحقاً)
 import '../notifications/notifications_service.dart';
+
+// صفحة الإشعارات (لو عندك صفحة مخصصة)
+import '../notifications/notifications_page.dart';
 
 // تدرّج موحّد للهيدر والشريط السفلي وزر الهوم
 const LinearGradient _kAppGradient = LinearGradient(
@@ -126,7 +130,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   if (!context.mounted) return;
                   Navigator.pushNamedAndRemoveUntil(context, LoginScreen.route, (_) => false);
                 },
-                onNotifications: () => _openNotificationsSheet(context),
+                onNotifications: () {
+                  Navigator.of(context).pushNamed(NotificationsPage.route);
+                },
               ),
             ),
 
@@ -144,7 +150,17 @@ class _HomeScreenState extends State<HomeScreen> {
                         searchCtrl: _searchCtrl,
                         onQuickOCR: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ScanReceiptPage())),
                         onAddBill:  () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AddBillPage())),
-                        onAddWarranty: () => _openWarrantyOptions(context, user?.uid),
+                        // ⭐ فتح AddWarranty مباشرة بدون أي تواريخ افتراضية
+                        onAddWarranty: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const AddWarrantyPage(
+                              billId: null,
+                              defaultStartDate: null,
+                              defaultEndDate: null,
+                            ),
+                          ),
+                        ),
                       ),
                       const SizedBox(height: 16),
 
@@ -160,124 +176,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
-    );
-  }
-
-  // ===== Bottom sheet (Notifications test) =====
-  Future<void> _openNotificationsSheet(BuildContext context) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.notifications_active),
-                title: const Text('Request notification permission'),
-                subtitle: const Text('Android 13+ needs runtime permission'),
-                onTap: () async {
-                  Navigator.pop(ctx);
-                  await NotificationsService.I.requestPermissions(context);
-                  if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Permission requested')),
-                  );
-                },
-              ),
-              const Divider(height: 0),
-              ListTile(
-                leading: const Icon(Icons.bolt),
-                title: const Text('Show test notification now'),
-                onTap: () async {
-                  Navigator.pop(ctx);
-                  await NotificationsService.I.showNow(
-                    title: 'BillWise test',
-                    body: 'This is a local test notification.',
-                  );
-                },
-              ),
-              const Divider(height: 0),
-              ListTile(
-                leading: const Icon(Icons.cancel),
-                title: const Text('Cancel all notifications'),
-                onTap: () async {
-                  Navigator.pop(ctx);
-                  await NotificationsService.I.cancelAll();
-                  if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('All notifications cancelled')),
-                  );
-                },
-              ),
-              const SizedBox(height: 12),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  // ===== Bottom sheet (Warranty: link or add only) =====
-  Future<void> _openWarrantyOptions(BuildContext context, String? uid) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) {
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.link),
-              title: const Text('Link to existing bill'),
-              subtitle: const Text('Choose one of your bills'),
-              onTap: () async {
-                Navigator.pop(ctx);
-                final String? billId = await showModalBottomSheet<String>(
-                  context: context,
-                  isScrollControlled: true,
-                  showDragHandle: true,
-                  builder: (_) => _BillPickerSheet(userId: uid),
-                );
-                if (billId == null) return;
-                if (!context.mounted) return;
-
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => AddWarrantyPage(
-                      billId: billId,
-                      defaultStartDate: DateTime.now(),
-                      defaultEndDate: DateTime.now().add(const Duration(days: 365)),
-                    ),
-                  ),
-                );
-              },
-            ),
-            const Divider(height: 0),
-            ListTile(
-              leading: const Icon(Icons.add_box),
-              title: const Text('Add warranty only'),
-              subtitle: const Text('Save a warranty without linking a bill'),
-              onTap: () {
-                Navigator.pop(ctx);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => AddWarrantyPage(
-                      billId: null,
-                      defaultStartDate: DateTime.now(),
-                      defaultEndDate: DateTime.now().add(const Duration(days: 365)),
-                    ),
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: 12),
-          ],
-        );
-      },
     );
   }
 }
@@ -338,7 +236,7 @@ class _WaveHeader extends StatelessWidget {
                     ),
                     Row(
                       children: [
-                        _BellButton(onTap: onNotifications),
+                        const _BellWithBadge(), // زر الجرس مع البادج الحمراء
                         const SizedBox(width: 4),
                         IconButton(
                           tooltip: 'Sign out',
@@ -416,22 +314,66 @@ class _ProfileAvatar extends StatelessWidget {
   }
 }
 
-class _BellButton extends StatelessWidget {
-  final VoidCallback onTap;
-  const _BellButton({required this.onTap});
+/// زر الجرس مع بادج حمراء ديناميكية:
+/// يظهر نقطة حمراء لو فيه ≥ 1 إشعار للمستخدم الحالي.
+class _BellWithBadge extends StatelessWidget {
+  const _BellWithBadge();
+
+  Stream<bool> _hasAnyNotification(String uid) {
+    final base = FirebaseFirestore.instance
+        .collection('Notifications')
+        .where('user_id', isEqualTo: uid)
+        .limit(1);
+    return base.snapshots().map((s) => s.docs.isNotEmpty);
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        IconButton(tooltip: 'Notifications', onPressed: onTap, icon: const Icon(Icons.notifications, color: Colors.white)),
-        Positioned(
-          right: 8,
-          top: 8,
-          child: Container(width: 8, height: 8, decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle)),
-        ),
-      ],
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final onTap = () => Navigator.of(context).pushNamed(NotificationsPage.route);
+
+    if (uid == null) {
+      return IconButton(
+        tooltip: 'Notifications',
+        onPressed: onTap,
+        icon: const Icon(Icons.notifications, color: Colors.white),
+      );
+    }
+
+    return StreamBuilder<bool>(
+      stream: _hasAnyNotification(uid),
+      builder: (context, snap) {
+        final showDot = snap.data == true;
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            IconButton(
+              tooltip: 'Notifications',
+              onPressed: onTap,
+              icon: const Icon(Icons.notifications, color: Colors.white),
+            ),
+            if (showDot)
+              const Positioned(
+                right: 8,
+                top: 8,
+                child: _RedDot(),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _RedDot extends StatelessWidget {
+  const _RedDot();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 10,
+      height: 10,
+      decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
     );
   }
 }
@@ -512,9 +454,7 @@ class _RoundAction extends StatelessWidget {
                 ),
               ],
             ),
-            child: Center( // ← أيقونة متوسّطة
-              child: Icon(icon, size: 34, color: Colors.black87),
-            ),
+            child: Center(child: Icon(icon, size: 34, color: Colors.black87)),
           ),
           const SizedBox(height: 8),
           Text(label, textAlign: TextAlign.center, style: theme.textTheme.bodySmall?.copyWith(color: Colors.black87)),
@@ -580,39 +520,43 @@ class _ExpiringMixed3 extends StatelessWidget {
             // نجمع الكل
             final items = <Map<String, dynamic>>[];
 
-            // Bills
+            // Bills — نضيف عنصرين مستقلين (Return / Exchange) إن وُجدوا
             for (final doc in bSnap.data!.docs) {
               final d = doc.data();
               final title = (d['title'] ?? '—').toString();
               final shop  = (d['shop_name'] ?? '').toString();
 
               final purchase = (d['purchase_date'] as Timestamp?)?.toDate().toLocal();
-              final ret  = (d['return_deadline'] as Timestamp?)?.toDate().toLocal();
-              final wEnd = (d['warranty_end_date'] as Timestamp?)?.toDate().toLocal();
-
-              // أقرب انتهاء للفواتير
-              DateTime? expiry;
-              if (ret != null && wEnd != null) {
-                expiry = ret.isBefore(wEnd) ? ret : wEnd;
-              } else {
-                expiry = ret ?? wEnd;
-              }
-              if (expiry == null) continue;
+              final ret = (d['return_deadline']   as Timestamp?)?.toDate().toLocal();
+              final ex  = (d['exchange_deadline'] as Timestamp?)?.toDate().toLocal();
 
               final amountN = (d['total_amount'] as num?);
               final amount  = amountN?.toDouble() ?? 0.0;
 
-              items.add({
-                'type': 'bill',
-                'id': doc.id,
-                'title': title,
-                'subtitle': shop,
-                'purchase': purchase,
-                'ret': ret,
-                'wEnd': wEnd,
-                'amount': amount,
-                'expiry': _only(expiry),
-              });
+              if (ret != null) {
+                items.add({
+                  'type': 'bill',
+                  'subtype': 'return',
+                  'id': doc.id,
+                  'title': title,
+                  'subtitle': shop,
+                  'purchase': purchase,
+                  'amount': amount,
+                  'expiry': _only(ret),
+                });
+              }
+              if (ex != null) {
+                items.add({
+                  'type': 'bill',
+                  'subtype': 'exchange',
+                  'id': doc.id,
+                  'title': title,
+                  'subtitle': shop,
+                  'purchase': purchase,
+                  'amount': amount,
+                  'expiry': _only(ex),
+                });
+              }
             }
 
             // Warranties
@@ -691,16 +635,56 @@ class _ExpiringMixed3 extends StatelessWidget {
                   final expiry = e['expiry'] as DateTime;
                   final stx = status(todayOnly, expiry);
                   final scolor = sColor(todayOnly, expiry);
+                  final subtype = (e['subtype'] as String?); // قد تكون null للضمانات
 
-                  final leadingIcon = type == 'bill' ? Icons.receipt_long : Icons.verified_user;
+                  IconData leadingIcon;
+                  String kindLabel = '';
+                  if (type == 'bill') {
+                    if (subtype == 'return') {
+                      leadingIcon = Icons.keyboard_return;
+                      kindLabel = 'Return';
+                    } else if (subtype == 'exchange') {
+                      leadingIcon = Icons.swap_horiz;
+                      kindLabel = 'Exchange';
+                    } else {
+                      leadingIcon = Icons.receipt_long;
+                    }
+                  } else {
+                    leadingIcon = Icons.verified_user; // warranty
+                    kindLabel = 'Warranty';
+                  }
 
                   return Card(
                     margin: const EdgeInsets.only(bottom: 8),
                     child: ListTile(
                       leading: Icon(leadingIcon),
-                      title: Text(e['title'] as String, maxLines: 1, overflow: TextOverflow.ellipsis),
-                      subtitle: Text((e['subtitle'] as String).isEmpty ? '—' : (e['subtitle'] as String),
-                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                      title: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              e['title'] as String,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (kindLabel.isNotEmpty) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withOpacity(0.06),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(kindLabel, style: const TextStyle(fontSize: 11)),
+                            ),
+                          ],
+                        ],
+                      ),
+                      subtitle: Text(
+                        (e['subtitle'] as String?)?.isEmpty == true ? '—' : (e['subtitle'] as String? ?? '—'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                       trailing: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.end,
@@ -715,18 +699,18 @@ class _ExpiringMixed3 extends StatelessWidget {
                           final details = BillDetails(
                             id: e['id'] as String,
                             title: e['title'] as String,
-                            product: e['subtitle'] as String,
+                            product: (e['subtitle'] as String? ?? ''),
                             amount: (e['amount'] as double?) ?? 0.0,
                             purchaseDate: (e['purchase'] as DateTime?) ?? DateTime.now(),
-                            returnDeadline: e['ret'] as DateTime?,
-                            warrantyExpiry: e['wEnd'] as DateTime?,
+                            returnDeadline: subtype == 'return' ? expiry : null,
+                            warrantyExpiry: null,
                           );
                           Navigator.pushNamed(context, BillDetailPage.route, arguments: details);
                         } else {
                           final details = WarrantyDetails(
                             id: e['id'] as String,
                             product: e['title'] as String,   // provider
-                            title: e['subtitle'] as String,  // warranty title
+                            title: e['subtitle'] as String? ?? '',
                             warrantyStart: (e['start'] as DateTime?) ?? DateTime.now(),
                             warrantyExpiry: expiry,
                             returnDeadline: null,
@@ -882,6 +866,7 @@ class _CenterHomeButton extends StatelessWidget {
 }
 
 // ===== Bottom sheet: pick an existing bill to link warranty =====
+// (محفوظ في حال احتجته لاحقاً)
 class _BillPickerSheet extends StatefulWidget {
   final String? userId;
   const _BillPickerSheet({required this.userId});
