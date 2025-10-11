@@ -1,160 +1,221 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:intl/intl.dart';
-import 'notifications_service.dart';
 
-class NotificationsPage extends StatelessWidget {
+/// صفحة إشعارات مبنية من بيانات Firestore (بدون الاعتماد على سجل النظام)
+class NotificationsPage extends StatefulWidget {
   const NotificationsPage({super.key});
   static const route = '/notifications';
 
   @override
-  Widget build(BuildContext context) {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Notifications')),
-        body: const Center(child: Text('No notifications')),
+  State<NotificationsPage> createState() => _NotificationsPageState();
+}
+
+class _NotificationsPageState extends State<NotificationsPage> {
+  final _fmtDate = DateFormat('yyyy-MM-dd');
+  final _fmtChip = DateFormat('MMM d, HH:mm');
+
+  bool _loading = true;
+  List<_NotifFeedItem> _missed = [];
+  List<_NotifFeedItem> _today = [];
+  List<_NotifFeedItem> _upcoming = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) {
+        setState(() => _loading = false);
+        return;
+      }
+
+      final now = DateTime.now();
+      final startWindow = now.subtract(const Duration(days: 7));
+      final endWindow = now.add(const Duration(days: 14));
+
+      final billsSnap = await FirebaseFirestore.instance
+          .collection('Bills')
+          .where('user_id', isEqualTo: uid)
+          .get();
+
+      final items = <_NotifFeedItem>[];
+
+      DateTime at10(DateTime x) => DateTime(x.year, x.month, x.day, 10);
+
+      for (final doc in billsSnap.docs) {
+        final data = doc.data();
+        final title = (data['title'] ?? '').toString();
+        final shop = (data['shop_name'] ?? '').toString();
+
+        DateTime? rd =
+        (data['return_deadline'] is Timestamp) ? (data['return_deadline'] as Timestamp).toDate() : null;
+        DateTime? ed =
+        (data['exchange_deadline'] is Timestamp) ? (data['exchange_deadline'] as Timestamp).toDate() : null;
+
+        if (rd != null) {
+          final rd10 = at10(rd);
+          final rdM1 = rd10.subtract(const Duration(days: 1));
+
+          if (rdM1.isAfter(startWindow) && rdM1.isBefore(endWindow)) {
+            items.add(_NotifFeedItem(
+              when: rdM1,
+              title: 'Return reminder',
+              body: '“$title” from $shop — ends ${_fmtDate.format(rd10)}',
+              kind: _NotifKind.returnReminder,
+            ));
+          }
+          if (rd10.isAfter(startWindow) && rd10.isBefore(endWindow)) {
+            items.add(_NotifFeedItem(
+              when: rd10,
+              title: 'Return deadline',
+              body: '“$title” from $shop — ends today',
+              kind: _NotifKind.returnDeadline,
+            ));
+          }
+        }
+
+        if (ed != null) {
+          final ed10 = at10(ed);
+          final edM2 = ed10.subtract(const Duration(days: 2));
+          final edM1 = ed10.subtract(const Duration(days: 1));
+
+          for (final t in [edM2, edM1]) {
+            if (t.isAfter(startWindow) && t.isBefore(endWindow)) {
+              items.add(_NotifFeedItem(
+                when: t,
+                title: 'Exchange reminder',
+                body:
+                '“$title” from $shop — ${t == edM2 ? '2' : '1'} days left (ends ${_fmtDate.format(ed10)})',
+                kind: _NotifKind.exchangeReminder,
+              ));
+            }
+          }
+          if (ed10.isAfter(startWindow) && ed10.isBefore(endWindow)) {
+            items.add(_NotifFeedItem(
+              when: ed10,
+              title: 'Exchange deadline',
+              body: '“$title” from $shop — ends today',
+              kind: _NotifKind.exchangeDeadline,
+            ));
+          }
+        }
+      }
+
+      // تقسيم حسب اليوم
+      final startToday = DateTime(now.year, now.month, now.day);
+      final endToday = startToday.add(const Duration(days: 1));
+
+      final missed = <_NotifFeedItem>[];
+      final today = <_NotifFeedItem>[];
+      final upcoming = <_NotifFeedItem>[];
+
+      for (final it in items) {
+        if (it.when.isBefore(startToday)) {
+          missed.add(it);
+        } else if (it.when.isBefore(endToday)) {
+          today.add(it);
+        } else {
+          upcoming.add(it);
+        }
+      }
+
+      missed.sort((a, b) => a.when.compareTo(b.when));
+      today.sort((a, b) => a.when.compareTo(b.when));
+      upcoming.sort((a, b) => a.when.compareTo(b.when));
+
+      if (!mounted) return;
+      setState(() {
+        _missed = missed;
+        _today = today;
+        _upcoming = upcoming;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to load notifications: $e')),
       );
     }
+  }
 
-    final q = FirebaseFirestore.instance
-        .collection('Notifications')
-        .where('user_id', isEqualTo: uid)
-        .orderBy('fire_at', descending: true);
-
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Notifications')),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: q.snapshots(),
-        builder: (context, snap) {
-          if (snap.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (!snap.hasData || snap.data!.docs.isEmpty) {
-            return const Center(child: Text('No notifications'));
-          }
-
-          final docs = snap.data!.docs;
-          return ListView.separated(
-            padding: const EdgeInsets.all(16),
-            itemCount: docs.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 12),
-            itemBuilder: (context, i) {
-              final doc = docs[i];
-              final d = doc.data() as Map<String, dynamic>;
-              final title = (d['title'] ?? 'Reminder').toString();
-              final body = (d['body'] ?? '').toString();
-              final ts = d['fire_at'];
-              final dt = ts is Timestamp ? ts.toDate() : DateTime.now();
-              final when = DateFormat('y-MM-dd HH:mm').format(dt);
-              final status = (d['status'] ?? '').toString();
-
-              return Dismissible(
-                key: ValueKey(doc.id),
-                direction: DismissDirection.endToStart,
-                background: Container(
-                  alignment: Alignment.centerRight,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  color: Colors.red,
-                  child: const Icon(Icons.delete, color: Colors.white),
-                ),
-                onDismissed: (_) async {
-                  await doc.reference.delete();
-                },
-                child: Material(
-                  elevation: 1,
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  child: ListTile(
-                    leading: const Icon(Icons.notifications),
-                    title: Text(
-                      title,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (body.isNotEmpty) Text(body),
-                        const SizedBox(height: 6),
-                        Text(
-                          '$when  •  $status',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            },
-          );
-        },
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () async {
-          final created = await _createManual(context);
-          if (created && context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Reminder scheduled')),
-            );
-          }
-        },
-        label: const Text('New'),
-        icon: const Icon(Icons.add_alert),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+        onRefresh: _load,
+        child: ListView(
+          padding: const EdgeInsets.all(12),
+          children: [
+            _section('Missed (last 7 days)', _missed),
+            _section('Due today', _today),
+            _section('Upcoming', _upcoming),
+          ],
+        ),
       ),
     );
   }
 
-  Future<bool> _createManual(BuildContext context) async {
-    final now = DateTime.now();
-
-    final date = await showDatePicker(
-      context: context,
-      firstDate: DateTime(now.year - 1),
-      lastDate: DateTime(now.year + 2),
-      initialDate: now,
+  Widget _section(String title, List<_NotifFeedItem> list) {
+    if (list.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: ListTile(
+          title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+          subtitle: const Text('No items'),
+        ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 12, top: 12, bottom: 6),
+          child: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+        ),
+        ...list.map((e) => Card(
+          child: ListTile(
+            leading: Icon(e.icon),
+            title: Text(e.title),
+            subtitle: Text(e.body),
+            trailing: Text(_fmtChip.format(e.when)),
+          ),
+        )),
+      ],
     );
-    if (date == null) return false;
-    if (!context.mounted) return false;
+  }
+}
 
-    final time = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay(hour: now.hour, minute: (now.minute + 2) % 60),
-    );
-    if (time == null) return false;
-    if (!context.mounted) return false;
+enum _NotifKind { returnReminder, returnDeadline, exchangeReminder, exchangeDeadline }
 
-    final fireAt =
-    DateTime(date.year, date.month, date.day, time.hour, time.minute);
+class _NotifFeedItem {
+  _NotifFeedItem({
+    required this.when,
+    required this.title,
+    required this.body,
+    required this.kind,
+  });
 
-    // تهيئة الإشعارات وطلب الأذونات
-    await NotificationsService.I.init();
-    await NotificationsService.I.requestPermissions();
+  final DateTime when;
+  final String title;
+  final String body;
+  final _NotifKind kind;
 
-    // جدولة محليًا — (بدون exact param)
-    final localId = await NotificationsService.I.scheduleAt(
-      whenLocal: fireAt,
-      title: 'Reminder',
-      body: 'This is your reminder.',
-      payload: 'manual',
-      exact: true, // ← يحتاج الصلاحية أعلاه
-    );
-
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return true;
-
-    // خزّن في Firestore
-    await FirebaseFirestore.instance.collection('Notifications').add({
-      'user_id': uid,
-      'title': 'Reminder',
-      'body': 'This is your reminder.',
-      'type': 'manual',
-      'status': 'scheduled',
-      'local_id': localId,
-      'created_at': DateTime.now(),
-      'fire_at': fireAt,
-    });
-
-    return true;
+  IconData get icon {
+    switch (kind) {
+      case _NotifKind.returnReminder:   return Icons.reply;
+      case _NotifKind.returnDeadline:   return Icons.assignment_turned_in;
+      case _NotifKind.exchangeReminder: return Icons.cached;
+      case _NotifKind.exchangeDeadline: return Icons.swap_horiz;
+    }
   }
 }

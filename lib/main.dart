@@ -29,9 +29,15 @@ import 'src/notifications/notifications_page.dart'; // <-- NEW
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Firebase
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // Notifications: init مبكرًا (قناة + timezone)
+  await NotificationsService.I.init();
+
   runApp(const App());
 }
 
@@ -59,20 +65,24 @@ class App extends StatelessWidget {
         ScanReceiptPage.route: (_) => const ScanReceiptPage(),
         AddBillPage.route: (_) => const AddBillPage(),
 
-        // <-- NEW: Notifications route
+        // Notifications route
         NotificationsPage.route: (_) => const NotificationsPage(),
       },
 
       onGenerateRoute: (settings) {
-        if (settings.name == BillDetailPage.route && settings.arguments is BillDetails) {
+        if (settings.name == BillDetailPage.route &&
+            settings.arguments is BillDetails) {
           return MaterialPageRoute(
-            builder: (_) => BillDetailPage(details: settings.arguments as BillDetails),
+            builder: (_) =>
+                BillDetailPage(details: settings.arguments as BillDetails),
             settings: settings,
           );
         }
-        if (settings.name == WarrantyDetailPage.route && settings.arguments is WarrantyDetails) {
+        if (settings.name == WarrantyDetailPage.route &&
+            settings.arguments is WarrantyDetails) {
           return MaterialPageRoute(
-            builder: (_) => WarrantyDetailPage(details: settings.arguments as WarrantyDetails),
+            builder: (_) => WarrantyDetailPage(
+                details: settings.arguments as WarrantyDetails),
             settings: settings,
           );
         }
@@ -90,7 +100,9 @@ class App extends StatelessWidget {
           }
           return MaterialPageRoute(
             builder: (_) => const Scaffold(
-              body: Center(child: Text('⚠️ billId is required for AddWarrantyPage')),
+              body: Center(
+                child: Text('⚠️ billId is required for AddWarrantyPage'),
+              ),
             ),
           );
         }
@@ -109,18 +121,13 @@ class _RootGate extends StatefulWidget {
 }
 
 class _RootGateState extends State<_RootGate> {
-  bool _asked = false;
-
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (!_asked) {
-      _asked = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        // يطلب صلاحية الإشعارات بهدوء (لو متاحة للنظام)
-        NotificationsService.I.requestPermissions(context);
-      });
-    }
+  void initState() {
+    super.initState();
+    // نطلب الإذن بهدوء بعد أول إطار
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      NotificationsService.I.requestPermissions(context);
+    });
   }
 
   @override
@@ -129,7 +136,8 @@ class _RootGateState extends State<_RootGate> {
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
-          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+          return const Scaffold(
+              body: Center(child: CircularProgressIndicator()));
         }
         return snap.hasData ? const HomeScreen() : const LoginScreen();
       },

@@ -8,7 +8,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../warranties/ui/add_warranty_page.dart';
 import '../data/bill_service.dart';
 
-// إشعارات (تم تعديل الاستيراد لمسار نسبي ليتوافق مع أي اسم باكيج)
+// إشعارات
 import '../../notifications/notifications_service.dart';
 
 class AddBillPage extends StatefulWidget {
@@ -363,8 +363,8 @@ class _AddBillPageState extends State<AddBillPage> {
         receiptImagePath: _receiptImagePath,
       );
 
-      // جدولة التذكيرات بعد الإنشاء
-      await _notifs.rescheduleBillReminders(
+      // جدولة التذكيرات بعد الإنشاء — مع التقاط الأخطاء
+      await _tryRescheduleWithUX(
         billId: id,
         title: _titleCtrl.text.trim(),
         shop: _shopCtrl.text.trim(),
@@ -431,8 +431,8 @@ class _AddBillPageState extends State<AddBillPage> {
         receiptImagePath: _receiptImagePath,
       );
 
-      // إعادة جدولة التذكيرات بعد التحديث
-      await _notifs.rescheduleBillReminders(
+      // إعادة جدولة التذكيرات بعد التحديث — مع التقاط الأخطاء
+      await _tryRescheduleWithUX(
         billId: widget.billId!,
         title: _titleCtrl.text.trim(),
         shop: _shopCtrl.text.trim(),
@@ -540,6 +540,48 @@ class _AddBillPageState extends State<AddBillPage> {
       ),
     ));
     if (mounted) Navigator.of(context).pop();
+  }
+
+  /// يجرب إعادة جدولة التذكيرات ويعرض رسائل مفهومة للمستخدم
+  Future<void> _tryRescheduleWithUX({
+    required String billId,
+    required String title,
+    required String shop,
+    required DateTime purchaseDate,
+    DateTime? returnDeadline,
+    DateTime? exchangeDeadline,
+  }) async {
+    try {
+      await _notifs.rescheduleBillReminders(
+        billId: billId,
+        title: title,
+        shop: shop,
+        purchaseDate: purchaseDate,
+        returnDeadline: returnDeadline,
+        exchangeDeadline: exchangeDeadline,
+      );
+    } catch (e) {
+      final msg = e.toString();
+      // اشهر خطأ على Android 13+ لما exact غير مسموح
+      if (msg.contains('exact_alarms_not_permitted')) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'تم حفظ الفاتورة، لكن منع النظام التنبيه الدقيق.\n'
+                  'تقدرين تفعّلينه من: Settings → Apps → Special app access → Alarms & reminders → BillWise → Allow.\n'
+                  'راح نستخدم تذكيراً غير دقيق بشكل تلقائي.',
+            ),
+            duration: Duration(seconds: 6),
+          ),
+        );
+      } else {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Saved, but notification scheduling failed: $e')),
+        );
+      }
+    }
   }
 
   // ============ UI ============
@@ -724,3 +766,5 @@ class _AddBillPageState extends State<AddBillPage> {
     );
   }
 }
+
+
