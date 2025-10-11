@@ -1,5 +1,4 @@
-// ================== Home Screen (Wave header, search+actions, MIXED expiring list w/ search, fixed FAB vs keyboard) ==================
-import 'dart:async';
+// ================== Home Screen ==================
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -10,31 +9,25 @@ import '../ocr/scan_receipt_page.dart';
 
 import '../bills/ui/bill_list_page.dart';
 import '../bills/ui/add_bill_page.dart';
-import '../bills/ui/bill_detail_page.dart'; // تفاصيل الفاتورة
-import '../bills/data/bill_service.dart';    // BillService لبيكر الضمان
-import '../common/models.dart';              // BillDetails & WarrantyDetails
+import '../bills/ui/bill_detail_page.dart';
+import '../common/models.dart';
 
 import '../warranties/ui/warranty_list_page.dart';
 import '../warranties/ui/add_warranty_page.dart';
-import '../warranties/ui/warranty_detail_page.dart'; // تفاصيل الضمان
+import '../warranties/ui/warranty_detail_page.dart';
 
-// إشعارات محلية (ممكن نحتاجها لاحقاً)
-import '../notifications/notifications_service.dart';
-
-// صفحة الإشعارات (لو عندك صفحة مخصصة)
+// صفحة الإشعارات
 import '../notifications/notifications_page.dart';
 
-// تدرّج موحّد للهيدر والشريط السفلي وزر الهوم
+// تدرّج موحّد
 const LinearGradient _kAppGradient = LinearGradient(
   colors: [Color(0xFF6A73FF), Color(0xFFE6E9FF)],
   begin: Alignment.topRight,
   end: Alignment.bottomLeft,
 );
 
-// ارتفاع الهيدر المموّج
 const double _kHeaderHeight = 200;
 
-/// يمنع تحريك زر الـ FAB عند SnackBar/BottomSheet (توقيع Flutter الحديث)
 class _NoShiftFabAnimator extends FloatingActionButtonAnimator {
   const _NoShiftFabAnimator();
   @override
@@ -62,7 +55,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _searchCtrl.addListener(() => setState(() {})); // تشغيل الفلترة مباشرة
+    _searchCtrl.addListener(() => setState(() {}));
   }
 
   @override
@@ -88,18 +81,16 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Scaffold(
         extendBodyBehindAppBar: true,
         extendBody: true,
-        resizeToAvoidBottomInset: false, // ← يثبّت زر الهوم والشريط السفلي مع ظهور الكيبورد
+        resizeToAvoidBottomInset: false,
         floatingActionButtonAnimator: const _NoShiftFabAnimator(),
         appBar: AppBar(backgroundColor: Colors.transparent, elevation: 0, toolbarHeight: 0),
 
-        // زر الهوم في المنتصف
         floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
         floatingActionButton: _CenterHomeButton(
           selected: _selectedTab == 0,
           onTap: () => setState(() => _selectedTab = 0),
         ),
 
-        // الشريط السفلي المنحني
         bottomNavigationBar: _CurvedBottomBar(
           selectedTab: _selectedTab,
           onTapLeft: () async {
@@ -120,9 +111,7 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             // الهيدر مثبت أعلى
             Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
+              top: 0, left: 0, right: 0,
               child: _WaveHeader(
                 name: _greetName(user),
                 onLogout: () async {
@@ -130,15 +119,16 @@ class _HomeScreenState extends State<HomeScreen> {
                   if (!context.mounted) return;
                   Navigator.pushNamedAndRemoveUntil(context, LoginScreen.route, (_) => false);
                 },
-                onNotifications: () {
-                  Navigator.of(context).pushNamed(NotificationsPage.route);
-                },
+                onNotifications: () => Navigator.of(context).pushNamed(NotificationsPage.route),
               ),
             ),
 
-            // المحتوى يبدأ تحت الهيدر مباشرة
-            Positioned.fill(
+            // المحتوى — نترك 90px أسفل لتفادي تغطية الـ BottomBar
+            Positioned(
               top: _kHeaderHeight,
+              left: 0,
+              right: 0,
+              bottom: 90,
               child: SafeArea(
                 top: false,
                 child: SingleChildScrollView(
@@ -150,7 +140,6 @@ class _HomeScreenState extends State<HomeScreen> {
                         searchCtrl: _searchCtrl,
                         onQuickOCR: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ScanReceiptPage())),
                         onAddBill:  () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AddBillPage())),
-                        // ⭐ فتح AddWarranty مباشرة بدون أي تواريخ افتراضية
                         onAddWarranty: () => Navigator.push(
                           context,
                           MaterialPageRoute(
@@ -164,7 +153,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       const SizedBox(height: 16),
 
-                      // ===== قائمة مشتركة: أقرب 3 عناصر (فواتير + ضمانات) مع البحث =====
                       _ExpiringMixed3(userId: user?.uid, query: _searchCtrl.text),
 
                       const SizedBox(height: 16),
@@ -199,55 +187,53 @@ class _WaveHeader extends StatelessWidget {
       clipper: _WaveClipper(),
       child: Container(
         height: _kHeaderHeight,
-        decoration: BoxDecoration(gradient: _kAppGradient),
+        decoration: const BoxDecoration(gradient: _kAppGradient),
         child: SafeArea(
           bottom: false,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
               children: [
+                Expanded(
+                  child: Row(
+                    children: [
+                      _ProfileAvatar(name: name),
+                      const SizedBox(width: 10),
+                      Flexible(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Hello,', style: Theme.of(context).textTheme.labelLarge?.copyWith(color: Colors.white)),
+                            Text(
+                              name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
                 Row(
                   children: [
-                    Expanded(
-                      child: Row(
-                        children: [
-                          _ProfileAvatar(name: name),
-                          const SizedBox(width: 10),
-                          Flexible(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('Hello,', style: Theme.of(context).textTheme.labelLarge?.copyWith(color: Colors.white)),
-                                Text(
-                                  name,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
+                    IconButton(
+                      tooltip: 'Notifications',
+                      onPressed: onNotifications,
+                      icon: const Icon(Icons.notifications, color: Colors.white),
                     ),
-                    Row(
-                      children: [
-                        const _BellWithBadge(), // زر الجرس مع البادج الحمراء
-                        const SizedBox(width: 4),
-                        IconButton(
-                          tooltip: 'Sign out',
-                          onPressed: onLogout,
-                          icon: const Icon(Icons.logout, color: Colors.white),
-                        ),
-                      ],
+                    const SizedBox(width: 4),
+                    IconButton(
+                      tooltip: 'Sign out',
+                      onPressed: onLogout,
+                      icon: const Icon(Icons.logout, color: Colors.white),
                     ),
                   ],
                 ),
-                const Spacer(),
               ],
             ),
           ),
@@ -260,20 +246,11 @@ class _WaveHeader extends StatelessWidget {
 class _WaveClipper extends CustomClipper<Path> {
   @override
   Path getClip(Size size) {
-    final Path path = Path();
-    path.lineTo(0, size.height - 50);
-
-    final firstControlPoint = Offset(size.width * 0.25, size.height - 15);
-    final firstEndPoint     = Offset(size.width * 0.5,  size.height - 28);
-    path.quadraticBezierTo(firstControlPoint.dx, firstControlPoint.dy, firstEndPoint.dx, firstEndPoint.dy);
-
-    final secondControlPoint = Offset(size.width * 0.75, size.height - 42);
-    final secondEndPoint     = Offset(size.width,       size.height - 18);
-    path.quadraticBezierTo(secondControlPoint.dx, secondControlPoint.dy, secondEndPoint.dx, secondEndPoint.dy);
-
+    final Path path = Path()..lineTo(0, size.height - 50);
+    path.quadraticBezierTo(size.width * 0.25, size.height - 15, size.width * 0.5, size.height - 28);
+    path.quadraticBezierTo(size.width * 0.75, size.height - 42, size.width, size.height - 18);
     path.lineTo(size.width, 0);
-    path.close();
-    return path;
+    return path..close();
   }
 
   @override
@@ -292,88 +269,14 @@ class _ProfileAvatar extends StatelessWidget {
       initials = parts.first.characters.first.toUpperCase();
     }
     return Container(
-      width: 42,
-      height: 42,
+      width: 42, height: 42,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: Colors.white.withValues(alpha: 0.9),
-        boxShadow: [
-          BoxShadow(
-            blurRadius: 10,
-            color: Colors.black.withValues(alpha: 0.08),
-            offset: const Offset(0, 2),
-          ),
-        ],
+        color: Colors.white.withOpacity(0.9),
+        boxShadow: [BoxShadow(blurRadius: 10, color: Colors.black.withOpacity(0.08), offset: const Offset(0, 2))],
       ),
       alignment: Alignment.center,
-      child: Text(
-        initials,
-        style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Colors.black87, fontWeight: FontWeight.w700),
-      ),
-    );
-  }
-}
-
-/// زر الجرس مع بادج حمراء ديناميكية:
-/// يظهر نقطة حمراء لو فيه ≥ 1 إشعار للمستخدم الحالي.
-class _BellWithBadge extends StatelessWidget {
-  const _BellWithBadge();
-
-  Stream<bool> _hasAnyNotification(String uid) {
-    final base = FirebaseFirestore.instance
-        .collection('Notifications')
-        .where('user_id', isEqualTo: uid)
-        .limit(1);
-    return base.snapshots().map((s) => s.docs.isNotEmpty);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    final onTap = () => Navigator.of(context).pushNamed(NotificationsPage.route);
-
-    if (uid == null) {
-      return IconButton(
-        tooltip: 'Notifications',
-        onPressed: onTap,
-        icon: const Icon(Icons.notifications, color: Colors.white),
-      );
-    }
-
-    return StreamBuilder<bool>(
-      stream: _hasAnyNotification(uid),
-      builder: (context, snap) {
-        final showDot = snap.data == true;
-        return Stack(
-          clipBehavior: Clip.none,
-          children: [
-            IconButton(
-              tooltip: 'Notifications',
-              onPressed: onTap,
-              icon: const Icon(Icons.notifications, color: Colors.white),
-            ),
-            if (showDot)
-              const Positioned(
-                right: 8,
-                top: 8,
-                child: _RedDot(),
-              ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _RedDot extends StatelessWidget {
-  const _RedDot();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 10,
-      height: 10,
-      decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+      child: Text(initials, style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Colors.black87, fontWeight: FontWeight.w700)),
     );
   }
 }
@@ -407,17 +310,17 @@ class _SearchAndActions extends StatelessWidget {
             contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(color: Colors.black.withValues(alpha: 0.08)),
+              borderSide: BorderSide(color: Colors.black.withOpacity(0.08)),
             ),
           ),
         ),
         const SizedBox(height: 14),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            _RoundAction(icon: Icons.center_focus_strong, label: 'Quick Add\n(OCR)', onTap: onQuickOCR),
-            _RoundAction(icon: Icons.receipt_long, label: 'Bill', onTap: onAddBill),
-            _RoundAction(icon: Icons.verified_user, label: 'Warranty', onTap: onAddWarranty),
+          children: const [
+            _RoundAction(icon: Icons.center_focus_strong, label: 'Quick Add\n(OCR)'),
+            _RoundAction(icon: Icons.receipt_long, label: 'Bill'),
+            _RoundAction(icon: Icons.verified_user, label: 'Warranty'),
           ],
         ),
       ],
@@ -428,33 +331,39 @@ class _SearchAndActions extends StatelessWidget {
 class _RoundAction extends StatelessWidget {
   final IconData icon;
   final String label;
-  final VoidCallback onTap;
-
-  const _RoundAction({required this.icon, required this.label, required this.onTap});
+  const _RoundAction({required this.icon, required this.label});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    void _handleTap() {
+      final s = ScaffoldMessenger.of(context);
+      if (label.contains('OCR')) {
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const ScanReceiptPage()));
+      } else if (label == 'Bill') {
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const AddBillPage()));
+      } else {
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const AddWarrantyPage(
+          billId: null, defaultStartDate: null, defaultEndDate: null,
+        )));
+      }
+      s.clearSnackBars();
+    }
+
     return InkWell(
-      onTap: onTap,
+      onTap: _handleTap,
       borderRadius: BorderRadius.circular(56),
       child: Column(
         children: [
-          Ink(
-            width: 88,
-            height: 88,
+          Container(
+            width: 88, height: 88,
             decoration: BoxDecoration(
               color: Colors.white,
               shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  blurRadius: 10,
-                  color: Colors.black.withValues(alpha: 0.06),
-                  offset: const Offset(0, 2),
-                ),
-              ],
+              boxShadow: [BoxShadow(blurRadius: 10, color: Colors.black.withOpacity(0.06), offset: const Offset(0, 2))],
             ),
-            child: Center(child: Icon(icon, size: 34, color: Colors.black87)),
+            alignment: Alignment.center,
+            child: Icon(icon, size: 34, color: Colors.black87),
           ),
           const SizedBox(height: 8),
           Text(label, textAlign: TextAlign.center, style: theme.textTheme.bodySmall?.copyWith(color: Colors.black87)),
@@ -464,15 +373,14 @@ class _RoundAction extends StatelessWidget {
   }
 }
 
-// ================= القائمة المشتركة (فواتير + ضمانات) — 3 فقط + بحث =================
+// ================= القائمة المشتركة (3 عناصر فقط + بحث) =================
 
 class _ExpiringMixed3 extends StatelessWidget {
   final String? userId;
   final String query;
   const _ExpiringMixed3({required this.userId, required this.query});
 
-  String _fmt(DateTime dt) =>
-      '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+  String _fmt(DateTime dt) => '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
   DateTime _only(DateTime d) => DateTime(d.year, d.month, d.day);
 
   @override
@@ -486,14 +394,6 @@ class _ExpiringMixed3 extends StatelessWidget {
 
     final billsStream = billsBase.orderBy('created_at', descending: true).limit(200).snapshots();
     final warrStream  = warrBase.orderBy('created_at', descending: true).limit(200).snapshots();
-
-    String status(DateTime todayOnly, DateTime e) {
-      final diff = e.difference(todayOnly).inDays;
-      if (diff == 0) return 'Due today';
-      if (diff > 0) return 'In $diff day${diff == 1 ? '' : 's'}';
-      final a = diff.abs();
-      return '$a day${a == 1 ? '' : 's'} ago';
-    }
 
     Color sColor(DateTime todayOnly, DateTime e) {
       final diff = e.difference(todayOnly).inDays;
@@ -517,10 +417,9 @@ class _ExpiringMixed3 extends StatelessWidget {
             final now = DateTime.now();
             final todayOnly = DateTime(now.year, now.month, now.day);
 
-            // نجمع الكل
             final items = <Map<String, dynamic>>[];
 
-            // Bills — نضيف عنصرين مستقلين (Return / Exchange) إن وُجدوا
+            // Bills
             for (final doc in bSnap.data!.docs) {
               final d = doc.data();
               final title = (d['title'] ?? '—').toString();
@@ -535,26 +434,16 @@ class _ExpiringMixed3 extends StatelessWidget {
 
               if (ret != null) {
                 items.add({
-                  'type': 'bill',
-                  'subtype': 'return',
-                  'id': doc.id,
-                  'title': title,
-                  'subtitle': shop,
-                  'purchase': purchase,
-                  'amount': amount,
-                  'expiry': _only(ret),
+                  'type': 'bill', 'subtype': 'return', 'id': doc.id,
+                  'title': title, 'subtitle': shop, 'purchase': purchase,
+                  'amount': amount, 'expiry': _only(ret),
                 });
               }
               if (ex != null) {
                 items.add({
-                  'type': 'bill',
-                  'subtype': 'exchange',
-                  'id': doc.id,
-                  'title': title,
-                  'subtitle': shop,
-                  'purchase': purchase,
-                  'amount': amount,
-                  'expiry': _only(ex),
+                  'type': 'bill', 'subtype': 'exchange', 'id': doc.id,
+                  'title': title, 'subtitle': shop, 'purchase': purchase,
+                  'amount': amount, 'expiry': _only(ex),
                 });
               }
             }
@@ -563,28 +452,21 @@ class _ExpiringMixed3 extends StatelessWidget {
             for (final doc in wSnap.data!.docs) {
               final d = doc.data();
               final provider = (d['provider']?.toString().trim().isNotEmpty == true)
-                  ? d['provider'].toString().trim()
-                  : 'Warranty';
+                  ? d['provider'].toString().trim() : 'Warranty';
               final wTitle = (d['title']?.toString().trim().isNotEmpty == true)
-                  ? d['title'].toString().trim()
-                  : provider;
+                  ? d['title'].toString().trim() : provider;
 
               final start = (d['start_date'] as Timestamp?)?.toDate().toLocal();
               final end   = (d['end_date']   as Timestamp?)?.toDate().toLocal();
               if (end == null) continue;
 
               items.add({
-                'type': 'warranty',
-                'id': doc.id,
-                'title': provider,
-                'subtitle': wTitle,
-                'start': start,
-                'end': _only(end),
-                'expiry': _only(end),
+                'type': 'warranty', 'id': doc.id,
+                'title': provider, 'subtitle': wTitle,
+                'start': start, 'end': _only(end), 'expiry': _only(end),
               });
             }
 
-            // -------- البحث --------
             final q = query.trim().toLowerCase();
             if (q.isNotEmpty) {
               items.retainWhere((e) {
@@ -593,7 +475,6 @@ class _ExpiringMixed3 extends StatelessWidget {
                 return t.contains(q) || s.contains(q);
               });
             }
-            // -----------------------
 
             if (items.isEmpty) {
               return Column(
@@ -605,17 +486,13 @@ class _ExpiringMixed3 extends StatelessWidget {
                     elevation: 0,
                     child: Padding(
                       padding: const EdgeInsets.all(16),
-                      child: Text(
-                        q.isEmpty ? 'No items with deadlines.' : 'No results for "$q".',
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
+                      child: Text(q.isEmpty ? 'No items with deadlines.' : 'No results for "$q".'),
                     ),
                   ),
                 ],
               );
             }
 
-            // فرز وتحديد 3 فقط: نفضّل المستقبلية ثم نكمّل من المنتهية
             final upcoming = items.where((e) => !(e['expiry'] as DateTime).isBefore(todayOnly)).toList()
               ..sort((a, b) => (a['expiry'] as DateTime).compareTo(b['expiry'] as DateTime));
             final past = items.where((e) => (e['expiry'] as DateTime).isBefore(todayOnly)).toList()
@@ -633,26 +510,18 @@ class _ExpiringMixed3 extends StatelessWidget {
                 ...selected.map((e) {
                   final type = e['type'] as String;
                   final expiry = e['expiry'] as DateTime;
-                  final stx = status(todayOnly, expiry);
-                  final scolor = sColor(todayOnly, expiry);
-                  final subtype = (e['subtype'] as String?); // قد تكون null للضمانات
+                  final subtype = (e['subtype'] as String?);
 
-                  IconData leadingIcon;
-                  String kindLabel = '';
+                  final diff = expiry.difference(todayOnly).inDays;
+                  final stx = diff == 0 ? 'Due today' : (diff > 0 ? 'In $diff day${diff == 1 ? '' : 's'}' : '${diff.abs()} day${diff.abs() == 1 ? '' : 's'} ago');
+                  final scolor = sColor(todayOnly, expiry);
+
+                  IconData leadingIcon; String kindLabel = '';
                   if (type == 'bill') {
-                    if (subtype == 'return') {
-                      leadingIcon = Icons.keyboard_return;
-                      kindLabel = 'Return';
-                    } else if (subtype == 'exchange') {
-                      leadingIcon = Icons.swap_horiz;
-                      kindLabel = 'Exchange';
-                    } else {
-                      leadingIcon = Icons.receipt_long;
-                    }
-                  } else {
-                    leadingIcon = Icons.verified_user; // warranty
-                    kindLabel = 'Warranty';
-                  }
+                    if (subtype == 'return') { leadingIcon = Icons.keyboard_return; kindLabel = 'Return'; }
+                    else if (subtype == 'exchange') { leadingIcon = Icons.swap_horiz; kindLabel = 'Exchange'; }
+                    else { leadingIcon = Icons.receipt_long; }
+                  } else { leadingIcon = Icons.verified_user; kindLabel = 'Warranty'; }
 
                   return Card(
                     margin: const EdgeInsets.only(bottom: 8),
@@ -660,16 +529,10 @@ class _ExpiringMixed3 extends StatelessWidget {
                       leading: Icon(leadingIcon),
                       title: Row(
                         children: [
-                          Expanded(
-                            child: Text(
-                              e['title'] as String,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          if (kindLabel.isNotEmpty) ...[
-                            const SizedBox(width: 8),
+                          Expanded(child: Text(e['title'] as String, maxLines: 1, overflow: TextOverflow.ellipsis)),
+                          if (kindLabel.isNotEmpty)
                             Container(
+                              margin: const EdgeInsets.only(left: 8),
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                               decoration: BoxDecoration(
                                 color: Colors.black.withOpacity(0.06),
@@ -677,13 +540,11 @@ class _ExpiringMixed3 extends StatelessWidget {
                               ),
                               child: Text(kindLabel, style: const TextStyle(fontSize: 11)),
                             ),
-                          ],
                         ],
                       ),
                       subtitle: Text(
                         (e['subtitle'] as String?)?.isEmpty == true ? '—' : (e['subtitle'] as String? ?? '—'),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1, overflow: TextOverflow.ellipsis,
                       ),
                       trailing: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -709,7 +570,7 @@ class _ExpiringMixed3 extends StatelessWidget {
                         } else {
                           final details = WarrantyDetails(
                             id: e['id'] as String,
-                            product: e['title'] as String,   // provider
+                            product: e['title'] as String,
                             title: e['subtitle'] as String? ?? '',
                             warrantyStart: (e['start'] as DateTime?) ?? DateTime.now(),
                             warrantyExpiry: expiry,
@@ -759,7 +620,7 @@ class _CurvedBottomBar extends StatelessWidget {
       notchMargin: 8,
       elevation: 12,
       child: DecoratedBox(
-        decoration: BoxDecoration(gradient: _kAppGradient),
+        decoration: const BoxDecoration(gradient: _kAppGradient),
         child: SafeArea(
           top: false,
           child: SizedBox(
@@ -816,13 +677,11 @@ class _BottomItem extends StatelessWidget {
       fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
     );
 
-    return GestureDetector(
+    return InkWell(
       onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        transform: Matrix4.translationValues(0, selected ? -4 : 0, 0),
-        padding: const EdgeInsets.only(bottom: 4),
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -849,103 +708,17 @@ class _CenterHomeButton extends StatelessWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         transform: Matrix4.translationValues(0, selected ? -6 : 0, 0),
-        width: 64,
-        height: 64,
+        width: 64, height: 64,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          gradient: _kAppGradient,
+          gradient: const LinearGradient(
+            colors: [Color(0xFF6A73FF), Color(0xFFE6E9FF)],
+            begin: Alignment.topRight, end: Alignment.bottomLeft,
+          ),
           border: Border.all(color: Colors.white, width: 4),
-          boxShadow: [
-            BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 12, offset: const Offset(0, 4)),
-          ],
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 12, offset: const Offset(0, 4))],
         ),
         child: const Icon(Icons.home_filled, color: Colors.white, size: 28),
-      ),
-    );
-  }
-}
-
-// ===== Bottom sheet: pick an existing bill to link warranty =====
-// (محفوظ في حال احتجته لاحقاً)
-class _BillPickerSheet extends StatefulWidget {
-  final String? userId;
-  const _BillPickerSheet({required this.userId});
-
-  @override
-  State<_BillPickerSheet> createState() => _BillPickerSheetState();
-}
-
-class _BillPickerSheetState extends State<_BillPickerSheet> {
-  final _search = TextEditingController();
-
-  @override
-  void dispose() {
-    _search.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final uid = widget.userId ?? FirebaseAuth.instance.currentUser?.uid;
-
-    return SafeArea(
-      child: SizedBox(
-        height: MediaQuery.of(context).size.height * 0.7,
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: TextField(
-                controller: _search,
-                decoration: const InputDecoration(hintText: 'Search bills...', prefixIcon: Icon(Icons.search)),
-                onChanged: (_) => setState(() {}),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Expanded(
-              child: uid == null
-                  ? const Center(child: Text('Please sign in to pick a bill.'))
-                  : StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                stream: BillService.instance.streamBillsSnapshot(userId: uid),
-                builder: (context, s) {
-                  if (s.hasError) return Center(child: Text('Error: ${s.error}'));
-                  if (!s.hasData) return const Center(child: CircularProgressIndicator());
-
-                  var docs = s.data!.docs;
-                  final q = _search.text.trim().toLowerCase();
-                  if (q.isNotEmpty) {
-                    docs = docs.where((e) {
-                      final d = e.data();
-                      final t = (d['title'] ?? '').toString().toLowerCase();
-                      final shop = (d['shop_name'] ?? '').toString().toLowerCase();
-                      return t.contains(q) || shop.contains(q);
-                    }).toList();
-                  }
-
-                  if (docs.isEmpty) return const Center(child: Text('No bills found.'));
-
-                  return ListView.separated(
-                    itemCount: docs.length,
-                    separatorBuilder: (_, __) => const Divider(height: 0),
-                    itemBuilder: (_, i) {
-                      final doc = docs[i];
-                      final d = doc.data();
-                      final title = (d['title'] ?? '—').toString();
-                      final shop = (d['shop_name'] ?? '—').toString();
-                      final amount = d['total_amount'];
-                      return ListTile(
-                        title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                        subtitle: Text('$shop • ${amount ?? '-'}'),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () => Navigator.pop(context, doc.id),
-                      );
-                    },
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

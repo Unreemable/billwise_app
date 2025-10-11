@@ -4,7 +4,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
-/// خدمة الإشعارات (محلية) — تهيئة كسولة (lazy)
+/// إشعارات محلية مع دعم الجدولة الدقيقة على أندرويد (HONOR/Huawei)
 class NotificationsService {
   NotificationsService._();
   static final NotificationsService I = NotificationsService._();
@@ -24,7 +24,12 @@ class NotificationsService {
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
     const init = InitializationSettings(android: androidInit);
 
-    await _plugin.initialize(init);
+    await _plugin.initialize(
+      init,
+      onDidReceiveNotificationResponse: (resp) {
+        // بإمكانك هنا التعامل مع payload لو حبيت.
+      },
+    );
 
     await _ensureTZ();
     _inited = true;
@@ -44,15 +49,15 @@ class NotificationsService {
     } catch (_) {
       try {
         await (android as dynamic).requestNotificationsPermission();
-      } catch (_) {/* تجاهل */}
+      } catch (_) {/* تجاهل */ }
     }
   }
 
   Future<void> _ensureTZ() async {
     if (_tzReady) return;
     tzdata.initializeTimeZones();
+    // ثبّت الرياض، ولو فشل خذ UTC
     try {
-      // افتراضي: الرياض
       tz.setLocalLocation(tz.getLocation('Asia/Riyadh'));
     } catch (_) {
       tz.setLocalLocation(tz.getLocation('Etc/UTC'));
@@ -95,23 +100,22 @@ class NotificationsService {
   // ================== Helpers ==================
   int _safeHash(String s) => s.hashCode & 0x7fffffff;
 
-  // مُعرّفات فريدة لكل تذكير مرتبط بفاتورة/نوع
   int _billReminderId(String billId, String tag) => (_safeHash('$billId::$tag') % 500000) + 1000000;
   int _warrantyId(String warrantyId) => (_safeHash(warrantyId) % 500000) + 2000000;
 
-  DateTime _at10am(DateTime d) => DateTime(d.year, d.month, d.day, 10, 0);
   tz.TZDateTime _toTZ(DateTime local) => tz.TZDateTime.from(local, tz.local);
 
-  Future<void> _zonedInexact({
+  Future<void> _zonedSchedule({
     required int id,
     required String title,
     required String body,
     required DateTime whenLocal,
     String? payload,
+    bool exact = true,
   }) async {
     final when = _toTZ(whenLocal);
     final now = tz.TZDateTime.now(tz.local);
-    if (!when.isAfter(now)) return; // لا نرسل مواعيد قديمة
+    if (!when.isAfter(now)) return;
 
     await _plugin.zonedSchedule(
       id,
@@ -119,80 +123,103 @@ class NotificationsService {
       body,
       when,
       _details(),
-      // الأهم: غير دقيق لتجنّب إذن exact
-      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      androidScheduleMode: exact
+          ? AndroidScheduleMode.exactAllowWhileIdle
+          : AndroidScheduleMode.inexactAllowWhileIdle,
       uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
       payload: payload,
       matchDateTimeComponents: null,
     );
   }
 
-  // ================== Bills (Return & Exchange) ==================
-  /// تُعيد جدولة *كل* تذكيرات الفاتورة حسب المطلوب:
-  /// - Return (3 أيام): قبلها بيوم + يوم الانتهاء
-  /// - Exchange (7 أيام): باقي يومين + باقي يوم + يوم الانتهاء
+  // للاستخدام اليدوي من صفحة NotificationsPage
+  Future<int> scheduleAt({
+    required DateTime whenLocal,
+    required String title,
+    required String body,
+    String? payload,
+    bool exact = true,
+  }) async {
+    await _ensureInitialized();
+    await _ensureChannel();
+    final id = _safeHash('${whenLocal.toIso8601String()}::$title') % 900000 + 3000000;
+    await _zonedSchedule(
+      id: id,
+      title: title,
+      body: body,
+      whenLocal: whenLocal,
+      payload: payload,
+      exact: exact,
+    );
+    return id;
+  }
+
+  // ================== Bills ==================
   Future<void> rescheduleBillReminders({
     required String billId,
     required String title,
     required String shop,
     required DateTime purchaseDate,
-    DateTime? returnDeadline,   // منطقك: purchase + 3 أيام
-    DateTime? exchangeDeadline, // منطقك: purchase + 7 أيام
+    DateTime? returnDeadline,
+    DateTime? exchangeDeadline,
   }) async {
     await _ensureInitialized();
     await _ensureChannel();
 
-    // ألغِ تذكيرات قديمة
     await cancelBillReminders(billId);
 
-    // نرسل الساعة 10 صباحًا
+    const bool exact = true;
     if (returnDeadline != null) {
-      // الاسترجاع: قبل بيوم + نفس اليوم
-      await _zonedInexact(
+      final d = DateTime(returnDeadline.year, returnDeadline.month, returnDeadline.day, 10);
+      await _zonedSchedule(
         id: _billReminderId(billId, 'ret_minus1'),
         title: 'Return reminder',
         body: '“$title” from $shop — return period ends tomorrow.',
-        whenLocal: _at10am(returnDeadline.subtract(const Duration(days: 1))),
+        whenLocal: d.subtract(const Duration(days: 1)),
         payload: 'bill:$billId:return:minus1',
+        exact: exact,
       );
-      await _zonedInexact(
+      await _zonedSchedule(
         id: _billReminderId(billId, 'ret_last'),
         title: 'Return deadline',
         body: '“$title” from $shop — return period ends today.',
-        whenLocal: _at10am(returnDeadline),
+        whenLocal: d,
         payload: 'bill:$billId:return:last',
+        exact: exact,
       );
     }
 
     if (exchangeDeadline != null) {
-      // الاستبدال: باقي يومين + باقي يوم + اليوم الأخير
-      await _zonedInexact(
+      final d = DateTime(exchangeDeadline.year, exchangeDeadline.month, exchangeDeadline.day, 10);
+      await _zonedSchedule(
         id: _billReminderId(billId, 'ex_minus2'),
         title: 'Exchange reminder',
         body: '“$title” from $shop — 2 days left to exchange.',
-        whenLocal: _at10am(exchangeDeadline.subtract(const Duration(days: 2))),
+        whenLocal: d.subtract(const Duration(days: 2)),
         payload: 'bill:$billId:exchange:minus2',
+        exact: exact,
       );
-      await _zonedInexact(
+      await _zonedSchedule(
         id: _billReminderId(billId, 'ex_minus1'),
         title: 'Exchange reminder',
         body: '“$title” from $shop — 1 day left to exchange.',
-        whenLocal: _at10am(exchangeDeadline.subtract(const Duration(days: 1))),
+        whenLocal: d.subtract(const Duration(days: 1)),
         payload: 'bill:$billId:exchange:minus1',
+        exact: exact,
       );
-      await _zonedInexact(
+      await _zonedSchedule(
         id: _billReminderId(billId, 'ex_last'),
         title: 'Exchange deadline',
         body: '“$title” from $shop — exchange period ends today.',
-        whenLocal: _at10am(exchangeDeadline),
+        whenLocal: d,
         payload: 'bill:$billId:exchange:last',
+        exact: exact,
       );
     }
   }
 
   Future<void> cancelBillReminders(String billId) async {
     await _ensureInitialized();
-    // كلها التاغات المحتملة
     for (final tag in const ['ret_minus1', 'ret_last', 'ex_minus2', 'ex_minus1', 'ex_last']) {
       await _plugin.cancel(_billReminderId(billId, tag));
     }
@@ -210,12 +237,14 @@ class NotificationsService {
 
     await cancelWarrantyReminder(warrantyId);
 
-    await _zonedInexact(
+    final d = DateTime(end.year, end.month, end.day, 10);
+    await _zonedSchedule(
       id: _warrantyId(warrantyId),
       title: 'Warranty ends today',
       body: 'Warranty by $provider ends today.',
-      whenLocal: _at10am(end),
+      whenLocal: d,
       payload: 'warranty:$warrantyId:end',
+      exact: true,
     );
   }
 
