@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'firebase_options.dart';
 
@@ -23,19 +26,34 @@ import 'src/common/models.dart';
 // OCR
 import 'src/ocr/scan_receipt_page.dart';
 
-// Notifications
+// Notifications (محلي + صفحة الإشعارات)
 import 'src/notifications/notifications_service.dart';
-import 'src/notifications/notifications_page.dart'; // <-- NEW
+import 'src/notifications/notifications_page.dart';
+
+/// لرسائل FCM في الخلفية/إغلاق التطبيق (لازم تكون top-level)
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  // اختياري: أظهر إشعار محلي عند وصول رسالة خلف الكواليس (لو فيها عنوان/نص)
+  final n = message.notification;
+  if (n != null) {
+    await NotificationsService.I.init();
+    await NotificationsService.I.showNow(
+      title: n.title ?? 'BillWise',
+      body: n.body ?? 'Background message',
+    );
+  }
+}
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Firebase
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
-  // Notifications: init مبكرًا (قناة + timezone)
+  // FCM: معالج الخلفية لازم يُسجَّل قبل runApp
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+  // إشعارات محلية (قناة + TZ)
   await NotificationsService.I.init();
 
   runApp(const App());
@@ -53,9 +71,7 @@ class App extends StatelessWidget {
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF3C7EFF)),
       ),
-      // شاشة جذر: تختار بين تسجيل الدخول والهوم + تطلب صلاحية الإشعارات مرة واحدة
       home: const _RootGate(),
-
       routes: {
         LoginScreen.route: (_) => const LoginScreen(),
         RegisterScreen.route: (_) => const RegisterScreen(),
@@ -68,7 +84,6 @@ class App extends StatelessWidget {
         // Notifications route
         NotificationsPage.route: (_) => const NotificationsPage(),
       },
-
       onGenerateRoute: (settings) {
         if (settings.name == BillDetailPage.route &&
             settings.arguments is BillDetails) {
@@ -81,8 +96,8 @@ class App extends StatelessWidget {
         if (settings.name == WarrantyDetailPage.route &&
             settings.arguments is WarrantyDetails) {
           return MaterialPageRoute(
-            builder: (_) => WarrantyDetailPage(
-                details: settings.arguments as WarrantyDetails),
+            builder: (_) =>
+                WarrantyDetailPage(details: settings.arguments as WarrantyDetails),
             settings: settings,
           );
         }
@@ -112,7 +127,7 @@ class App extends StatelessWidget {
   }
 }
 
-/// جذر التطبيق: يختار الشاشة المناسبة ويطلب صلاحية الإشعارات (Android 13+) مرّة واحدة
+/// جذر التطبيق: يختار الشاشة المناسبة + يفعّل FCM ويطلب أذونات الإشعار مرة واحدة
 class _RootGate extends StatefulWidget {
   const _RootGate();
 
@@ -124,10 +139,109 @@ class _RootGateState extends State<_RootGate> {
   @override
   void initState() {
     super.initState();
-    // نطلب الإذن بهدوء بعد أول إطار
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      NotificationsService.I.requestPermissions(context);
+
+    // نطلب إذن الإشعارات (Android 13+) بعد أول إطار
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await NotificationsService.I.requestPermissions(context);
+      await _initFCM();              // تهيئة FCM (اختياري لكن مفعّل)
     });
+  }
+
+  // ===== Backfill يومي تلقائي (مجاني تمامًا) =====
+  Future<void> _autoBackfillRemindersDaily() async {
+    final prefs = await SharedPreferences.getInstance();
+    final now = DateTime.now();
+    final todayKey = 'reminders_backfill_yyyyMMdd';
+    final today = '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}';
+    if (prefs.getString(todayKey) == today) return;
+
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    DateTime? _tsToDate(dynamic v) => v is Timestamp ? v.toDate() : null;
+
+    final snap = await FirebaseFirestore.instance
+        .collection('Bills')
+        .where('user_id', isEqualTo: uid)
+        .get();
+
+    for (final d in snap.docs) {
+      final m = d.data();
+      await NotificationsService.I.rescheduleBillReminders(
+        billId: d.id,
+        title: (m['title'] ?? '').toString(),
+        shop: (m['shop_name'] ?? '').toString(),
+        purchaseDate: _tsToDate(m['purchase_date']) ?? DateTime.now(),
+        returnDeadline: _tsToDate(m['return_deadline']),
+        exchangeDeadline: _tsToDate(m['exchange_deadline']),
+      );
+    }
+
+    await prefs.setString(todayKey, today);
+  }
+
+  // ===== FCM =====
+  Future<void> _initFCM() async {
+    final messaging = FirebaseMessaging.instance;
+
+    // تفعيل التهيئة التلقائية (عادة تكون مفعّلة افتراضيًا)
+    await messaging.setAutoInitEnabled(true);
+
+    // اطلب الإذن من FCM (iOS/Android 13+)
+    final settings = await messaging.requestPermission();
+    debugPrint('FCM permission: ${settings.authorizationStatus}');
+
+    // اطبع/احفظ الـ token (للاختبار من الـ Console، أو خزّنه للمستخدم)
+    final token = await messaging.getToken();
+    debugPrint('🔑 FCM Device Token: $token');
+
+    // (اختياري) حفظ التوكن للمستخدم عشان إرسال لاحق من السيرفر (إن رغبتِ)
+    await _saveFcmTokenForUser(token);
+
+    // رسائل أثناء فتح التطبيق (foreground)
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
+      final n = message.notification;
+      if (n != null) {
+        await NotificationsService.I.showNow(
+          title: n.title ?? 'BillWise',
+          body: n.body ?? 'New message',
+        );
+      }
+    });
+
+    // الضغط على الإشعار وفتح التطبيق من الخلفية
+    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+      // مثال: افتح صفحة الإشعارات
+      if (mounted) {
+        Navigator.of(context).pushNamed(NotificationsPage.route);
+      }
+    });
+
+    // لو فتح التطبيق من إشعار وهو مغلق تمامًا (terminated)
+    final initial = await FirebaseMessaging.instance.getInitialMessage();
+    if (initial != null && mounted) {
+      Navigator.of(context).pushNamed(NotificationsPage.route);
+    }
+  }
+
+  Future<void> _saveFcmTokenForUser(String? token) async {
+    if (token == null) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .collection('fcmTokens')
+          .doc(token)
+          .set({
+        'token': token,
+        'platform': 'android',
+        'createdAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (_) {
+      // تجاهل أي خطأ صامتًا
+    }
   }
 
   @override
@@ -137,9 +251,17 @@ class _RootGateState extends State<_RootGate> {
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
           return const Scaffold(
-              body: Center(child: CircularProgressIndicator()));
+            body: Center(child: CircularProgressIndicator()),
+          );
         }
-        return snap.hasData ? const HomeScreen() : const LoginScreen();
+        if (snap.hasData) {
+          // بعد أول إطار من الدخول: شغّل Backfill اليومي
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _autoBackfillRemindersDaily();
+          });
+          return const HomeScreen();
+        }
+        return const LoginScreen();
       },
     );
   }

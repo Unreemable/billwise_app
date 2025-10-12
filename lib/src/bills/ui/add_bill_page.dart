@@ -766,5 +766,3 @@ class _AddBillPageState extends State<AddBillPage> {
     );
   }
 }
-
-

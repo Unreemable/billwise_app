@@ -3,6 +3,9 @@ import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+// نفس المجلد
+import 'notifications_service.dart';
+
 /// صفحة إشعارات مبنية من بيانات Firestore (بدون الاعتماد على سجل النظام)
 class NotificationsPage extends StatefulWidget {
   const NotificationsPage({super.key});
@@ -17,6 +20,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
   final _fmtChip = DateFormat('MMM d, HH:mm');
 
   bool _loading = true;
+  bool _rescheduling = false;
   List<_NotifFeedItem> _missed = [];
   List<_NotifFeedItem> _today = [];
   List<_NotifFeedItem> _upcoming = [];
@@ -53,10 +57,12 @@ class _NotificationsPageState extends State<NotificationsPage> {
         final title = (data['title'] ?? '').toString();
         final shop = (data['shop_name'] ?? '').toString();
 
-        DateTime? rd =
-        (data['return_deadline'] is Timestamp) ? (data['return_deadline'] as Timestamp).toDate() : null;
-        DateTime? ed =
-        (data['exchange_deadline'] is Timestamp) ? (data['exchange_deadline'] as Timestamp).toDate() : null;
+        DateTime? rd = (data['return_deadline'] is Timestamp)
+            ? (data['return_deadline'] as Timestamp).toDate()
+            : null;
+        DateTime? ed = (data['exchange_deadline'] is Timestamp)
+            ? (data['exchange_deadline'] as Timestamp).toDate()
+            : null;
 
         if (rd != null) {
           final rd10 = at10(rd);
@@ -145,10 +151,129 @@ class _NotificationsPageState extends State<NotificationsPage> {
     }
   }
 
+  // ===== زر الاختبار: حوار يطلب الدقائق ويجدول إشعار محلي =====
+  Future<void> _showScheduleTestDialog() async {
+    // أطلب الإذن (Android 13+)
+    await NotificationsService.I.requestPermissions();
+
+    final ctrl = TextEditingController(text: '1');
+    final minutes = await showDialog<int>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Schedule test notification'),
+          content: TextField(
+            controller: ctrl,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: 'After how many minutes?',
+              hintText: 'e.g., 1 or 5',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final v = int.tryParse(ctrl.text.trim());
+                Navigator.pop(context, (v == null || v <= 0) ? 1 : v);
+              },
+              child: const Text('Schedule'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (minutes == null) return;
+
+    final when = DateTime.now().add(Duration(minutes: minutes));
+    await NotificationsService.I.scheduleAt(
+      whenLocal: when,
+      title: 'Test notification',
+      body: 'Scheduled after $minutes minute(s).',
+      payload: 'test_scheduled_${minutes}m',
+      exact: true,
+    );
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Scheduled after $minutes minute(s)')),
+    );
+  }
+
+  // ===== إعادة جدولة كل فواتير المستخدم يدويًا (من Firestore) =====
+  Future<void> _rescheduleAllBillsNow() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    setState(() => _rescheduling = true);
+    try {
+      DateTime? _tsToDate(dynamic v) => v is Timestamp ? v.toDate() : null;
+
+      final snap = await FirebaseFirestore.instance
+          .collection('Bills')
+          .where('user_id', isEqualTo: uid)
+          .get();
+
+      int ok = 0, fail = 0;
+      for (final d in snap.docs) {
+        try {
+          final m = d.data();
+          await NotificationsService.I.rescheduleBillReminders(
+            billId: d.id,
+            title: (m['title'] ?? '').toString(),
+            shop: (m['shop_name'] ?? '').toString(),
+            purchaseDate: _tsToDate(m['purchase_date']) ?? DateTime.now(),
+            returnDeadline: _tsToDate(m['return_deadline']),
+            exchangeDeadline: _tsToDate(m['exchange_deadline']),
+          );
+          ok++;
+        } catch (_) {
+          fail++;
+        }
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Rescheduled $ok bill(s) • Failed: $fail')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Reschedule failed: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _rescheduling = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final actions = <Widget>[
+      if (_rescheduling)
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 8),
+          child: SizedBox(
+            height: 20, width: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      IconButton(
+        tooltip: 'Diagnostics',
+        icon: const Icon(Icons.bug_report_outlined),
+        onPressed: () => NotificationsService.I.showDiagnosticsDialog(context),
+      ),
+      IconButton(
+        tooltip: 'Reschedule all (from Firestore)',
+        icon: const Icon(Icons.playlist_add_check),
+        onPressed: _rescheduling ? null : _rescheduleAllBillsNow,
+      ),
+    ];
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Notifications')),
+      appBar: AppBar(title: const Text('Notifications'), actions: actions),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
@@ -161,6 +286,12 @@ class _NotificationsPageState extends State<NotificationsPage> {
             _section('Upcoming', _upcoming),
           ],
         ),
+      ),
+      // زر تجريبي لجدولة إشعار بعد دقائق
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _showScheduleTestDialog,
+        icon: const Icon(Icons.schedule_rounded),
+        label: const Text('Test notification'),
       ),
     );
   }
@@ -212,10 +343,14 @@ class _NotifFeedItem {
 
   IconData get icon {
     switch (kind) {
-      case _NotifKind.returnReminder:   return Icons.reply;
-      case _NotifKind.returnDeadline:   return Icons.assignment_turned_in;
-      case _NotifKind.exchangeReminder: return Icons.cached;
-      case _NotifKind.exchangeDeadline: return Icons.swap_horiz;
+      case _NotifKind.returnReminder:
+        return Icons.reply;
+      case _NotifKind.returnDeadline:
+        return Icons.assignment_turned_in;
+      case _NotifKind.exchangeReminder:
+        return Icons.cached;
+      case _NotifKind.exchangeDeadline:
+        return Icons.swap_horiz;
     }
   }
 }

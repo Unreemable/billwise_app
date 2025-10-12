@@ -1,9 +1,7 @@
 plugins {
     id("com.android.application")
-    // FlutterFire
     id("com.google.gms.google-services")
     id("kotlin-android")
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
 
@@ -15,9 +13,7 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
-
-
-        // 👈 المهم: فعّل الديسوقرينغ
+        // مهم لتفعيل الديسوقرينغ
         isCoreLibraryDesugaringEnabled = true
     }
 
@@ -35,7 +31,6 @@ android {
 
     buildTypes {
         release {
-            // مؤقتاً نوقّع بمفاتيح الديبَغ عشان يشتغل run --release
             signingConfig = signingConfigs.getByName("debug")
         }
     }
@@ -44,8 +39,9 @@ android {
 flutter {
     source = "../.."
 }
+
 dependencies {
-    // 👈 المهم: أضف مكتبة الديسوقرينغ
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
-    // لا تضف شيء آخر هنا؛ Flutter يتولى باقي dependencies
+    // حدّثنا النسخة المطلوبة هنا ↑ 2.1.4 (يجوز تستخدمي 2.1.5 أيضًا)
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    // لا تضيفي شيء آخر؛ Flutter/Dart يدير بقية الاعتماديات
 }

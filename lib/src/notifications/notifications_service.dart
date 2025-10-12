@@ -1,10 +1,10 @@
 import 'dart:io';
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
-/// إشعارات محلية مع دعم الجدولة الدقيقة على أندرويد (HONOR/Huawei)
+/// إشعارات محلية مع دعم الجدولة الدقيقة على أندرويد + تشخيص
 class NotificationsService {
   NotificationsService._();
   static final NotificationsService I = NotificationsService._();
@@ -39,8 +39,7 @@ class NotificationsService {
     await _ensureInitialized();
     if (!Platform.isAndroid) return;
 
-    final android = _plugin
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
     if (android == null) return;
 
     // Android 13+
@@ -49,8 +48,45 @@ class NotificationsService {
     } catch (_) {
       try {
         await (android as dynamic).requestNotificationsPermission();
-      } catch (_) {/* تجاهل */ }
+      } catch (_) {/* تجاهل */}
     }
+  }
+
+  Future<bool> areNotificationsEnabled() async {
+    final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    if (android == null) return true; // اعتبرها مسموحة على منصات أخرى
+    try {
+      final enabled = await (android as dynamic).areNotificationsEnabled();
+      return (enabled is bool) ? enabled : true;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  /// هل مسموح للبرنامج بجدولة exact alarms؟
+  Future<bool> canScheduleExactAlarms() async {
+    final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    if (android == null) return true;
+    try {
+      final ok = await (android as dynamic).canScheduleExactNotifications();
+      // بعض الإصدارات تستخدم اسم مختلف:
+      if (ok is bool) return ok;
+    } catch (_) {
+      // جرّب اسم API آخر شائع
+      try {
+        final ok2 = await (android as dynamic).areAlarmsAndRemindersEnabled();
+        if (ok2 is bool) return ok2;
+      } catch (_) {}
+    }
+    return true; // إن ما قدرنا نستعلم، لا نوقف الجدولة
+  }
+
+  Future<void> openExactAlarmsSettings() async {
+    final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    if (android == null) return;
+    try {
+      await (android as dynamic).openAlarmsAndRemindersSettings();
+    } catch (_) {/* تجاهل */}
   }
 
   Future<void> _ensureTZ() async {
@@ -71,9 +107,7 @@ class NotificationsService {
       _channelReady = true;
       return;
     }
-
-    final android = _plugin
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
     if (android != null) {
       const ch = AndroidNotificationChannel(
         'billwise_reminders',
@@ -93,6 +127,9 @@ class NotificationsService {
       channelDescription: 'Reminders for return/exchange deadlines and warranty expiry',
       importance: Importance.max,
       priority: Priority.high,
+      playSound: true,
+      enableVibration: true,
+      ticker: 'BillWise',
     );
     return const NotificationDetails(android: android);
   }
@@ -105,6 +142,7 @@ class NotificationsService {
 
   tz.TZDateTime _toTZ(DateTime local) => tz.TZDateTime.from(local, tz.local);
 
+  /// جدولة مع fallback تلقائي: نحاول exact، وإذا رفض النظام نسقط إلى inexact
   Future<void> _zonedSchedule({
     required int id,
     required String title,
@@ -114,21 +152,47 @@ class NotificationsService {
     bool exact = true,
   }) async {
     final when = _toTZ(whenLocal);
-    final now = tz.TZDateTime.now(tz.local);
+    // أحيانًا يكون الفرق أجزاء من الثانية → نزود 2 ثواني أمان
+    final now = tz.TZDateTime.now(tz.local).add(const Duration(seconds: 2));
     if (!when.isAfter(now)) return;
 
+    await _ensureInitialized();
+    await _ensureChannel();
+
+    // أولًا: حاول exact
+    if (exact) {
+      try {
+        await _plugin.zonedSchedule(
+          id,
+          title,
+          body,
+          when,
+          _details(),
+          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+          payload: payload,
+          // منذ 18.x أزيل uiLocalNotificationDateInterpretation والمطابقة: لا نمررها
+          // matchDateTimeComponents: null,  ← الافتراضي null
+        );
+        return;
+      } catch (e) {
+        final msg = e.toString();
+        // لو رفض النظام exact alarms، نسقط إلى inexact
+        if (!msg.contains('exact') && !msg.contains('EXACT')) {
+          // أخطاء أخرى: سنعيد المحاولة بأسلوب inexact عمومًا
+        }
+        // Fallthrough إلى inexact
+      }
+    }
+
+    // ثانيًا: inexact
     await _plugin.zonedSchedule(
       id,
       title,
       body,
       when,
       _details(),
-      androidScheduleMode: exact
-          ? AndroidScheduleMode.exactAllowWhileIdle
-          : AndroidScheduleMode.inexactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
       payload: payload,
-      matchDateTimeComponents: null,
     );
   }
 
@@ -169,6 +233,7 @@ class NotificationsService {
     await cancelBillReminders(billId);
 
     const bool exact = true;
+
     if (returnDeadline != null) {
       final d = DateTime(returnDeadline.year, returnDeadline.month, returnDeadline.day, 10);
       await _zonedSchedule(
@@ -271,5 +336,48 @@ class NotificationsService {
   Future<void> cancelAll() async {
     await _ensureInitialized();
     await _plugin.cancelAll();
+  }
+
+  /// تشخيص سريع: يُظهر حالة الإذن/القناة/exact/pending
+  Future<void> showDiagnosticsDialog(BuildContext context) async {
+    await _ensureInitialized();
+    await _ensureChannel();
+
+    final enabled = await areNotificationsEnabled();
+    final exactOk = await canScheduleExactAlarms();
+    final pending = await _plugin.pendingNotificationRequests();
+    final buf = StringBuffer()
+      ..writeln('🔧 Notifications diagnostics')
+      ..writeln('• areNotificationsEnabled: $enabled')
+      ..writeln('• canScheduleExactAlarms:  $exactOk')
+      ..writeln('• pending count:          ${pending.length}')
+      ..writeln('• tz.local:               ${tz.local.name}');
+
+    // أعرض IDs مختصرة
+    for (final p in pending.take(10)) {
+      buf.writeln('   - [${p.id}] ${p.title ?? ''} (${p.payload ?? ''})');
+    }
+
+    if (!context.mounted) return;
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('BillWise • Diagnostics'),
+        content: SingleChildScrollView(child: Text(buf.toString())),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              openExactAlarmsSettings();
+            },
+            child: const Text('Open exact-alarms settings'),
+          ),
+        ],
+      ),
+    );
   }
 }

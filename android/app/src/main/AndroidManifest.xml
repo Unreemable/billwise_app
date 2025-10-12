@@ -2,36 +2,47 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Network, camera -->
-    <uses-permission android:name="android.permission.INTERNET"/>
-    <uses-permission android:name="android.permission.CAMERA"/>
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- Network / Camera -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.CAMERA" />
+
     <!-- Notifications (Android 13+) -->
     <uses-permission
         android:name="android.permission.POST_NOTIFICATIONS"
-        tools:targetApi="33"/>
+        tools:targetApi="33" />
 
-    <!-- Exact alarms (Android 12+) ← لازمة للتنبيه في وقت محدد بالثانية -->
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+    <!-- Exact alarms (Android 12+) -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
-    <!-- لتحسين موثوقية الإيقاظ عند وقت المنبّه -->
-    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <!-- Wake at alarm time -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
-    <!-- Media permissions (حسب حاجتك الحالية) -->
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+    <!-- Optional: reschedule after reboot -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- Media (حسب الحاجة) -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
-        android:maxSdkVersion="32"/>
+        android:maxSdkVersion="32" />
 
     <uses-feature
         android:name="android.hardware.camera.any"
-        android:required="false"/>
+        android:required="false" />
 
     <application
         android:name="${applicationName}"
         android:label="BillWise"
         android:icon="@mipmap/ic_launcher"
         android:supportsRtl="true">
+
+        <!-- قناة الإشعارات الافتراضية لـ FCM (لازم تطابق قناة local) -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="billwise_reminders" />
+
+        <!-- لا تُضيفي خدمة FCM هنا! المكتبة تضيفها تلقائياً -->
+        <!-- لو سبق وكنتِ ضفتي بلوك <service> احذفيه بالكامل -->
 
         <activity
             android:name=".MainActivity"
@@ -45,23 +56,23 @@
 
             <meta-data
                 android:name="io.flutter.embedding.android.NormalTheme"
-                android:resource="@style/NormalTheme"/>
+                android:resource="@style/NormalTheme" />
 
             <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.LAUNCHER"/>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
         <meta-data
             android:name="flutterEmbedding"
-            android:value="2"/>
+            android:value="2" />
     </application>
 
     <queries>
         <intent>
-            <action android:name="android.intent.action.PROCESS_TEXT"/>
-            <data android:mimeType="text/plain"/>
+            <action android:name="android.intent.action.PROCESS_TEXT" />
+            <data android:mimeType="text/plain" />
         </intent>
     </queries>
 </manifest>
