@@ -30,10 +30,15 @@ import 'src/ocr/scan_receipt_page.dart';
 import 'src/notifications/notifications_service.dart';
 import 'src/notifications/notifications_page.dart';
 
+// ===== Profile =====
+import 'src/profile/profile_page.dart'; // <-- جديد
+import 'src/profile/edit_profile_page.dart';
+
+
+
 /// لرسائل FCM في الخلفية/إغلاق التطبيق (لازم تكون top-level)
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  // اختياري: أظهر إشعار محلي عند وصول رسالة خلف الكواليس (لو فيها عنوان/نص)
   final n = message.notification;
   if (n != null) {
     await NotificationsService.I.init();
@@ -54,7 +59,7 @@ Future<void> main() async {
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
   // إشعارات محلية (قناة + TZ)
-  await NotificationsService.I.init();
+  // await NotificationsService.I.init();
 
   runApp(const App());
 }
@@ -80,9 +85,14 @@ class App extends StatelessWidget {
         WarrantyListPage.route: (_) => const WarrantyListPage(),
         ScanReceiptPage.route: (_) => const ScanReceiptPage(),
         AddBillPage.route: (_) => const AddBillPage(),
+        EditProfilePage.route: (_) => const EditProfilePage(),
+
 
         // Notifications route
         NotificationsPage.route: (_) => const NotificationsPage(),
+
+        // ===== Profile route (جديد) =====
+        ProfilePage.route: (_) => const ProfilePage(),
       },
       onGenerateRoute: (settings) {
         if (settings.name == BillDetailPage.route &&
@@ -139,20 +149,19 @@ class _RootGateState extends State<_RootGate> {
   @override
   void initState() {
     super.initState();
-
-    // نطلب إذن الإشعارات (Android 13+) بعد أول إطار
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await NotificationsService.I.requestPermissions(context);
-      await _initFCM();              // تهيئة FCM (اختياري لكن مفعّل)
+      await _initFCM();
     });
   }
 
-  // ===== Backfill يومي تلقائي (مجاني تمامًا) =====
+  // ===== Backfill يومي تلقائي =====
   Future<void> _autoBackfillRemindersDaily() async {
     final prefs = await SharedPreferences.getInstance();
     final now = DateTime.now();
     final todayKey = 'reminders_backfill_yyyyMMdd';
-    final today = '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}';
+    final today =
+        '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}';
     if (prefs.getString(todayKey) == today) return;
 
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -184,21 +193,16 @@ class _RootGateState extends State<_RootGate> {
   Future<void> _initFCM() async {
     final messaging = FirebaseMessaging.instance;
 
-    // تفعيل التهيئة التلقائية (عادة تكون مفعّلة افتراضيًا)
     await messaging.setAutoInitEnabled(true);
 
-    // اطلب الإذن من FCM (iOS/Android 13+)
     final settings = await messaging.requestPermission();
     debugPrint('FCM permission: ${settings.authorizationStatus}');
 
-    // اطبع/احفظ الـ token (للاختبار من الـ Console، أو خزّنه للمستخدم)
     final token = await messaging.getToken();
     debugPrint('🔑 FCM Device Token: $token');
 
-    // (اختياري) حفظ التوكن للمستخدم عشان إرسال لاحق من السيرفر (إن رغبتِ)
     await _saveFcmTokenForUser(token);
 
-    // رسائل أثناء فتح التطبيق (foreground)
     FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
       final n = message.notification;
       if (n != null) {
@@ -209,15 +213,12 @@ class _RootGateState extends State<_RootGate> {
       }
     });
 
-    // الضغط على الإشعار وفتح التطبيق من الخلفية
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-      // مثال: افتح صفحة الإشعارات
       if (mounted) {
         Navigator.of(context).pushNamed(NotificationsPage.route);
       }
     });
 
-    // لو فتح التطبيق من إشعار وهو مغلق تمامًا (terminated)
     final initial = await FirebaseMessaging.instance.getInitialMessage();
     if (initial != null && mounted) {
       Navigator.of(context).pushNamed(NotificationsPage.route);
@@ -239,9 +240,7 @@ class _RootGateState extends State<_RootGate> {
         'platform': 'android',
         'createdAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
-    } catch (_) {
-      // تجاهل أي خطأ صامتًا
-    }
+    } catch (_) {}
   }
 
   @override
@@ -255,7 +254,6 @@ class _RootGateState extends State<_RootGate> {
           );
         }
         if (snap.hasData) {
-          // بعد أول إطار من الدخول: شغّل Backfill اليومي
           WidgetsBinding.instance.addPostFrameCallback((_) {
             _autoBackfillRemindersDaily();
           });

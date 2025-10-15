@@ -473,6 +473,7 @@ class _AddBillPageState extends State<AddBillPage> {
 
     try {
       await BillService.instance.deleteBill(widget.billId!);
+
       // إلغاء أي تذكيرات مرتبطة
       await _notifs.cancelBillReminders(widget.billId!);
 
@@ -562,7 +563,7 @@ class _AddBillPageState extends State<AddBillPage> {
       );
     } catch (e) {
       final msg = e.toString();
-      // اشهر خطأ على Android 13+ لما exact غير مسموح
+      // أشهر خطأ على Android 13+ لما exact غير مسموح
       if (msg.contains('exact_alarms_not_permitted')) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(

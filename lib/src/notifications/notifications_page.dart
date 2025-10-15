@@ -138,8 +138,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
       }
 
       // ترتيب العناصر داخل كل قسم
-      today.sort((a, b) => a.when.compareTo(b.when));      // تصاعدي
-      upcoming.sort((a, b) => a.when.compareTo(b.when));   // تصاعدي
+      today.sort((a, b) => a.when.compareTo(b.when));      // تصاعدي (اليوم)
+      upcoming.sort((a, b) => a.when.compareTo(b.when));   // تصاعدي (القادم)
       missed.sort((a, b) => b.when.compareTo(a.when));     // تنازلي (الأحدث أولاً)
 
       if (!mounted) return;
@@ -158,12 +158,12 @@ class _NotificationsPageState extends State<NotificationsPage> {
     }
   }
 
-  // إشعار فوري (زر البرق)
+  // زر البرق: إشعار فوري بسيط (بدون حوارات/جدولة)
   Future<void> _sendNow() async {
     await NotificationsService.I.requestPermissions();
     await NotificationsService.I.showNow(
       title: 'BillWise',
-      body: 'إشعار تحريبي ⚡',
+      body: 'إشعار تجريبي ⚡',
     );
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -196,8 +196,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
     );
   }
 
-  Widget _section(String title, List<_NotifFeedItem> list,
-      {required bool deletable}) {
+  Widget _section(String title, List<_NotifFeedItem> list, {required bool deletable}) {
     final visible = list.where((e) => !_dismissed.contains(e.key)).toList();
 
     if (visible.isEmpty) {

@@ -19,6 +19,9 @@ import '../warranties/ui/warranty_detail_page.dart';
 // صفحة الإشعارات
 import '../notifications/notifications_page.dart';
 
+// <<< إضافة: صفحة البروفايل >>>
+import '../profile/profile_page.dart';
+
 // تدرّج موحّد
 const LinearGradient _kAppGradient = LinearGradient(
   colors: [Color(0xFF6A73FF), Color(0xFFE6E9FF)],
@@ -120,6 +123,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   Navigator.pushNamedAndRemoveUntil(context, LoginScreen.route, (_) => false);
                 },
                 onNotifications: () => Navigator.of(context).pushNamed(NotificationsPage.route),
+                // <<< جديد: الضغط على الأفاتار يفتح البروفايل >>>
+                onProfile: () => Navigator.of(context).pushNamed(ProfilePage.route),
               ),
             ),
 
@@ -174,11 +179,13 @@ class _WaveHeader extends StatelessWidget {
   final String name;
   final VoidCallback onLogout;
   final VoidCallback onNotifications;
+  final VoidCallback onProfile; // <<< جديد
 
   const _WaveHeader({
     required this.name,
     required this.onLogout,
     required this.onNotifications,
+    required this.onProfile, // <<< جديد
   });
 
   @override
@@ -197,7 +204,7 @@ class _WaveHeader extends StatelessWidget {
                 Expanded(
                   child: Row(
                     children: [
-                      _ProfileAvatar(name: name),
+                      _ProfileAvatar(name: name, onTap: onProfile), // <<< قابل للنقر
                       const SizedBox(width: 10),
                       Flexible(
                         child: Column(
@@ -259,7 +266,8 @@ class _WaveClipper extends CustomClipper<Path> {
 
 class _ProfileAvatar extends StatelessWidget {
   final String name;
-  const _ProfileAvatar({required this.name});
+  final VoidCallback? onTap; // <<< جديد
+  const _ProfileAvatar({required this.name, this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -268,7 +276,7 @@ class _ProfileAvatar extends StatelessWidget {
     if (parts.isNotEmpty && parts.first.isNotEmpty) {
       initials = parts.first.characters.first.toUpperCase();
     }
-    return Container(
+    final avatar = Container(
       width: 42, height: 42,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
@@ -277,6 +285,15 @@ class _ProfileAvatar extends StatelessWidget {
       ),
       alignment: Alignment.center,
       child: Text(initials, style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Colors.black87, fontWeight: FontWeight.w700)),
+    );
+
+    // لو فيه onTap نخليها قابلة للنقر
+    return onTap == null
+        ? avatar
+        : InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(21),
+      child: avatar,
     );
   }
 }
