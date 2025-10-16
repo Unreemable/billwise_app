@@ -10,7 +10,7 @@ import 'firebase_options.dart';
 // Auth + Home
 import 'src/auth/login_screen.dart';
 import 'src/auth/register_screen.dart';
-import 'src/home/home_screen.dart';
+import 'src/home/home_screen.dart'; // للتوافق فقط
 
 // Bills & Warranties
 import 'src/bills/ui/bill_list_page.dart';
@@ -26,17 +26,21 @@ import 'src/common/models.dart';
 // OCR
 import 'src/ocr/scan_receipt_page.dart';
 
-// Notifications (محلي + صفحة الإشعارات)
+// Notifications
 import 'src/notifications/notifications_service.dart';
 import 'src/notifications/notifications_page.dart';
 
-// ===== Profile =====
-import 'src/profile/profile_page.dart'; // <-- جديد
+// Profile
+import 'src/profile/profile_page.dart';
 import 'src/profile/edit_profile_page.dart';
 
+// خلفية الباستيل
+import 'src/common/soft_pastel_background.dart';
 
+// App Shell (النافقيشن السفلي الدائم)
+import 'src/shell/app_shell.dart';
 
-/// لرسائل FCM في الخلفية/إغلاق التطبيق (لازم تكون top-level)
+/// لرسائل FCM في الخلفية/إغلاق التطبيق
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   final n = message.notification;
@@ -58,9 +62,6 @@ Future<void> main() async {
   // FCM: معالج الخلفية لازم يُسجَّل قبل runApp
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
-  // إشعارات محلية (قناة + TZ)
-  // await NotificationsService.I.init();
-
   runApp(const App());
 }
 
@@ -74,24 +75,24 @@ class App extends StatelessWidget {
       title: 'BillWise',
       theme: ThemeData(
         useMaterial3: true,
+        scaffoldBackgroundColor: Colors.transparent, // للخلفية
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF3C7EFF)),
+      ),
+      // الخلفية العامة
+      builder: (context, child) => SoftPastelBackground(
+        child: child ?? const SizedBox.shrink(),
       ),
       home: const _RootGate(),
       routes: {
         LoginScreen.route: (_) => const LoginScreen(),
         RegisterScreen.route: (_) => const RegisterScreen(),
-        HomeScreen.route: (_) => const HomeScreen(),
+        HomeScreen.route: (_) => const HomeScreen(), // للتوافق
         BillListPage.route: (_) => const BillListPage(),
         WarrantyListPage.route: (_) => const WarrantyListPage(),
         ScanReceiptPage.route: (_) => const ScanReceiptPage(),
         AddBillPage.route: (_) => const AddBillPage(),
         EditProfilePage.route: (_) => const EditProfilePage(),
-
-
-        // Notifications route
         NotificationsPage.route: (_) => const NotificationsPage(),
-
-        // ===== Profile route (جديد) =====
         ProfilePage.route: (_) => const ProfilePage(),
       },
       onGenerateRoute: (settings) {
@@ -125,9 +126,8 @@ class App extends StatelessWidget {
           }
           return MaterialPageRoute(
             builder: (_) => const Scaffold(
-              body: Center(
-                child: Text('⚠️ billId is required for AddWarrantyPage'),
-              ),
+              backgroundColor: Colors.transparent,
+              body: Center(child: Text('⚠️ billId is required for AddWarrantyPage')),
             ),
           );
         }
@@ -137,7 +137,7 @@ class App extends StatelessWidget {
   }
 }
 
-/// جذر التطبيق: يختار الشاشة المناسبة + يفعّل FCM ويطلب أذونات الإشعار مرة واحدة
+/// Root: يختار الشاشة + يفعّل FCM + Backfill يومي
 class _RootGate extends StatefulWidget {
   const _RootGate();
 
@@ -155,7 +155,6 @@ class _RootGateState extends State<_RootGate> {
     });
   }
 
-  // ===== Backfill يومي تلقائي =====
   Future<void> _autoBackfillRemindersDaily() async {
     final prefs = await SharedPreferences.getInstance();
     final now = DateTime.now();
@@ -189,7 +188,6 @@ class _RootGateState extends State<_RootGate> {
     await prefs.setString(todayKey, today);
   }
 
-  // ===== FCM =====
   Future<void> _initFCM() async {
     final messaging = FirebaseMessaging.instance;
 
@@ -215,13 +213,13 @@ class _RootGateState extends State<_RootGate> {
 
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
       if (mounted) {
-        Navigator.of(context).pushNamed(NotificationsPage.route);
+        Navigator.of(context, rootNavigator: true).pushNamed(NotificationsPage.route);
       }
     });
 
     final initial = await FirebaseMessaging.instance.getInitialMessage();
     if (initial != null && mounted) {
-      Navigator.of(context).pushNamed(NotificationsPage.route);
+      Navigator.of(context, rootNavigator: true).pushNamed(NotificationsPage.route);
     }
   }
 
@@ -250,6 +248,7 @@ class _RootGateState extends State<_RootGate> {
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
           return const Scaffold(
+            backgroundColor: Colors.transparent,
             body: Center(child: CircularProgressIndicator()),
           );
         }
@@ -257,7 +256,8 @@ class _RootGateState extends State<_RootGate> {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             _autoBackfillRemindersDaily();
           });
-          return const HomeScreen();
+          // البار السفلي ثابت في كل الصفحات
+          return const AppShell();
         }
         return const LoginScreen();
       },

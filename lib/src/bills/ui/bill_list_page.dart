@@ -22,8 +22,7 @@ enum _BillSort { newest, oldest, nearExpiry }
 
 class _BillListPageState extends State<BillListPage> {
   final _searchCtrl = TextEditingController();
-  final _money =
-  NumberFormat.currency(locale: 'en', symbol: 'SAR ', decimalDigits: 2);
+  final _money = NumberFormat.currency(locale: 'en', symbol: 'SAR ', decimalDigits: 2);
 
   _BillSort _sort = _BillSort.newest;
 
@@ -47,10 +46,10 @@ class _BillListPageState extends State<BillListPage> {
     final diff = today.difference(s).inDays;
 
     if (diff < 0) return Colors.blueGrey; // قبل البدء
-    if (diff == 0) return Colors.green; // اليوم 1
-    if (diff == 1) return Colors.orange; // اليوم 2
-    if (diff == 2) return Colors.red; // اليوم 3 (الأخير)
-    return Colors.grey; // انتهى
+    if (diff == 0) return Colors.green;   // اليوم 1
+    if (diff == 1) return Colors.orange;  // اليوم 2
+    if (diff == 2) return Colors.red;     // اليوم 3 (الأخير)
+    return Colors.grey;                   // انتهى
   }
 
   String? _threeDayReturnLabel(DateTime? startUtc, DateTime? endUtc) {
@@ -80,10 +79,10 @@ class _BillListPageState extends State<BillListPage> {
     final diff = today.difference(s).inDays + 1; // أول يوم = 1
 
     if (diff <= 0) return Colors.blueGrey;
-    if (diff >= 1 && diff <= 3) return Colors.green; // 1–3
+    if (diff >= 1 && diff <= 3) return Colors.green;  // 1–3
     if (diff >= 4 && diff <= 6) return Colors.orange; // 4–6
-    if (diff == 7) return Colors.red; // 7
-    return Colors.grey; // انتهى
+    if (diff == 7) return Colors.red;                 // 7
+    return Colors.grey;                               // انتهى
   }
 
   String? _sevenDayExchangeLabel(DateTime? startUtc, DateTime? endUtc) {
@@ -222,10 +221,8 @@ class _BillListPageState extends State<BillListPage> {
     final threeDayColor = isReturn ? _threeDayReturnColor(start, end) : null;
     final threeDayLabel = isReturn ? _threeDayReturnLabel(start, end) : null;
 
-    final sevenDayColor =
-    isExchange ? _sevenDayExchangeColor(start, end) : null;
-    final sevenDayLabel =
-    isExchange ? _sevenDayExchangeLabel(start, end) : null;
+    final sevenDayColor = isExchange ? _sevenDayExchangeColor(start, end) : null;
+    final sevenDayLabel = isExchange ? _sevenDayExchangeLabel(start, end) : null;
 
     final warrantyColor = isWarranty ? _warrantyColor(start, end) : null;
     final warrantyLabel = isWarranty ? _warrantyLabel(start, end) : null;
@@ -239,15 +236,9 @@ class _BillListPageState extends State<BillListPage> {
         if (threeDayColor != null) ...[
           Row(
             children: [
-              Container(
-                  width: 10,
-                  height: 10,
-                  decoration: BoxDecoration(
-                      color: threeDayColor, shape: BoxShape.circle)),
+              Container(width: 10, height: 10, decoration: BoxDecoration(color: threeDayColor, shape: BoxShape.circle)),
               const SizedBox(width: 8),
-              Text(threeDayLabel ?? 'Return (3-day window)',
-                  style: const TextStyle(
-                      fontSize: 12, fontWeight: FontWeight.w500)),
+              Text(threeDayLabel ?? 'Return (3-day window)', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
             ],
           ),
           const SizedBox(height: 6),
@@ -255,15 +246,9 @@ class _BillListPageState extends State<BillListPage> {
         if (sevenDayColor != null) ...[
           Row(
             children: [
-              Container(
-                  width: 10,
-                  height: 10,
-                  decoration: BoxDecoration(
-                      color: sevenDayColor, shape: BoxShape.circle)),
+              Container(width: 10, height: 10, decoration: BoxDecoration(color: sevenDayColor, shape: BoxShape.circle)),
               const SizedBox(width: 8),
-              Text(sevenDayLabel ?? 'Exchange (7-day window)',
-                  style: const TextStyle(
-                      fontSize: 12, fontWeight: FontWeight.w500)),
+              Text(sevenDayLabel ?? 'Exchange (7-day window)', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
             ],
           ),
           const SizedBox(height: 6),
@@ -271,21 +256,15 @@ class _BillListPageState extends State<BillListPage> {
         if (warrantyColor != null) ...[
           Row(
             children: [
-              Container(
-                  width: 10,
-                  height: 10,
-                  decoration: BoxDecoration(
-                      color: warrantyColor, shape: BoxShape.circle)),
+              Container(width: 10, height: 10, decoration: BoxDecoration(color: warrantyColor, shape: BoxShape.circle)),
               const SizedBox(width: 8),
-              Text(warrantyLabel ?? 'Warranty (3 segments)',
-                  style: const TextStyle(
-                      fontSize: 12, fontWeight: FontWeight.w500)),
+              Text(warrantyLabel ?? 'Warranty (3 segments)', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
             ],
           ),
           const SizedBox(height: 6),
         ],
 
-        // ⬅️ الشريط يأخذ نفس اللون، والضمان يُعرض بالأشهر
+        // الشريط بنفس اللون، والضمان بالأشهر
         ExpiryProgress(
           title: title,
           startDate: start,
@@ -306,8 +285,7 @@ class _BillListPageState extends State<BillListPage> {
 
   /// أقرب انتهاء للفاتورة بين (return/exchange/warranty)
   DateTime? _nearestExpiry(Map<String, dynamic> d) {
-    DateTime? parseTs(dynamic v) =>
-        (v is Timestamp) ? v.toDate().toLocal() : null;
+    DateTime? parseTs(dynamic v) => (v is Timestamp) ? v.toDate().toLocal() : null;
 
     DateTime? minDate(DateTime? a, DateTime? b) {
       if (a == null) return b;
@@ -316,8 +294,8 @@ class _BillListPageState extends State<BillListPage> {
     }
 
     final ret = parseTs(d['return_deadline']);
-    final ex = parseTs(d['exchange_deadline']);
-    final w = parseTs(d['warranty_end_date']);
+    final ex  = parseTs(d['exchange_deadline']);
+    final w   = parseTs(d['warranty_end_date']);
     final m = minDate(minDate(ret, ex), w);
     return m == null ? null : DateTime(m.year, m.month, m.day);
   }
@@ -332,7 +310,7 @@ class _BillListPageState extends State<BillListPage> {
         appBar: AppBar(title: const Text('Bills')),
         floatingActionButton: FloatingActionButton(
           onPressed: () async {
-            await Navigator.of(context)
+            await Navigator.of(context, rootNavigator: true)
                 .push(MaterialPageRoute(builder: (_) => const AddBillPage()));
             if (mounted) setState(() {}); // refresh after adding
           },
@@ -365,20 +343,17 @@ class _BillListPageState extends State<BillListPage> {
                   ChoiceChip(
                     label: const Text('Newest'),
                     selected: _sort == _BillSort.newest,
-                    onSelected: (_) =>
-                        setState(() => _sort = _BillSort.newest),
+                    onSelected: (_) => setState(() => _sort = _BillSort.newest),
                   ),
                   ChoiceChip(
                     label: const Text('Oldest'),
                     selected: _sort == _BillSort.oldest,
-                    onSelected: (_) =>
-                        setState(() => _sort = _BillSort.oldest),
+                    onSelected: (_) => setState(() => _sort = _BillSort.oldest),
                   ),
                   ChoiceChip(
                     label: const Text('Near expiry'),
                     selected: _sort == _BillSort.nearExpiry,
-                    onSelected: (_) =>
-                        setState(() => _sort = _BillSort.nearExpiry),
+                    onSelected: (_) => setState(() => _sort = _BillSort.nearExpiry),
                   ),
                 ],
               ),
@@ -397,8 +372,7 @@ class _BillListPageState extends State<BillListPage> {
                     return Center(child: Text('Error: ${s.error}'));
                   }
                   if (!s.hasData) {
-                    return const Center(
-                        child: CircularProgressIndicator());
+                    return const Center(child: CircularProgressIndicator());
                   }
 
                   var docs = s.data!.docs;
@@ -408,11 +382,8 @@ class _BillListPageState extends State<BillListPage> {
                   if (q.isNotEmpty) {
                     docs = docs.where((e) {
                       final d = e.data();
-                      final title =
-                      (d['title'] ?? '').toString().toLowerCase();
-                      final shop = (d['shop_name'] ?? '')
-                          .toString()
-                          .toLowerCase();
+                      final title = (d['title'] ?? '').toString().toLowerCase();
+                      final shop  = (d['shop_name'] ?? '').toString().toLowerCase();
                       return title.contains(q) || shop.contains(q);
                     }).toList();
                   }
@@ -441,78 +412,50 @@ class _BillListPageState extends State<BillListPage> {
                       final doc = docs[i];
                       final d = doc.data();
 
-                      final title = (d['title'] ?? '—').toString();
-                      final shop = (d['shop_name'] ?? '—').toString();
-                      final amount =
-                      (d['total_amount'] as num?)?.toDouble();
+                      final title  = (d['title'] ?? '—').toString();
+                      final shop   = (d['shop_name'] ?? '—').toString();
+                      final amount = (d['total_amount'] as num?)?.toDouble();
 
-                      final purchase = (d['purchase_date'] as Timestamp?)
-                          ?.toDate()
-                          .toLocal();
-                      final ret = (d['return_deadline'] as Timestamp?)
-                          ?.toDate()
-                          .toLocal();
-                      final ex = (d['exchange_deadline'] as Timestamp?)
-                          ?.toDate()
-                          .toLocal();
+                      final purchase = (d['purchase_date'] as Timestamp?)?.toDate().toLocal();
+                      final ret      = (d['return_deadline'] as Timestamp?)?.toDate().toLocal();
+                      final ex       = (d['exchange_deadline'] as Timestamp?)?.toDate().toLocal();
 
-                      final hasWarranty =
-                          (d['warranty_coverage'] as bool?) ?? false;
-                      final wEnd =
-                      (d['warranty_end_date'] as Timestamp?)
-                          ?.toDate()
-                          .toLocal();
+                      final hasWarranty = (d['warranty_coverage'] as bool?) ?? false;
+                      final wEnd        = (d['warranty_end_date'] as Timestamp?)?.toDate().toLocal();
 
-                      final hasReceipt = (d['receipt_image_path']
-                      as String?)
-                          ?.trim()
-                          .isNotEmpty ==
-                          true;
+                      final hasReceipt = (d['receipt_image_path'] as String?)?.trim().isNotEmpty == true;
 
                       return Card(
                         child: ListTile(
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 12),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                           title: Text(
                             shop,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                                fontWeight: FontWeight.w600),
+                            style: const TextStyle(fontWeight: FontWeight.w600),
                           ),
                           subtitle: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
                                 '${title == shop ? '' : '$title • '}${amount == null ? '-' : _money.format(amount)}',
-                                style:
-                                Theme.of(context).textTheme.bodySmall,
+                                style: Theme.of(context).textTheme.bodySmall,
                               ),
                               const SizedBox(height: 10),
 
-                              _policyBlock(
-                                  title: 'Return',
-                                  start: purchase,
-                                  end: ret),
+                              _policyBlock(title: 'Return',   start: purchase, end: ret),
                               const SizedBox(height: 10),
-                              _policyBlock(
-                                  title: 'Exchange',
-                                  start: purchase,
-                                  end: ex),
+                              _policyBlock(title: 'Exchange', start: purchase, end: ex),
                               const SizedBox(height: 10),
 
                               if (hasWarranty && wEnd != null)
-                                _policyBlock(
-                                    title: 'Warranty',
-                                    start: purchase,
-                                    end: wEnd),
+                                _policyBlock(title: 'Warranty', start: purchase, end: wEnd),
                             ],
                           ),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              if (hasReceipt)
-                                const Icon(Icons.attachment, size: 18),
+                              if (hasReceipt) const Icon(Icons.attachment, size: 18),
                               const SizedBox(width: 4),
                               const Icon(Icons.chevron_right),
                             ],
@@ -523,17 +466,15 @@ class _BillListPageState extends State<BillListPage> {
                               title: title,
                               product: shop,
                               amount: amount ?? 0,
-                              purchaseDate:
-                              purchase ?? DateTime.now(),
+                              purchaseDate: purchase ?? DateTime.now(),
                               returnDeadline: ret,
                               exchangeDeadline: ex,
                               hasWarranty: hasWarranty,
                               warrantyExpiry: wEnd,
                             );
-                            Navigator.pushNamed(
-                              context,
-                              BillDetailPage.route,
-                              arguments: details,
+                            // ✅ افتح التفاصيل مباشرة على الـroot
+                            Navigator.of(context, rootNavigator: true).push(
+                              MaterialPageRoute(builder: (_) => BillDetailPage(details: details)),
                             );
                           },
                         ),
