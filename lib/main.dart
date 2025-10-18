@@ -29,6 +29,8 @@ import 'src/ocr/scan_receipt_page.dart';
 // Notifications
 import 'src/notifications/notifications_service.dart';
 import 'src/notifications/notifications_page.dart';
+// 👇 جديد: إنشاء قناة billwise_reminders
+import 'src/notifications/notifications_bootstrap.dart';
 
 // Profile
 import 'src/profile/profile_page.dart';
@@ -58,6 +60,9 @@ Future<void> main() async {
 
   // Firebase
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  // إنشاء قناة الإشعارات محليًا (Android 8+) — يجب قبل أي عرض محلي
+  await setupLocalNotifications();
 
   // FCM: معالج الخلفية لازم يُسجَّل قبل runApp
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
@@ -124,6 +129,7 @@ class App extends StatelessWidget {
               settings: settings,
             );
           }
+          // 🔧 شلنا const من MaterialPageRoute لأنه ليس const constructor
           return MaterialPageRoute(
             builder: (_) => const Scaffold(
               backgroundColor: Colors.transparent,
@@ -155,6 +161,9 @@ class _RootGateState extends State<_RootGate> {
     });
   }
 
+  // ✅ غيّرنا اسم الدالة (بدون underscore) لتفادي تحذير الـ Lint
+  DateTime? tsToDate(dynamic v) => v is Timestamp ? v.toDate() : null;
+
   Future<void> _autoBackfillRemindersDaily() async {
     final prefs = await SharedPreferences.getInstance();
     final now = DateTime.now();
@@ -165,8 +174,6 @@ class _RootGateState extends State<_RootGate> {
 
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-
-    DateTime? _tsToDate(dynamic v) => v is Timestamp ? v.toDate() : null;
 
     final snap = await FirebaseFirestore.instance
         .collection('Bills')
@@ -179,9 +186,9 @@ class _RootGateState extends State<_RootGate> {
         billId: d.id,
         title: (m['title'] ?? '').toString(),
         shop: (m['shop_name'] ?? '').toString(),
-        purchaseDate: _tsToDate(m['purchase_date']) ?? DateTime.now(),
-        returnDeadline: _tsToDate(m['return_deadline']),
-        exchangeDeadline: _tsToDate(m['exchange_deadline']),
+        purchaseDate: tsToDate(m['purchase_date']) ?? DateTime.now(),
+        returnDeadline: tsToDate(m['return_deadline']),
+        exchangeDeadline: tsToDate(m['exchange_deadline']),
       );
     }
 
@@ -201,6 +208,7 @@ class _RootGateState extends State<_RootGate> {
 
     await _saveFcmTokenForUser(token);
 
+    // فورغراوند: أظهر تنبيه محلي على قناة billwise_reminders
     FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
       final n = message.notification;
       if (n != null) {
@@ -211,12 +219,14 @@ class _RootGateState extends State<_RootGate> {
       }
     });
 
+    // فتح من التنبيه
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
       if (mounted) {
         Navigator.of(context, rootNavigator: true).pushNamed(NotificationsPage.route);
       }
     });
 
+    // فتح من terminated
     final initial = await FirebaseMessaging.instance.getInitialMessage();
     if (initial != null && mounted) {
       Navigator.of(context, rootNavigator: true).pushNamed(NotificationsPage.route);
