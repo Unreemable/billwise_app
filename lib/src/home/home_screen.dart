@@ -7,12 +7,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../auth/login_screen.dart';
 import '../ocr/scan_receipt_page.dart';
 
-import '../bills/ui/bill_list_page.dart';
 import '../bills/ui/add_bill_page.dart';
 import '../bills/ui/bill_detail_page.dart';
 import '../common/models.dart';
 
-import '../warranties/ui/warranty_list_page.dart';
 import '../warranties/ui/add_warranty_page.dart';
 import '../warranties/ui/warranty_detail_page.dart';
 
@@ -239,20 +237,35 @@ class _WaveClipper extends CustomClipper<Path> {
   bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
 }
 
+/// ======= أفاتارات جاهزة (emoji + gradient) تُستخدم في الهيدر =======
+const Map<String, List<dynamic>> _kAvatarPresets = {
+  'fox_purple':     ['🦊', [Color(0xFF6A73FF), Color(0xFFE6E9FF)]],
+  'panda_blue':     ['🐼', [Color(0xFF38BDF8), Color(0xFFD1FAFF)]],
+  'cat_pink':       ['🐱', [Color(0xFFF472B6), Color(0xFFFCE7F3)]],
+  'dog_orange':     ['🐶', [Color(0xFFFB923C), Color(0xFFFFEDD5)]],
+  'koala_green':    ['🐨', [Color(0xFF34D399), Color(0xFFD1FAE5)]],
+  'penguin_sky':    ['🐧', [Color(0xFF60A5FA), Color(0xFFE0E7FF)]],
+  'bear_violet':    ['🐻', [Color(0xFFA78BFA), Color(0xFFEDE9FE)]],
+  'bunny_mint':     ['🐰', [Color(0xFF4ADE80), Color(0xFFD1FAE5)]],
+  'tiger_sunset':   ['🐯', [Color(0xFFF59E0B), Color(0xFFFFF7ED)]],
+  'owl_night':      ['🦉', [Color(0xFF64748B), Color(0xFFE2E8F0)]],
+  'alien_candy':    ['👽', [Color(0xFF22D3EE), Color(0xFFCCFBF1)]],
+  'robot_lavender': ['🤖', [Color(0xFF93C5FD), Color(0xFFE0E7FF)]],
+};
+
 class _ProfileAvatar extends StatelessWidget {
   final String name;
   final VoidCallback? onTap;
   const _ProfileAvatar({required this.name, this.onTap});
 
-  @override
-  Widget build(BuildContext context) {
-    String initials = 'U';
-    final parts = name.trim().split(' ');
-    if (parts.isNotEmpty && parts.first.isNotEmpty) {
-      initials = parts.first.characters.first.toUpperCase();
-    }
+  String _initialOf(String text) {
+    final t = text.trim();
+    if (t.isEmpty) return 'U';
+    return t.substring(0, 1).toUpperCase();
+  }
 
-    final avatar = Container(
+  Widget _fallbackCircle(BuildContext context, String initials) {
+    return Container(
       width: 42, height: 42,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
@@ -274,10 +287,61 @@ class _ProfileAvatar extends StatelessWidget {
         ),
       ),
     );
+  }
 
-    return onTap == null
-        ? avatar
-        : InkWell(onTap: onTap, borderRadius: BorderRadius.circular(21), child: avatar);
+  @override
+  Widget build(BuildContext context) {
+    final initials = _initialOf(name);
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+
+    if (uid == null) {
+      final base = _fallbackCircle(context, initials);
+      return onTap == null ? base : InkWell(onTap: onTap, borderRadius: BorderRadius.circular(21), child: base);
+    }
+
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance.collection('users').doc(uid).snapshots(),
+      builder: (context, snap) {
+        Widget child;
+        if (!snap.hasData || !snap.data!.exists) {
+          child = _fallbackCircle(context, initials);
+        } else {
+          final data = snap.data!.data();
+          final avatarId = (data?['avatar_id'] ?? '') as String;
+          if (avatarId.isEmpty || !_kAvatarPresets.containsKey(avatarId)) {
+            child = _fallbackCircle(context, initials);
+          } else {
+            final item = _kAvatarPresets[avatarId]!;
+            final emoji  = item[0] as String;
+            final colors = (item[1] as List<Color>);
+            child = Container(
+              width: 42, height: 42,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: LinearGradient(
+                  colors: colors,
+                  begin: Alignment.topRight,
+                  end: Alignment.bottomLeft,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.08),
+                    blurRadius: 10,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              alignment: Alignment.center,
+              child: Text(emoji, style: const TextStyle(fontSize: 22)),
+            );
+          }
+        }
+
+        return onTap == null
+            ? child
+            : InkWell(onTap: onTap, borderRadius: BorderRadius.circular(21), child: child);
+      },
+    );
   }
 }
 
@@ -380,7 +444,7 @@ class _RoundAction extends StatelessWidget {
       onTap: () {
         if (label.contains('OCR')) {
           _go(const ScanReceiptPage());
-        } else if (label == 'Bill') {
+        } else if (label.contains('Bill')) { // الإصلاح: تأكد يفتح Add Bill
           _go(const AddBillPage());
         } else {
           _go(const AddWarrantyPage(

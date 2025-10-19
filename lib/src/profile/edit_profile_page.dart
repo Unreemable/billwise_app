@@ -10,7 +10,6 @@ class EditProfilePage extends StatefulWidget {
   State<EditProfilePage> createState() => _EditProfilePageState();
 }
 
-// ====== Avatar presets (بدون أصول صور؛ نعتمد إيموجي + تدرج) ======
 class _AvatarPreset {
   final String id;
   final String emoji;
@@ -19,17 +18,17 @@ class _AvatarPreset {
 }
 
 const List<_AvatarPreset> _presets = [
-  _AvatarPreset('fox_purple',     '🦊', [Color(0xFF6A73FF), Color(0xFFE6E9FF)]),
-  _AvatarPreset('panda_blue',     '🐼', [Color(0xFF38BDF8), Color(0xFFD1FAFF)]),
-  _AvatarPreset('cat_pink',       '🐱', [Color(0xFFF472B6), Color(0xFFFCE7F3)]),
-  _AvatarPreset('dog_orange',     '🐶', [Color(0xFFFB923C), Color(0xFFFFEDD5)]),
-  _AvatarPreset('koala_green',    '🐨', [Color(0xFF34D399), Color(0xFFD1FAE5)]),
-  _AvatarPreset('penguin_sky',    '🐧', [Color(0xFF60A5FA), Color(0xFFE0E7FF)]),
-  _AvatarPreset('bear_violet',    '🐻', [Color(0xFFA78BFA), Color(0xFFEDE9FE)]),
-  _AvatarPreset('bunny_mint',     '🐰', [Color(0xFF4ADE80), Color(0xFFD1FAE5)]),
-  _AvatarPreset('tiger_sunset',   '🐯', [Color(0xFFF59E0B), Color(0xFFFFF7ED)]),
-  _AvatarPreset('owl_night',      '🦉', [Color(0xFF64748B), Color(0xFFE2E8F0)]),
-  _AvatarPreset('alien_candy',    '👽', [Color(0xFF22D3EE), Color(0xFFCCFBF1)]),
+  _AvatarPreset('fox_purple', '🦊', [Color(0xFF6A73FF), Color(0xFFE6E9FF)]),
+  _AvatarPreset('panda_blue', '🐼', [Color(0xFF38BDF8), Color(0xFFD1FAFF)]),
+  _AvatarPreset('cat_pink', '🐱', [Color(0xFFF472B6), Color(0xFFFCE7F3)]),
+  _AvatarPreset('dog_orange', '🐶', [Color(0xFFFB923C), Color(0xFFFFEDD5)]),
+  _AvatarPreset('koala_green', '🐨', [Color(0xFF34D399), Color(0xFFD1FAE5)]),
+  _AvatarPreset('penguin_sky', '🐧', [Color(0xFF60A5FA), Color(0xFFE0E7FF)]),
+  _AvatarPreset('bear_violet', '🐻', [Color(0xFFA78BFA), Color(0xFFEDE9FE)]),
+  _AvatarPreset('bunny_mint', '🐰', [Color(0xFF4ADE80), Color(0xFFD1FAE5)]),
+  _AvatarPreset('tiger_sunset', '🐯', [Color(0xFFF59E0B), Color(0xFFFFF7ED)]),
+  _AvatarPreset('owl_night', '🦉', [Color(0xFF64748B), Color(0xFFE2E8F0)]),
+  _AvatarPreset('alien_candy', '👽', [Color(0xFF22D3EE), Color(0xFFCCFBF1)]),
   _AvatarPreset('robot_lavender', '🤖', [Color(0xFF93C5FD), Color(0xFFE0E7FF)]),
 ];
 
@@ -49,15 +48,21 @@ class _EditProfilePageState extends State<EditProfilePage> {
     _nameCtrl.text  = (u?.displayName ?? '').trim();
     _emailCtrl.text = (u?.email ?? '').trim();
 
-    // حمّل بيانات المستخدم من Firestore لو موجودة (avatar/phone)
     final uid = u?.uid;
     if (uid != null) {
       FirebaseFirestore.instance.collection('users').doc(uid).get().then((doc) {
         if (!mounted || !doc.exists) return;
-        final m = doc.data()!;
+        final m = doc.data();
+        if (m == null) return;
         setState(() {
           _phoneCtrl.text = (m['phone'] ?? '').toString();
-          _selectedAvatarId = (m['avatar_id'] ?? '') as String?;
+          _selectedAvatarId = (m['avatar_id'] is String) ? m['avatar_id'] as String : null;
+          if ((m['display_name'] ?? '').toString().trim().isNotEmpty) {
+            _nameCtrl.text = m['display_name'].toString().trim();
+          }
+          if ((m['email'] ?? '').toString().trim().isNotEmpty) {
+            _emailCtrl.text = m['email'].toString().trim();
+          }
         });
       });
     }
@@ -132,15 +137,15 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
     setState(() => _saving = true);
     try {
-      // 1) Firebase Auth: الاسم
+      // 1) Auth: الاسم
       if (newName.isNotEmpty && newName != (u.displayName ?? '')) {
         await u.updateDisplayName(newName);
       }
 
-      // 2) Firebase Auth: الإيميل (قد يتطلب re-auth)
+      // 2) Auth: الإيميل (قد يطلب re-auth)
       if (newEmail.isNotEmpty && newEmail != (u.email ?? '')) {
         try {
-          await u.verifyBeforeUpdateEmail(newEmail); // يرسل إيميل تأكيد
+          await u.verifyBeforeUpdateEmail(newEmail);
           _snack('Verification email sent to $newEmail');
         } on FirebaseAuthException catch (e) {
           if (e.code == 'requires-recent-login') {
@@ -148,20 +153,29 @@ class _EditProfilePageState extends State<EditProfilePage> {
           } else {
             _snack('Email update failed: ${e.code}');
           }
+        } catch (e) {
+          _snack('Email update failed: $e');
         }
       }
 
-      // 3) Firestore: phone + avatar_id + display_name/email (نسجّلها للواجهة)
-      await FirebaseFirestore.instance.collection('users').doc(u.uid).set({
-        'phone': newPhone,
-        'avatar_id': _selectedAvatarId ?? '',
-        'display_name': newName,
-        'email': newEmail,
+      // 3) Firestore: أنشئ/حدّث المستند + أضف user_id
+      final docRef = FirebaseFirestore.instance.collection('users').doc(u.uid);
+
+      final Map<String, dynamic> payload = {
+        'user_id': u.uid, // <-- مضاف هنا
         'updated_at': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+        'avatar_id': _selectedAvatarId ?? '',
+      };
+      if (newName.isNotEmpty)  payload['display_name'] = newName;
+      if (newEmail.isNotEmpty) payload['email']        = newEmail;
+      if (newPhone.isNotEmpty) payload['phone']        = newPhone;
+
+      await docRef.set(payload, SetOptions(merge: true));
 
       _snack('Saved.');
-      if (mounted) Navigator.pop(context, true); // ارجعي للبروفايل وقولي له تحدّث
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      _snack('Save failed: $e');
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -183,16 +197,12 @@ class _EditProfilePageState extends State<EditProfilePage> {
             appBar: AppBar(
               title: const Text('Edit Profile'),
               actions: [
-                TextButton(
-                  onPressed: _save,
-                  child: const Text('Save'),
-                )
+                TextButton(onPressed: _save, child: const Text('Save')),
               ],
             ),
             body: ListView(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
               children: [
-                // Avatar preview
                 Center(
                   child: InkWell(
                     onTap: _pickAvatar,
@@ -223,7 +233,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
                 ),
                 const SizedBox(height: 8),
 
-                // Name
                 TextField(
                   controller: _nameCtrl,
                   textInputAction: TextInputAction.next,
@@ -234,7 +243,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
                 ),
                 const SizedBox(height: 12),
 
-                // Email
                 TextField(
                   controller: _emailCtrl,
                   keyboardType: TextInputType.emailAddress,
@@ -247,7 +255,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
                 ),
                 const SizedBox(height: 12),
 
-                // Phone
                 TextField(
                   controller: _phoneCtrl,
                   keyboardType: TextInputType.phone,
@@ -266,7 +273,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
               ],
             ),
           ),
-
           if (_saving)
             Container(color: Colors.black26, alignment: Alignment.center, child: const CircularProgressIndicator()),
         ],

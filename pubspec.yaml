@@ -20,6 +20,11 @@ dependencies:
   cloud_firestore: ^6.0.2
   firebase_storage: ^13.0.2
   firebase_messaging: ^16.0.2
+  file_picker: ^8.0.3
+
+
+
+
 
   # إشعارات محلية + منطقة زمنية
   flutter_local_notifications: ^19.4.2
