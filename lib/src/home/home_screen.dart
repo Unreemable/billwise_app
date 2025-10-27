@@ -64,8 +64,9 @@ class _HomeContentState extends State<HomeContent> {
     return Directionality(
       textDirection: ui.TextDirection.ltr,
       child: Stack(
+        clipBehavior: Clip.none, // يسمح بتداخل الدوائر
         children: [
-          // الهيدر (مستطيل + خانة البحث بداخله)
+          // 1) الهيدر
           Positioned(
             top: 0, left: 0, right: 0,
             child: _Header(
@@ -87,7 +88,30 @@ class _HomeContentState extends State<HomeContent> {
             ),
           ),
 
-          // صف الدوائر يتقاطع نصفه مع أسفل الهيدر
+          // 2) المحتوى — يتّرسَم قبل الأزرار عشان ما يغطيها
+          Positioned.fill(
+            top: _kHeaderHeight,
+            child: SafeArea(
+              top: false,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // تعويض الجزء المتداخل من الدوائر + عنوان الأزرار
+                    const SizedBox(height: _kActionsOverlap + _kActionsLabelsHeight),
+
+                    // باقي المحتوى
+                    _ExpiringMixed3(userId: user?.uid, query: _searchCtrl.text),
+
+                    const SizedBox(height: 16),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // 3) صف الدوائر — آخر عنصر = فوق الكل = يضغط
           Positioned(
             top: _kHeaderHeight - _kActionsOverlap,
             left: 16,
@@ -108,29 +132,6 @@ class _HomeContentState extends State<HomeContent> {
                   label: 'Add Warranty',
                 ),
               ],
-            ),
-          ),
-
-          // المحتوى
-          Positioned.fill(
-            top: _kHeaderHeight,
-            child: SafeArea(
-              top: false,
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // ↓↓ التعويض الصحيح: نصف الدائرة + ارتفاع العناوين تحتها
-                    const SizedBox(height: _kActionsOverlap + _kActionsLabelsHeight),
-
-                    // باقي المحتوى
-                    _ExpiringMixed3(userId: user?.uid, query: _searchCtrl.text),
-
-                    const SizedBox(height: 16),
-                  ],
-                ),
-              ),
             ),
           ),
         ],
@@ -418,69 +419,72 @@ class _RoundAction extends StatelessWidget {
           .push(MaterialPageRoute(builder: (_) => page));
     }
 
-    return InkWell(
-      onTap: () {
-        if (label.contains('OCR')) {
-          _go(const ScanReceiptPage());
-        } else if (label.contains('Bill')) {
-          _go(const AddBillPage());
-        } else {
-          _go(const AddWarrantyPage(
-            billId: null,
-            defaultStartDate: null,
-            defaultEndDate: null,
-          ));
-        }
-      },
-      borderRadius: BorderRadius.circular(56),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // دائرة الأيقونة
-          Container(
-            width: _kActionSize,
-            height: _kActionSize,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  blurRadius: 10,
-                  color: Colors.black.withOpacity(0.06),
-                  offset: const Offset(0, 2),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          if (label.contains('OCR')) {
+            _go(const ScanReceiptPage());
+          } else if (label.contains('Bill')) {
+            _go(const AddBillPage());
+          } else {
+            _go(const AddWarrantyPage(
+              billId: null,
+              defaultStartDate: null,
+              defaultEndDate: null,
+            ));
+          }
+        },
+        borderRadius: BorderRadius.circular(56),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // دائرة الأيقونة
+            Container(
+              width: _kActionSize,
+              height: _kActionSize,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    blurRadius: 10,
+                    color: Colors.black.withOpacity(0.06),
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              alignment: Alignment.center,
+              child: GradientIcon(
+                icon: icon,
+                size: _kActionSize * 0.4, // ≈40 عند 100
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF5F33E1), Color(0xFF000000)],
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
                 ),
-              ],
-            ),
-            alignment: Alignment.center,
-            child: GradientIcon(
-              icon: icon,
-              size: _kActionSize * 0.4, // ≈40 عند 100
-              gradient: const LinearGradient(
-                colors: [Color(0xFF5F33E1), Color(0xFF000000)],
-                begin: Alignment.centerLeft,
-                end: Alignment.centerRight,
               ),
             ),
-          ),
 
-          const SizedBox(height: 8),
+            const SizedBox(height: 8),
 
-          // العنوان أسفل الأيقونة (حتى لسطرين)
-          SizedBox(
-            width: _kActionSize,
-            child: Text(
-              label,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              softWrap: true,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(color: Colors.black87, height: 1.1),
+            // العنوان أسفل الأيقونة (حتى لسطرين)
+            SizedBox(
+              width: _kActionSize,
+              child: Text(
+                label,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                softWrap: true,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: Colors.black87, height: 1.1),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
