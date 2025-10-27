@@ -27,7 +27,11 @@ const LinearGradient kHeaderGradient = LinearGradient(
   end: Alignment.centerRight,
 );
 
-const double _kHeaderHeight = 200;
+// === إعدادات الهيدر والتداخل مع الدوائر ===
+const double _kHeaderHeight = 300;          // هيدر أطول
+const double _kActionSize   = 100;          // حجم دائرة الإجراء
+const double _kActionsOverlap = _kActionSize / 2; // نصف الدائرة يطلع تحت
+const double _kActionsLabelsHeight = 44;    // تعويض لعناوين الأزرار تحت الدوائر
 
 /// واجهة المحتوى فقط — تُستخدم داخل AppShell
 class HomeContent extends StatefulWidget {
@@ -61,11 +65,12 @@ class _HomeContentState extends State<HomeContent> {
       textDirection: ui.TextDirection.ltr,
       child: Stack(
         children: [
-          // الهيدر المتموّج
+          // الهيدر (مستطيل + خانة البحث بداخله)
           Positioned(
             top: 0, left: 0, right: 0,
-            child: _WaveHeader(
+            child: _Header(
               name: _greetName(user),
+              searchCtrl: _searchCtrl,
               onLogout: () async {
                 await FirebaseAuth.instance.signOut();
                 if (!context.mounted) return;
@@ -82,6 +87,30 @@ class _HomeContentState extends State<HomeContent> {
             ),
           ),
 
+          // صف الدوائر يتقاطع نصفه مع أسفل الهيدر
+          Positioned(
+            top: _kHeaderHeight - _kActionsOverlap,
+            left: 16,
+            right: 16,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: const [
+                _RoundAction(
+                  icon: Icons.center_focus_strong, // OCR
+                  label: 'Quick Add\n(OCR)',
+                ),
+                _RoundAction(
+                  icon: Icons.receipt_long, // Bill
+                  label: 'Add Bill',
+                ),
+                _RoundAction(
+                  icon: Icons.verified_user, // Warranty
+                  label: 'Add Warranty',
+                ),
+              ],
+            ),
+          ),
+
           // المحتوى
           Positioned.fill(
             top: _kHeaderHeight,
@@ -92,24 +121,10 @@ class _HomeContentState extends State<HomeContent> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    _SearchAndActions(
-                      searchCtrl: _searchCtrl,
-                      onQuickOCR: () => Navigator.of(context, rootNavigator: true)
-                          .push(MaterialPageRoute(builder: (_) => const ScanReceiptPage())),
-                      onAddBill: () => Navigator.of(context, rootNavigator: true)
-                          .push(MaterialPageRoute(builder: (_) => const AddBillPage())),
-                      onAddWarranty: () => Navigator.of(context, rootNavigator: true).push(
-                        MaterialPageRoute(
-                          builder: (_) => const AddWarrantyPage(
-                            billId: null,
-                            defaultStartDate: null,
-                            defaultEndDate: null,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
+                    // ↓↓ التعويض الصحيح: نصف الدائرة + ارتفاع العناوين تحتها
+                    const SizedBox(height: _kActionsOverlap + _kActionsLabelsHeight),
 
+                    // باقي المحتوى
                     _ExpiringMixed3(userId: user?.uid, query: _searchCtrl.text),
 
                     const SizedBox(height: 16),
@@ -137,16 +152,18 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
-// ================= Wave Header =================
+// ================= Header (مستطيل + بحث داخله) =================
 
-class _WaveHeader extends StatelessWidget {
+class _Header extends StatelessWidget {
   final String name;
+  final TextEditingController searchCtrl;
   final VoidCallback onLogout;
   final VoidCallback onNotifications;
   final VoidCallback onProfile;
 
-  const _WaveHeader({
+  const _Header({
     required this.name,
+    required this.searchCtrl,
     required this.onLogout,
     required this.onNotifications,
     required this.onProfile,
@@ -154,68 +171,98 @@ class _WaveHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ClipPath(
-      clipper: _WaveClipper(),
-      child: Container(
-        height: _kHeaderHeight,
-        decoration: const BoxDecoration(gradient: kHeaderGradient),
-        child: SafeArea(
-          bottom: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Row(
-                    children: [
-                      _ProfileAvatar(name: name, onTap: onProfile),
-                      const SizedBox(width: 10),
-                      Flexible(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Hello,',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .labelLarge
-                                  ?.copyWith(color: Colors.white),
-                            ),
-                            Text(
-                              name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleLarge
-                                  ?.copyWith(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w700,
+    return Container(
+      height: _kHeaderHeight,
+      decoration: const BoxDecoration(
+        gradient: kHeaderGradient,
+      ),
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // الصف العلوي: أفاتار + اسم + أيقونات
+              Row(
+                children: [
+                  Expanded(
+                    child: Row(
+                      children: [
+                        _ProfileAvatar(name: name, onTap: onProfile),
+                        const SizedBox(width: 10),
+                        Flexible(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Hello,',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .labelLarge
+                                    ?.copyWith(color: Colors.white),
                               ),
-                            ),
-                          ],
+                              Text(
+                                name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleLarge
+                                    ?.copyWith(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
+                      ],
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      IconButton(
+                        tooltip: 'Notifications',
+                        onPressed: onNotifications,
+                        icon: const Icon(Icons.notifications, color: Colors.white),
+                      ),
+                      const SizedBox(width: 4),
+                      IconButton(
+                        tooltip: 'Sign out',
+                        onPressed: onLogout,
+                        icon: const Icon(Icons.logout, color: Colors.white),
                       ),
                     ],
                   ),
+                ],
+              ),
+
+              const SizedBox(height: 16),
+
+              // خانة البحث داخل الهيدر (فوق الدوائر)
+              TextField(
+                controller: searchCtrl,
+                decoration: InputDecoration(
+                  hintText: 'Search by title / store / provider',
+                  prefixIcon: const Icon(Icons.search),
+                  filled: true,
+                  fillColor: Colors.white,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: Colors.white.withOpacity(0.0)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: Colors.white.withOpacity(0.0)),
+                  ),
                 ),
-                Row(
-                  children: [
-                    IconButton(
-                      tooltip: 'Notifications',
-                      onPressed: onNotifications,
-                      icon: const Icon(Icons.notifications, color: Colors.white),
-                    ),
-                    const SizedBox(width: 4),
-                    IconButton(
-                      tooltip: 'Sign out',
-                      onPressed: onLogout,
-                      icon: const Icon(Icons.logout, color: Colors.white),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+              ),
+
+              // مسافة سفلية داخل الهيدر للتنفس
+              const SizedBox(height: 12),
+            ],
           ),
         ),
       ),
@@ -223,21 +270,7 @@ class _WaveHeader extends StatelessWidget {
   }
 }
 
-class _WaveClipper extends CustomClipper<Path> {
-  @override
-  Path getClip(Size size) {
-    final Path path = Path()..lineTo(0, size.height - 50);
-    path.quadraticBezierTo(size.width * 0.25, size.height - 15, size.width * 0.5, size.height - 28);
-    path.quadraticBezierTo(size.width * 0.75, size.height - 42, size.width, size.height - 18);
-    path.lineTo(size.width, 0);
-    return path..close();
-  }
-
-  @override
-  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
-}
-
-/// ======= أفاتارات جاهزة (emoji + gradient) تُستخدم في الهيدر =======
+// ======= أفاتارات جاهزة (emoji + gradient) تُستخدم في الهيدر =======
 const Map<String, List<dynamic>> _kAvatarPresets = {
   'fox_purple':     ['🦊', [Color(0xFF6A73FF), Color(0xFFE6E9FF)]],
   'panda_blue':     ['🐼', [Color(0xFF38BDF8), Color(0xFFD1FAFF)]],
@@ -369,62 +402,7 @@ class GradientIcon extends StatelessWidget {
   }
 }
 
-// =================== Search + Round Actions ===================
-
-class _SearchAndActions extends StatelessWidget {
-  final TextEditingController searchCtrl;
-  final VoidCallback onQuickOCR;
-  final VoidCallback onAddBill;
-  final VoidCallback onAddWarranty;
-
-  const _SearchAndActions({
-    required this.searchCtrl,
-    required this.onQuickOCR,
-    required this.onAddBill,
-    required this.onAddWarranty,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        TextField(
-          controller: searchCtrl,
-          decoration: InputDecoration(
-            hintText: 'Search by title / store / provider',
-            prefixIcon: const Icon(Icons.search),
-            filled: true,
-            fillColor: Colors.white,
-            contentPadding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(color: Colors.black.withOpacity(0.08)),
-            ),
-          ),
-        ),
-        const SizedBox(height: 14),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: const [
-            _RoundAction(
-              icon: Icons.center_focus_strong, // OCR
-              label: 'Quick Add\n(OCR)',
-            ),
-            _RoundAction(
-              icon: Icons.receipt_long, // Bill
-              label: 'Add Bill',
-            ),
-            _RoundAction(
-              icon: Icons.verified_user, // Warranty
-              label: 'Add Warranty',
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}
+// =================== Round Actions ===================
 
 class _RoundAction extends StatelessWidget {
   final IconData icon;
@@ -444,7 +422,7 @@ class _RoundAction extends StatelessWidget {
       onTap: () {
         if (label.contains('OCR')) {
           _go(const ScanReceiptPage());
-        } else if (label.contains('Bill')) { // الإصلاح: تأكد يفتح Add Bill
+        } else if (label.contains('Bill')) {
           _go(const AddBillPage());
         } else {
           _go(const AddWarrantyPage(
@@ -460,8 +438,8 @@ class _RoundAction extends StatelessWidget {
         children: [
           // دائرة الأيقونة
           Container(
-            width: 88,
-            height: 88,
+            width: _kActionSize,
+            height: _kActionSize,
             decoration: BoxDecoration(
               color: Colors.white,
               shape: BoxShape.circle,
@@ -476,7 +454,7 @@ class _RoundAction extends StatelessWidget {
             alignment: Alignment.center,
             child: GradientIcon(
               icon: icon,
-              size: 34,
+              size: _kActionSize * 0.4, // ≈40 عند 100
               gradient: const LinearGradient(
                 colors: [Color(0xFF5F33E1), Color(0xFF000000)],
                 begin: Alignment.centerLeft,
@@ -489,7 +467,7 @@ class _RoundAction extends StatelessWidget {
 
           // العنوان أسفل الأيقونة (حتى لسطرين)
           SizedBox(
-            width: 88,
+            width: _kActionSize,
             child: Text(
               label,
               textAlign: TextAlign.center,

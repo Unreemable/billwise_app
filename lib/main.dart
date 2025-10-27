@@ -10,6 +10,27 @@ import 'firebase_options.dart';
 // Auth + Home
 import 'src/auth/login_screen.dart';
 import 'src/auth/register_screen.dart';
+// lib/main.dart
+import 'package:flutter/material.dart';
+
+// Firebase
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+// تخزين محلي خفيف
+import 'package:shared_preferences/shared_preferences.dart';
+
+// تحميل متغيرات البيئة (.env)
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+
+// خيارات فايربيس (مولدة من firebase cli)
+import 'firebase_options.dart';
+
+// Auth + Home
+import 'src/auth/login_screen.dart';
+import 'src/auth/register_screen.dart';
 import 'src/home/home_screen.dart'; // للتوافق فقط
 
 // Bills & Warranties
@@ -29,7 +50,7 @@ import 'src/ocr/scan_receipt_page.dart';
 // Notifications
 import 'src/notifications/notifications_service.dart';
 import 'src/notifications/notifications_page.dart';
-// 👇 جديد: إنشاء قناة billwise_reminders
+// إنشاء قناة billwise_reminders
 import 'src/notifications/notifications_bootstrap.dart';
 
 // Profile
@@ -42,7 +63,7 @@ import 'src/common/soft_pastel_background.dart';
 // App Shell (النافقيشن السفلي الدائم)
 import 'src/shell/app_shell.dart';
 
-/// لرسائل FCM في الخلفية/إغلاق التطبيق
+/// معالج رسائل FCM في الخلفية/عند إغلاق التطبيق (must be a top-level function)
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   final n = message.notification;
@@ -58,13 +79,20 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Firebase
+  // 1) حمّل ملف .env مبكرًا (لـ GEMINI_API_KEY وغيرها)
+  // تأكدي إضافة:
+  // flutter:
+  //   assets:
+  //     - .env
+  await dotenv.load(fileName: ".env");
+
+  // 2) Firebase
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
-  // إنشاء قناة الإشعارات محليًا (Android 8+) — يجب قبل أي عرض محلي
+  // 3) إنشاء قناة الإشعارات محليًا (Android 8+) — قبل أي عرض محلي
   await setupLocalNotifications();
 
-  // FCM: معالج الخلفية لازم يُسجَّل قبل runApp
+  // 4) تسجيل معالج الخلفية قبل runApp
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
   runApp(const App());
@@ -129,7 +157,6 @@ class App extends StatelessWidget {
               settings: settings,
             );
           }
-          // 🔧 شلنا const من MaterialPageRoute لأنه ليس const constructor
           return MaterialPageRoute(
             builder: (_) => const Scaffold(
               backgroundColor: Colors.transparent,
@@ -161,7 +188,6 @@ class _RootGateState extends State<_RootGate> {
     });
   }
 
-  // ✅ غيّرنا اسم الدالة (بدون underscore) لتفادي تحذير الـ Lint
   DateTime? tsToDate(dynamic v) => v is Timestamp ? v.toDate() : null;
 
   Future<void> _autoBackfillRemindersDaily() async {
@@ -219,17 +245,19 @@ class _RootGateState extends State<_RootGate> {
       }
     });
 
-    // فتح من التنبيه
+    // فتح من التنبيه (foreground/background)
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
       if (mounted) {
-        Navigator.of(context, rootNavigator: true).pushNamed(NotificationsPage.route);
+        Navigator.of(context, rootNavigator: true)
+            .pushNamed(NotificationsPage.route);
       }
     });
 
     // فتح من terminated
     final initial = await FirebaseMessaging.instance.getInitialMessage();
     if (initial != null && mounted) {
-      Navigator.of(context, rootNavigator: true).pushNamed(NotificationsPage.route);
+      Navigator.of(context, rootNavigator: true)
+          .pushNamed(NotificationsPage.route);
     }
   }
 

@@ -47,6 +47,10 @@ class _AddBillPageState extends State<AddBillPage> {
   bool _returnManual = false;
   bool _exchangeManual = false;
 
+  // أزرار تشغيل/إيقاف لكل تاريخ
+  bool _enableReturn = true;
+  bool _enableExchange = true;
+
   // Warranty flag only (لا ندير تواريخ الضمان هنا)
   bool _hasWarranty = false;
 
@@ -129,7 +133,7 @@ class _AddBillPageState extends State<AddBillPage> {
 
   String _fmtOrDash(DateTime? d) => d == null ? '—' : _fmt.format(d);
 
-  // احسب افتراض 3/7 أيام بناءً على تاريخ الشراء
+  // احسب افتراض 3/7 أيام بناءً على تاريخ الشراء (لا تمس الأزرار)
   void _applyAutoWindowsFromPurchase(DateTime purchase) {
     final defRet = _retDays ?? 3;
     final defEx  = _exDays  ?? 7;
@@ -182,6 +186,10 @@ class _AddBillPageState extends State<AddBillPage> {
       // بما إن الفاتورة قديمة، نعتبر التواريخ الحالية "يدوية" حتى لا نعيد حسابها تلقائيًا لو تغيّر الشراء
       _returnManual   = _returnDeadline != null;
       _exchangeManual = _exchangeDeadline != null;
+
+      // الأزرار تعتمد على وجود التاريخ المخزن
+      _enableReturn   = _returnDeadline != null;
+      _enableExchange = _exchangeDeadline != null;
 
       _hasWarranty      = (data['warranty_coverage'] as bool?) ?? false;
       _receiptImagePath = (data['receipt_image_path'] as String?);
@@ -261,6 +269,10 @@ class _AddBillPageState extends State<AddBillPage> {
         );
       });
     }
+
+    // الأزرار تتبع وجود القيم المبدئية
+    _enableReturn   = _returnDeadline != null;
+    _enableExchange = _exchangeDeadline != null;
 
     setState(() {});
   }
@@ -344,9 +356,9 @@ class _AddBillPageState extends State<AddBillPage> {
 
     setState(() => _saving = true);
     try {
-      // ✅ ضمان 3/7 أيام لو كانت فاضية
-      _returnDeadline   ??= _deadlineFrom(_purchaseDate!, (_retDays ?? 3));
-      _exchangeDeadline ??= _deadlineFrom(_purchaseDate!, (_exDays  ?? 7));
+      // ✅ عبّي التلقائي فقط لما الزر شغّال
+      if (_enableReturn)   { _returnDeadline   ??= _deadlineFrom(_purchaseDate!, (_retDays ?? 3)); }
+      if (_enableExchange) { _exchangeDeadline ??= _deadlineFrom(_purchaseDate!, (_exDays  ?? 7)); }
 
       final id = await BillService.instance.createBill(
         title: _titleCtrl.text.trim(),
@@ -354,23 +366,23 @@ class _AddBillPageState extends State<AddBillPage> {
         purchaseDate: _purchaseDate!,
         totalAmount: amount,
 
-        // اختيارية الآن
-        returnDeadline: _returnDeadline,
-        exchangeDeadline: _exchangeDeadline,
+        // احترام الأزرار
+        returnDeadline:   _enableReturn   ? _returnDeadline   : null,
+        exchangeDeadline: _enableExchange ? _exchangeDeadline : null,
 
         warrantyCoverage: _hasWarranty,
         userId: uid,
         receiptImagePath: _receiptImagePath,
       );
 
-      // جدولة التذكيرات بعد الإنشاء — مع التقاط الأخطاء
+      // جدولة التذكيرات — باحترام الأزرار
       await _tryRescheduleWithUX(
         billId: id,
         title: _titleCtrl.text.trim(),
         shop: _shopCtrl.text.trim(),
         purchaseDate: _purchaseDate!,
-        returnDeadline: _returnDeadline,
-        exchangeDeadline: _exchangeDeadline,
+        returnDeadline:   _enableReturn   ? _returnDeadline   : null,
+        exchangeDeadline: _enableExchange ? _exchangeDeadline : null,
       );
 
       if (!mounted) return id;
@@ -412,9 +424,8 @@ class _AddBillPageState extends State<AddBillPage> {
 
     setState(() => _saving = true);
     try {
-      // ✅ ضمان 3/7 أيام لو كانت فاضية
-      _returnDeadline   ??= _deadlineFrom(_purchaseDate!, (_retDays ?? 3));
-      _exchangeDeadline ??= _deadlineFrom(_purchaseDate!, (_exDays  ?? 7));
+      if (_enableReturn)   { _returnDeadline   ??= _deadlineFrom(_purchaseDate!, (_retDays ?? 3)); }
+      if (_enableExchange) { _exchangeDeadline ??= _deadlineFrom(_purchaseDate!, (_exDays  ?? 7)); }
 
       await BillService.instance.updateBill(
         billId: widget.billId!,
@@ -423,22 +434,20 @@ class _AddBillPageState extends State<AddBillPage> {
         purchaseDate: _purchaseDate!,
         totalAmount: amount,
 
-        // اختيارية الآن
-        returnDeadline: _returnDeadline,
-        exchangeDeadline: _exchangeDeadline,
+        returnDeadline:   _enableReturn   ? _returnDeadline   : null,
+        exchangeDeadline: _enableExchange ? _exchangeDeadline : null,
 
         warrantyCoverage: _hasWarranty,
         receiptImagePath: _receiptImagePath,
       );
 
-      // إعادة جدولة التذكيرات بعد التحديث — مع التقاط الأخطاء
       await _tryRescheduleWithUX(
         billId: widget.billId!,
         title: _titleCtrl.text.trim(),
         shop: _shopCtrl.text.trim(),
         purchaseDate: _purchaseDate!,
-        returnDeadline: _returnDeadline,
-        exchangeDeadline: _exchangeDeadline,
+        returnDeadline:   _enableReturn   ? _returnDeadline   : null,
+        exchangeDeadline: _enableExchange ? _exchangeDeadline : null,
       );
 
       if (!mounted) return;
@@ -473,10 +482,7 @@ class _AddBillPageState extends State<AddBillPage> {
 
     try {
       await BillService.instance.deleteBill(widget.billId!);
-
-      // إلغاء أي تذكيرات مرتبطة
       await _notifs.cancelBillReminders(widget.billId!);
-
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Bill deleted ✅')),
@@ -500,7 +506,6 @@ class _AddBillPageState extends State<AddBillPage> {
   }
 
   Future<void> _saveAndAddWarranty() async {
-    // في وضع التعديل: لا تسمح بإضافة ضمان جديد إذا كان موجود مسبقًا
     if (widget.billId != null && _hasExistingWarranty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -509,7 +514,6 @@ class _AddBillPageState extends State<AddBillPage> {
       return;
     }
 
-    // في التعديل: حدّث ثم افتح صفحة الضمان
     if (widget.billId != null) {
       await _updateBill();
       if (!mounted) return;
@@ -526,7 +530,6 @@ class _AddBillPageState extends State<AddBillPage> {
       return;
     }
 
-    // إضافة جديدة: أنشئ أولًا
     final newId = await _saveNewBill();
     if (newId == null || !mounted) return;
 
@@ -563,7 +566,6 @@ class _AddBillPageState extends State<AddBillPage> {
       );
     } catch (e) {
       final msg = e.toString();
-      // أشهر خطأ على Android 13+ لما exact غير مسموح
       if (msg.contains('exact_alarms_not_permitted')) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -654,7 +656,7 @@ class _AddBillPageState extends State<AddBillPage> {
             ),
             const SizedBox(height: 12),
 
-            // Dates
+            // ===== Purchase date =====
             ListTile(
               title: const Text('Purchase date'),
               subtitle: Text(_fmtOrDash(_purchaseDate)),
@@ -666,50 +668,88 @@ class _AddBillPageState extends State<AddBillPage> {
                 });
               }),
             ),
-            ListTile(
-              title: const Text('Return deadline'),
-              subtitle: Text(_fmtOrDash(_returnDeadline)),
-              trailing: const Icon(Icons.event),
-              onTap: () => _pickDate(
-                context,
-                _returnDeadline ?? _purchaseDate ?? DateTime.now(),
-                    (d) => setState(() {
-                  _returnManual = true;   // صار يدوي
-                  _returnDeadline = d;
-                }),
+
+            // ===== Return deadline =====
+            IgnorePointer(
+              ignoring: !_enableReturn,
+              child: ListTile(
+                enabled: _enableReturn,
+                title: const Text('Return deadline'),
+                subtitle: Text(
+                  _enableReturn ? _fmtOrDash(_returnDeadline) : '— (موقّف، لن يُحفظ)',
+                  style: TextStyle(color: _enableReturn ? null : Colors.grey),
+                ),
+                trailing: const Icon(Icons.event),
+                onTap: () => _pickDate(
+                  context,
+                  _returnDeadline ?? _purchaseDate ?? DateTime.now(),
+                      (d) => setState(() {
+                    _returnManual = true;
+                    _returnDeadline = d;
+                  }),
+                ),
+                onLongPress: () {
+                  if (!_enableReturn) return;
+                  setState(() {
+                    _returnManual = false;
+                    _returnDeadline = null;
+                  });
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Return deadline cleared')),
+                  );
+                },
               ),
-              onLongPress: () {
-                setState(() {
-                  _returnManual = false;
-                  _returnDeadline = null;
-                });
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Return deadline cleared')),
-                );
-              },
             ),
-            ListTile(
-              title: const Text('Exchange deadline'),
-              subtitle: Text(_fmtOrDash(_exchangeDeadline)),
-              trailing: const Icon(Icons.event_repeat),
-              onTap: () => _pickDate(
-                context,
-                _exchangeDeadline ?? _purchaseDate ?? DateTime.now(),
-                    (d) => setState(() {
-                  _exchangeManual = true; // صار يدوي
-                  _exchangeDeadline = d;
-                }),
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: TextButton.icon(
+                onPressed: () => setState(() => _enableReturn = !_enableReturn),
+                icon: Icon(_enableReturn ? Icons.visibility_off : Icons.visibility),
+                label: Text(_enableReturn ? 'إيقاف الاسترجاع (لن يُحفظ)' : 'تشغيل الاسترجاع'),
               ),
-              onLongPress: () {
-                setState(() {
-                  _exchangeManual = false;
-                  _exchangeDeadline = null;
-                });
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Exchange deadline cleared')),
-                );
-              },
             ),
+            const SizedBox(height: 8),
+
+            // ===== Exchange deadline =====
+            IgnorePointer(
+              ignoring: !_enableExchange,
+              child: ListTile(
+                enabled: _enableExchange,
+                title: const Text('Exchange deadline'),
+                subtitle: Text(
+                  _enableExchange ? _fmtOrDash(_exchangeDeadline) : '— (موقّف، لن يُحفظ)',
+                  style: TextStyle(color: _enableExchange ? null : Colors.grey),
+                ),
+                trailing: const Icon(Icons.event_repeat),
+                onTap: () => _pickDate(
+                  context,
+                  _exchangeDeadline ?? _purchaseDate ?? DateTime.now(),
+                      (d) => setState(() {
+                    _exchangeManual = true;
+                    _exchangeDeadline = d;
+                  }),
+                ),
+                onLongPress: () {
+                  if (!_enableExchange) return;
+                  setState(() {
+                    _exchangeManual = false;
+                    _exchangeDeadline = null;
+                  });
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Exchange deadline cleared')),
+                  );
+                },
+              ),
+            ),
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: TextButton.icon(
+                onPressed: () => setState(() => _enableExchange = !_enableExchange),
+                icon: Icon(_enableExchange ? Icons.visibility_off : Icons.visibility),
+                label: Text(_enableExchange ? 'إيقاف الاستبدال (لن يُحفظ)' : 'تشغيل الاستبدال'),
+              ),
+            ),
+            const SizedBox(height: 8),
 
             const Divider(),
 
