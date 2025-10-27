@@ -4,8 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:file_picker/file_picker.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../data/warranty_service.dart';
@@ -18,7 +16,7 @@ class AddWarrantyPage extends StatefulWidget {
     this.billId,
     this.defaultStartDate,
     this.defaultEndDate,
-    this.warrantyId,           // != null يعني تعديل
+    this.warrantyId, // != null يعني تعديل
     this.initialProvider,
   });
 
@@ -37,7 +35,7 @@ class AddWarrantyPage extends StatefulWidget {
 class _AddWarrantyPageState extends State<AddWarrantyPage> {
   // Controllers
   final _providerCtrl = TextEditingController();
-  final _serialCtrl   = TextEditingController();
+  final _serialCtrl = TextEditingController();
 
   // Dates
   late DateTime _start;
@@ -48,14 +46,13 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
 
   final _notifs = NotificationsService.I;
 
-  bool get isEdit  => widget.warrantyId != null;
+  bool get isEdit => widget.warrantyId != null;
   bool get hasBill => widget.billId != null;
 
-  // ===== مرفق (صورة/ PDF) =====
-  PlatformFile? _pickedFile;          // ملف مختار قبل الرفع
-  String _existingAttachmentUrl  = ''; // لو كان فيه مرفق قديم
-  String _existingAttachmentName = '';
-  String _existingAttachmentMime = '';
+  // ===== مرفق محلي (صورة فقط) مثل Bills =====
+  final _picker = ImagePicker();
+  String? _attachmentLocalPath; // مسار الصورة المحلي
+  String? _attachmentName; // اسم الملف للعرض فقط
 
   @override
   void initState() {
@@ -63,19 +60,19 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
 
     _providerCtrl.text = (widget.initialProvider ?? '').trim();
 
-    // تهيئة آمنة للتواريخ لتجنب LateInitializationError
+    // تهيئة آمنة للتواريخ
     _start = widget.defaultStartDate ?? DateTime.now();
-    _end   = widget.defaultEndDate   ?? _start.add(const Duration(days: 365));
+    _end = widget.defaultEndDate ?? _start.add(const Duration(days: 365));
     if (_end.isBefore(_start)) {
       _end = _start.add(const Duration(days: 1));
     }
 
-    // لو تعديل: حمّل البيانات من Firestore
+    // حمّل بيانات الضمان عند التعديل
     if (isEdit) {
       _loadExistingWarranty();
     }
 
-    // اطلب أذونات الإشعارات بعد أول فريم
+    // أذونات التنبيهات
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _notifs.requestPermissions(context);
     });
@@ -102,21 +99,20 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
 
       // dates
       final startTs = data['start_date'];
-      final endTs   = data['end_date'];
+      final endTs = data['end_date'];
       if (startTs is Timestamp) _start = startTs.toDate();
-      if (endTs   is Timestamp) _end   = endTs.toDate();
+      if (endTs is Timestamp) _end = endTs.toDate();
       if (_end.isBefore(_start)) {
         _end = _start.add(const Duration(days: 1));
       }
 
-      // attachment
-      _existingAttachmentUrl  = (data['attachment_url']  ?? '').toString();
-      _existingAttachmentName = (data['attachment_name'] ?? '').toString();
-      _existingAttachmentMime = (data['attachment_mime'] ?? '').toString();
-
+      // المرفق المحلي
+      _attachmentLocalPath =
+      (data['attachment_local_path'] ?? '') as String?;
+      _attachmentName = (data['attachment_name'] ?? '') as String?;
       setState(() {});
     } catch (_) {
-      // تجاهل بهدوء؛ نعرض القيم الحالية
+      // تجاهل بهدوء
     }
   }
 
@@ -127,123 +123,71 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
     super.dispose();
   }
 
-  // ================= المرفقات =================
+  // ================= المرفقات (محلي فقط) =================
 
   Future<void> _pickAttachment() async {
-    if (!mounted) return;
-
-    final choice = await showModalBottomSheet<String>(
+    // نفس تجربة الفواتير: اختيار الكاميرا أو المعرض
+    final source = await showModalBottomSheet<ImageSource>(
       context: context,
       showDragHandle: true,
-      builder: (_) => SafeArea(
+      builder: (ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.photo_library_outlined),
-              title: const Text('Pick image from gallery'),
-              onTap: () => Navigator.pop(context, 'image'),
+              leading: const Icon(Icons.camera_alt),
+              title: const Text('Camera'),
+              onTap: () => Navigator.pop(ctx, ImageSource.camera),
             ),
             ListTile(
-              leading: const Icon(Icons.picture_as_pdf_outlined),
-              title: const Text('Pick PDF file'),
-              onTap: () => Navigator.pop(context, 'pdf'),
+              leading: const Icon(Icons.photo_library),
+              title: const Text('Gallery'),
+              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
             ),
             const SizedBox(height: 8),
           ],
         ),
       ),
     );
-
-    if (choice == null) return;
+    if (source == null) return;
 
     try {
-      if (choice == 'image') {
-        final img = await ImagePicker().pickImage(
-          source: ImageSource.gallery,
-          imageQuality: 85,
-        );
-        if (img != null) {
-          final f = File(img.path);
-          setState(() {
-            _pickedFile = PlatformFile(
-              name: img.name,
-              path: img.path,
-              size: f.existsSync() ? f.lengthSync() : 0,
-            );
-          });
-        }
-      } else if (choice == 'pdf') {
-        final result = await FilePicker.platform.pickFiles(
-          type: FileType.custom,
-          allowedExtensions: const ['pdf'],
-          withData: false,
-        );
-        if (result != null && result.files.isNotEmpty) {
-          setState(() => _pickedFile = result.files.first);
-        }
+      final x = await _picker.pickImage(
+        source: source,
+        imageQuality: 85,
+      );
+      if (x != null) {
+        setState(() {
+          _attachmentLocalPath = x.path;
+          _attachmentName = x.path.split('/').last;
+        });
       }
     } catch (e) {
       if (!mounted) return;
-      _snack('Could not open picker: $e');
+      _snack('Could not open ${source == ImageSource.camera ? "camera" : "gallery"}: $e');
     }
   }
 
   Future<void> _removeAttachment() async {
-    // حذف مرفق موجود سابقًا (وضع التعديل، ولم يتم اختيار ملف جديد)
-    if (isEdit && _pickedFile == null && _existingAttachmentUrl.isNotEmpty) {
+    // مجرد مسح الحقول من الحالة و Firestore (لا يوجد Storage)
+    if (isEdit &&
+        (_attachmentLocalPath != null ||
+            (_attachmentName?.isNotEmpty ?? false))) {
       try {
-        final ref = FirebaseStorage.instance
-            .ref('warranties/${widget.warrantyId!}/attachment');
-        final meta = await ref.getMetadata().catchError((_) => null);
-        if (meta != null) {
-          await ref.delete();
-        }
         await FirebaseFirestore.instance
             .collection('Warranties')
             .doc(widget.warrantyId!)
             .set({
-          'attachment_url' : FieldValue.delete(),
+          'attachment_local_path': FieldValue.delete(),
           'attachment_name': FieldValue.delete(),
-          'attachment_mime': FieldValue.delete(),
         }, SetOptions(merge: true));
-
-        setState(() {
-          _existingAttachmentUrl  = '';
-          _existingAttachmentName = '';
-          _existingAttachmentMime = '';
-        });
-        _snack('Attachment removed');
-      } catch (e) {
-        _snack('Failed to remove file: $e');
-      }
-    } else {
-      // إلغاء الملف المختار محليًا
-      setState(() => _pickedFile = null);
+      } catch (_) {}
     }
-  }
-
-  Future<Map<String, String>?> _uploadAttachment(String warrantyId) async {
-    if (_pickedFile == null) return null;
-    final path = _pickedFile!.path;
-    if (path == null) return null;
-
-    final file = File(path);
-    final name = _pickedFile!.name;
-    final dot  = name.lastIndexOf('.');
-    final ext  = (dot != -1 ? name.substring(dot + 1) : 'bin').toLowerCase();
-
-    final mime = ext == 'pdf'
-        ? 'application/pdf'
-        : 'image/${ext == 'jpg' ? 'jpeg' : ext}';
-
-    final ref = FirebaseStorage.instance
-        .ref('warranties/$warrantyId/attachment');
-
-    await ref.putFile(file, SettableMetadata(contentType: mime));
-    final url = await ref.getDownloadURL();
-
-    return {'url': url, 'name': name, 'mime': mime};
+    setState(() {
+      _attachmentLocalPath = null;
+      _attachmentName = null;
+    });
+    _snack('Attachment removed');
   }
 
   // ================= التواريخ =================
@@ -292,10 +236,10 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
           endDate: _end,
         );
 
-        final docRef = FirebaseFirestore.instance
-            .collection('Warranties')
-            .doc(warrantyId);
+        final docRef =
+        FirebaseFirestore.instance.collection('Warranties').doc(warrantyId);
 
+        // serial
         await docRef.set(
           serial.isEmpty
               ? {'serial_number': FieldValue.delete()}
@@ -303,19 +247,19 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
           SetOptions(merge: true),
         );
 
-        final uploaded = await _uploadAttachment(warrantyId);
-        if (uploaded != null) {
-          await docRef.set({
-            'attachment_url' : uploaded['url'],
-            'attachment_name': uploaded['name'],
-            'attachment_mime': uploaded['mime'],
-          }, SetOptions(merge: true));
-
-          _existingAttachmentUrl  = uploaded['url']!;
-          _existingAttachmentName = uploaded['name']!;
-          _existingAttachmentMime = uploaded['mime']!;
-          _pickedFile = null;
-        }
+        // المرفق المحلي
+        await docRef.set({
+          if (_attachmentLocalPath != null &&
+              _attachmentLocalPath!.isNotEmpty)
+            'attachment_local_path': _attachmentLocalPath,
+          if (_attachmentName != null && _attachmentName!.isNotEmpty)
+            'attachment_name': _attachmentName,
+          if (_attachmentLocalPath == null ||
+              _attachmentLocalPath!.isEmpty)
+            'attachment_local_path': FieldValue.delete(),
+          if (_attachmentName == null || _attachmentName!.isEmpty)
+            'attachment_name': FieldValue.delete(),
+        }, SetOptions(merge: true));
       } else {
         // إنشاء جديد
         warrantyId = await WarrantyService.instance.createWarranty(
@@ -326,26 +270,19 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
           userId: uid,
         );
 
-        final docRef = FirebaseFirestore.instance
-            .collection('Warranties')
-            .doc(warrantyId);
+        final docRef =
+        FirebaseFirestore.instance.collection('Warranties').doc(warrantyId);
 
         if (serial.isNotEmpty) {
           await docRef.set({'serial_number': serial}, SetOptions(merge: true));
         }
 
-        final uploaded = await _uploadAttachment(warrantyId);
-        if (uploaded != null) {
+        if (_attachmentLocalPath != null && _attachmentLocalPath!.isNotEmpty) {
           await docRef.set({
-            'attachment_url' : uploaded['url'],
-            'attachment_name': uploaded['name'],
-            'attachment_mime': uploaded['mime'],
+            'attachment_local_path': _attachmentLocalPath,
+            if (_attachmentName != null && _attachmentName!.isNotEmpty)
+              'attachment_name': _attachmentName,
           }, SetOptions(merge: true));
-
-          _existingAttachmentUrl  = uploaded['url']!;
-          _existingAttachmentName = uploaded['name']!;
-          _existingAttachmentMime = uploaded['mime']!;
-          _pickedFile = null;
         }
       }
 
@@ -360,12 +297,14 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
       }
 
       // إعادة جدولة تذكير الضمان
-      await _notifs.rescheduleWarrantyReminder(
-        warrantyId: warrantyId,
-        provider: provider,
-        start: _start,
-        end: _end,
-      );
+      try {
+        await _notifs.rescheduleWarrantyReminder(
+          warrantyId: warrantyId,
+          provider: provider,
+          start: _start,
+          end: _end,
+        );
+      } catch (_) {}
 
       if (!mounted) return;
       _snack(isEdit ? 'Warranty updated ✅' : 'Warranty saved ✅');
@@ -380,11 +319,7 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
   Future<void> _delete() async {
     try {
       await WarrantyService.instance.deleteWarranty(widget.warrantyId!);
-      try {
-        await FirebaseStorage.instance
-            .ref('warranties/${widget.warrantyId!}/attachment')
-            .delete();
-      } catch (_) {}
+      // لا يوجد حذف من Storage
       if (!mounted) return;
       _snack('Warranty deleted');
       Navigator.of(context).pop();
@@ -400,11 +335,10 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
 
   @override
   Widget build(BuildContext context) {
-    final attachmentName = _pickedFile?.name.isNotEmpty == true
-        ? _pickedFile!.name
-        : (_existingAttachmentName.isNotEmpty
-        ? _existingAttachmentName
-        : 'No file');
+    final shownName =
+    _attachmentLocalPath == null || _attachmentLocalPath!.isEmpty
+        ? 'No file'
+        : (_attachmentName ?? _attachmentLocalPath!.split('/').last);
 
     return Scaffold(
       appBar: AppBar(
@@ -483,23 +417,24 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
 
             const SizedBox(height: 12),
 
-            // Attachment
+            // Attachment (محلي)
             Row(
               children: [
                 FilledButton.tonalIcon(
                   onPressed: _pickAttachment,
                   icon: const Icon(Icons.attach_file),
-                  label: const Text('Attach file'),
+                  label: const Text('Attach / Capture'),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    attachmentName,
+                    shownName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                if (_pickedFile != null || _existingAttachmentUrl.isNotEmpty)
+                if (_attachmentLocalPath != null &&
+                    _attachmentLocalPath!.isNotEmpty)
                   IconButton(
                     tooltip: 'Remove',
                     onPressed: _removeAttachment,
@@ -519,7 +454,9 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
                 initial: _start,
                 onPick: (d) => setState(() {
                   _start = d;
-                  if (_end.isBefore(_start)) _end = _start.add(const Duration(days: 1));
+                  if (_end.isBefore(_start)) {
+                    _end = _start.add(const Duration(days: 1));
+                  }
                 }),
               ),
             ),
@@ -540,7 +477,8 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
             FilledButton.icon(
               onPressed: _saving ? null : _save,
               icon: const Icon(Icons.save),
-              label: Text(_saving ? 'Saving...' : (isEdit ? 'Update' : 'Save')),
+              label:
+              Text(_saving ? 'Saving...' : (isEdit ? 'Update' : 'Save')),
             ),
           ],
         ),
