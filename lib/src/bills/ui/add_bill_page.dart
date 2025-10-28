@@ -642,7 +642,7 @@ class _AddBillPageState extends State<AddBillPage> {
                         dense: true,
                         contentPadding: EdgeInsets.zero,
                         title: Text(
-                          _enableReturn ? _fmtOrDash(_returnDeadline) : '— (موقّف، لن يُحفظ)',
+                          _enableReturn ? _fmtOrDash(_returnDeadline) : ' (Optional)',
                           style: const TextStyle(color: Colors.white),
                         ),
                         trailing: const Icon(Icons.edit),
@@ -697,7 +697,7 @@ class _AddBillPageState extends State<AddBillPage> {
                         dense: true,
                         contentPadding: EdgeInsets.zero,
                         title: Text(
-                          _enableExchange ? _fmtOrDash(_exchangeDeadline) : '— (موقّف، لن يُحفظ)',
+                          _enableExchange ? _fmtOrDash(_exchangeDeadline) : ' (Optional)',
                           style: const TextStyle(color: Colors.white),
                         ),
                         trailing: const Icon(Icons.edit),

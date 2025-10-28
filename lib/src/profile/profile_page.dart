@@ -30,7 +30,7 @@ const List<_AvatarPreset> _presets = [
   _AvatarPreset('fox_purple',     '🦊', [Color(0xFF6A73FF), Color(0xFFE6E9FF)]),
   _AvatarPreset('panda_blue',     '🐼', [Color(0xFF38BDF8), Color(0xFFD1FAFF)]),
   _AvatarPreset('cat_pink',       '🐱', [Color(0xFFF472B6), Color(0xFFFCE7F3)]),
-  _AvatarPreset('dog_orange',     '🐶', [Color(0xFFFB923C), Color(0xFFFFEDD5)]),
+  _AvatarPreset('deer_gold',      '🦌', [Color(0xFFFB923C), Color(0xFFFFEDD5)]),
   _AvatarPreset('koala_green',    '🐨', [Color(0xFF34D399), Color(0xFFD1FAE5)]),
   _AvatarPreset('penguin_sky',    '🐧', [Color(0xFF60A5FA), Color(0xFFE0E7FF)]),
   _AvatarPreset('bear_violet',    '🐻', [Color(0xFFA78BFA), Color(0xFFEDE9FE)]),

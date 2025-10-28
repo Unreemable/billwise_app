@@ -9,26 +9,23 @@ import '../ocr/scan_receipt_page.dart';
 
 import '../bills/ui/add_bill_page.dart';
 import '../bills/ui/bill_detail_page.dart';
-import '../bills/ui/bill_list_page.dart';           // ✅ جديد
+import '../bills/ui/bill_list_page.dart';           // ✅
 import '../common/models.dart';
 
 import '../warranties/ui/add_warranty_page.dart';
 import '../warranties/ui/warranty_detail_page.dart';
-import '../warranties/ui/warranty_list_page.dart';  // ✅ جديد
+import '../warranties/ui/warranty_list_page.dart';  // ✅
 
-// صفحة الإشعارات
 import '../notifications/notifications_page.dart';
-
-// صفحة البروفايل
 import '../profile/profile_page.dart';
 
-// ===== ألوان متوافقة مع المرجع =====
-const Color _kBgDark    = Color(0xFF0E0722);
-const Color _kGrad1     = Color(0xFF6C3EFF);
-const Color _kGrad2     = Color(0xFF934DFE);
-const Color _kGrad3     = Color(0xFF3E8EFD);
-const Color _kCardDark  = Color(0x1AFFFFFF);
-const Color _kTextDim   = Colors.white70;
+// ===== ألوان عامة =====
+const Color _kBgDark   = Color(0xFF0E0722);
+const Color _kGrad1    = Color(0xFF6C3EFF);
+const Color _kGrad2    = Color(0xFF934DFE);
+const Color _kGrad3    = Color(0xFF3E8EFD);
+const Color _kCardDark = Color(0x1AFFFFFF);
+const Color _kTextDim  = Colors.white70;
 
 // تدرّج الهيدر
 const LinearGradient kHeaderGradient = LinearGradient(
@@ -40,14 +37,14 @@ const LinearGradient kHeaderGradient = LinearGradient(
 // === إعدادات ===
 const double _kHeaderHeight = 360;
 
-// أحجام البلاطات (ثابتة ومتناسقة)
-const double _kMiniSide        = 128;
-const double _kTilesGap        = 12;
-const double _kColGap          = 12;
-const double _kTilesYOffset    = -8;
+// أحجام البلاطات
+const double _kMiniSide         = 128;
+const double _kTilesGap         = 12;
+const double _kColGap           = 12;
+const double _kTilesYOffset     = -8;
 const double _kTilesBlockHeight = _kMiniSide * 2 + _kTilesGap;
 
-/// واجهة المحتوى فقط — تُستخدم داخل AppShell
+/// واجهة المحتوى
 class HomeContent extends StatefulWidget {
   const HomeContent({super.key});
   @override
@@ -80,22 +77,22 @@ class _HomeContentState extends State<HomeContent> {
       textDirection: ui.TextDirection.ltr,
       child: Scaffold(
         backgroundColor: _kBgDark,
-        // === شريط سفلي متدرّج مرن ===
+
+        // === شريط سفلي متدرّج (بدون overflow) ===
         bottomNavigationBar: GradientBottomBar(
           selectedIndex: _selectedTab,
           onTap: (i) {
             setState(() => _selectedTab = i);
             if (i == 0) {
-              Navigator.of(context, rootNavigator: true)
-                  .pushNamed(WarrantyListPage.route); // ✅ يفتح صفحة الوارنتيز
+              Navigator.of(context, rootNavigator: true).pushNamed(WarrantyListPage.route);
             } else if (i == 1) {
-              Navigator.of(context, rootNavigator: true)
-                  .pushNamed(BillListPage.route);     // ✅ يفتح صفحة البيلز
+              Navigator.of(context, rootNavigator: true).pushNamed(BillListPage.route);
             }
           },
           startColor: _kGrad1,
           endColor: _kGrad3,
         ),
+
         body: Stack(
           clipBehavior: Clip.none,
           children: [
@@ -137,7 +134,7 @@ class _HomeContentState extends State<HomeContent> {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // يسار: بلاطتان متساويتان
+                        // يسار: بلاطتان
                         SizedBox(
                           width: leftColWidth,
                           child: Column(
@@ -145,7 +142,7 @@ class _HomeContentState extends State<HomeContent> {
                               SizedBox(
                                 width: _kMiniSide, height: _kMiniSide,
                                 child: _ActionMiniTile(
-                                  title: 'Receipt',
+                                  title: 'Bill',
                                   subtitle: 'Add Bill',
                                   icon: Icons.receipt_long_rounded,
                                   gradient: const [_kGrad3, _kGrad1],
@@ -157,7 +154,7 @@ class _HomeContentState extends State<HomeContent> {
                               SizedBox(
                                 width: _kMiniSide, height: _kMiniSide,
                                 child: _ActionMiniTile(
-                                  title: 'Coverage',
+                                  title: 'Warranty',
                                   subtitle: 'Add Warranty',
                                   icon: Icons.verified_user_rounded,
                                   gradient: const [Color(0xFFFD6C8E), _kGrad2],
@@ -310,7 +307,7 @@ class _Header extends StatelessWidget {
   }
 }
 
-// =============== Search Bar (TextField فعلي) ===============
+// =============== Search Bar (TextField) ===============
 class _SearchBar extends StatelessWidget {
   final TextEditingController controller;
   final String hint;
@@ -527,11 +524,12 @@ class _ActionRectTall extends StatelessWidget {
 }
 
 // ======= أفاتارات =======
+// استبدلنا الكلب بغزالة 🦌 مع تدرّج صحراوي لطيف، مع الإبقاء على نفس المفتاح dog_orange
 const Map<String, List<dynamic>> _kAvatarPresets = {
   'fox_purple':     ['🦊', [Color(0xFF6A73FF), Color(0xFFE6E9FF)]],
   'panda_blue':     ['🐼', [Color(0xFF38BDF8), Color(0xFFD1FAFF)]],
   'cat_pink':       ['🐱', [Color(0xFFF472B6), Color(0xFFFCE7F3)]],
-  'dog_orange':     ['🐶', [Color(0xFFFB923C), Color(0xFFFFEDD5)]],
+  'deer_gold':      ['🦌', [Color(0xFFFBBF24), Color(0xFFFFF7ED)]], // ← كان 🐶
   'koala_green':    ['🐨', [Color(0xFF34D399), Color(0xFFD1FAE5)]],
   'penguin_sky':    ['🐧', [Color(0xFF60A5FA), Color(0xFFE0E7FF)]],
   'bear_violet':    ['🐻', [Color(0xFFA78BFA), Color(0xFFEDE9FE)]],
@@ -607,7 +605,7 @@ class _ProfileAvatar extends StatelessWidget {
   }
 }
 
-// =================== Expiring Mixed (بحث مفعّل) ===================
+// =================== Expiring Mixed ===================
 class _ExpiringMixed3 extends StatelessWidget {
   final String? userId;
   final String query;
@@ -834,12 +832,12 @@ class _ExpiringMixed3 extends StatelessWidget {
   }
 }
 
-// =================== Bottom Gradient Bar (مرن) ===================
+// =================== Bottom Gradient Bar (مرن بلا Overflow) ===================
 class GradientBottomBar extends StatelessWidget {
   final int selectedIndex;               // 0 = Warranties, 1 = Bills
-  final ValueChanged<int> onTap;         // استدعاء عند الضغط
-  final Color startColor;                // لون بداية التدرّج
-  final Color endColor;                  // لون نهاية التدرّج
+  final ValueChanged<int> onTap;
+  final Color startColor;
+  final Color endColor;
 
   const GradientBottomBar({
     super.key,
@@ -851,46 +849,60 @@ class GradientBottomBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 84,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [startColor, endColor],
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-        ),
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+
+    return SafeArea(
+      top: false,
+      child: ClipRRect(
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.25),
-            blurRadius: 16,
-            offset: const Offset(0, -6),
-          ),
-        ],
-      ),
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-      child: Row(
-        children: [
-          Expanded(
-            child: _BottomItem(
-              icon: Icons.verified_user_rounded,
-              label: 'Warranties',
-              selected: selectedIndex == 0,
-              onTap: () => onTap(0),
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [startColor, endColor],
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.25),
+                  blurRadius: 16,
+                  offset: const Offset(0, -6),
+                ),
+              ],
+            ),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: 76 + bottomInset),
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(16, 10, 16, 10 + bottomInset),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _BottomItem(
+                        icon: Icons.verified_user_rounded,
+                        label: 'Warranties',
+                        selected: selectedIndex == 0,
+                        onTap: () => onTap(0),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const _FabDot(),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _BottomItem(
+                        icon: Icons.receipt_long_rounded,
+                        label: 'Bills',
+                        selected: selectedIndex == 1,
+                        onTap: () => onTap(1),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
-          const SizedBox(width: 12),
-          const _FabDot(),
-          const SizedBox(width: 12),
-          Expanded(
-            child: _BottomItem(
-              icon: Icons.receipt_long_rounded,
-              label: 'Bills',
-              selected: selectedIndex == 1,
-              onTap: () => onTap(1),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -907,22 +919,40 @@ class _BottomItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final fg = selected ? Colors.white : Colors.white70;
     final selectedBg = Colors.white.withOpacity(.14);
+
+    // نحد من تكبير الخط داخل البار حتى ما يكسر السطر
+    final tsf = MediaQuery.textScaleFactorOf(context).clamp(1.0, 1.2);
+
     return InkWell(
       borderRadius: BorderRadius.circular(14),
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: selected ? selectedBg : Colors.transparent,
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: fg, size: 20),
-            const SizedBox(width: 8),
-            Text(label, style: TextStyle(color: fg, fontWeight: FontWeight.w600)),
-          ],
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        child: Container(
+          decoration: BoxDecoration(
+            color: selected ? selectedBg : Colors.transparent,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: MediaQuery(
+            data: MediaQuery.of(context).copyWith(textScaleFactor: tsf),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, color: fg, size: 20),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    softWrap: false,
+                    style: TextStyle(color: fg, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -935,7 +965,7 @@ class _FabDot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 56, height: 56,
+      width: 54, height: 54, // صغّرناها قليلاً كـ buffer
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         gradient: const LinearGradient(
