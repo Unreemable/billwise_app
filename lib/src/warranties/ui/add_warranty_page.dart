@@ -9,6 +9,20 @@ import 'package:image_picker/image_picker.dart';
 import '../data/warranty_service.dart';
 import '../../bills/data/bill_service.dart';
 import '../../notifications/notifications_service.dart';
+import 'dart:ui' as ui;
+
+// ===== ألوان وستايل موحّد (مطابق للهوم/التفاصيل) =====
+const Color _kBgDark  = Color(0xFF0E0722);
+const Color _kTextDim = Colors.white70;
+const Color _kGrad1   = Color(0xFF6C3EFF);
+const Color _kGrad2   = Color(0xFF934DFE);
+const Color _kGrad3   = Color(0xFF3E8EFD);
+
+const LinearGradient _kHeaderGrad = LinearGradient(
+  colors: [Color(0xFF1A0B3A), Color(0xFF0E0722)],
+  begin: Alignment.topLeft,
+  end: Alignment.bottomRight,
+);
 
 class AddWarrantyPage extends StatefulWidget {
   const AddWarrantyPage({
@@ -43,7 +57,6 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
   final _fmt = DateFormat('yyyy-MM-dd');
 
   bool _saving = false;
-
   final _notifs = NotificationsService.I;
 
   bool get isEdit => widget.warrantyId != null;
@@ -52,7 +65,7 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
   // ===== مرفق محلي (صورة فقط) مثل Bills =====
   final _picker = ImagePicker();
   String? _attachmentLocalPath; // مسار الصورة المحلي
-  String? _attachmentName; // اسم الملف للعرض فقط
+  String? _attachmentName;      // اسم الملف للعرض فقط
 
   @override
   void initState() {
@@ -62,7 +75,7 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
 
     // تهيئة آمنة للتواريخ
     _start = widget.defaultStartDate ?? DateTime.now();
-    _end = widget.defaultEndDate ?? _start.add(const Duration(days: 365));
+    _end   = widget.defaultEndDate   ?? _start.add(const Duration(days: 365));
     if (_end.isBefore(_start)) {
       _end = _start.add(const Duration(days: 1));
     }
@@ -88,28 +101,27 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
       if (!mounted || !doc.exists) return;
       final data = doc.data()!;
 
-      // provider
       final providerFromDb = (data['provider'] ?? '').toString();
       if (_providerCtrl.text.trim().isEmpty && providerFromDb.isNotEmpty) {
         _providerCtrl.text = providerFromDb;
       }
 
-      // serial
       _serialCtrl.text = (data['serial_number'] ?? '').toString();
 
-      // dates
       final startTs = data['start_date'];
-      final endTs = data['end_date'];
+      final endTs   = data['end_date'];
       if (startTs is Timestamp) _start = startTs.toDate();
-      if (endTs is Timestamp) _end = endTs.toDate();
-      if (_end.isBefore(_start)) {
-        _end = _start.add(const Duration(days: 1));
-      }
+      if (endTs   is Timestamp) _end   = endTs.toDate();
+      if (_end.isBefore(_start)) _end = _start.add(const Duration(days: 1));
 
-      // المرفق المحلي
-      _attachmentLocalPath =
-      (data['attachment_local_path'] ?? '') as String?;
-      _attachmentName = (data['attachment_name'] ?? '') as String?;
+      // المرفق المحلي المخزّن في الوثيقة
+      _attachmentLocalPath = (data['attachment_local_path'] ?? '') is String
+          ? (data['attachment_local_path'] as String)
+          : null;
+      _attachmentName = (data['attachment_name'] ?? '') is String
+          ? (data['attachment_name'] as String)
+          : null;
+
       setState(() {});
     } catch (_) {
       // تجاهل بهدوء
@@ -124,9 +136,8 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
   }
 
   // ================= المرفقات (محلي فقط) =================
-
   Future<void> _pickAttachment() async {
-    // نفس تجربة الفواتير: اختيار الكاميرا أو المعرض
+    // اختيار الكاميرا أو المعرض
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
       showDragHandle: true,
@@ -159,7 +170,7 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
       if (x != null) {
         setState(() {
           _attachmentLocalPath = x.path;
-          _attachmentName = x.path.split('/').last;
+          _attachmentName = x.path.split(Platform.pathSeparator).last;
         });
       }
     } catch (e) {
@@ -169,10 +180,9 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
   }
 
   Future<void> _removeAttachment() async {
-    // مجرد مسح الحقول من الحالة و Firestore (لا يوجد Storage)
+    // مسح الحقول من الحالة و Firestore (لا يوجد Storage)
     if (isEdit &&
-        (_attachmentLocalPath != null ||
-            (_attachmentName?.isNotEmpty ?? false))) {
+        (_attachmentLocalPath != null || (_attachmentName?.isNotEmpty ?? false))) {
       try {
         await FirebaseFirestore.instance
             .collection('Warranties')
@@ -181,7 +191,9 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
           'attachment_local_path': FieldValue.delete(),
           'attachment_name': FieldValue.delete(),
         }, SetOptions(merge: true));
-      } catch (_) {}
+      } catch (_) {
+        // تجاهل أي خطأ بسيط
+      }
     }
     setState(() {
       _attachmentLocalPath = null;
@@ -191,7 +203,6 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
   }
 
   // ================= التواريخ =================
-
   Future<void> _pickDate({
     required DateTime initial,
     required ValueChanged<DateTime> onPick,
@@ -206,7 +217,6 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
   }
 
   // ================= حفظ / حذف =================
-
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
@@ -249,13 +259,11 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
 
         // المرفق المحلي
         await docRef.set({
-          if (_attachmentLocalPath != null &&
-              _attachmentLocalPath!.isNotEmpty)
+          if (_attachmentLocalPath != null && _attachmentLocalPath!.isNotEmpty)
             'attachment_local_path': _attachmentLocalPath,
           if (_attachmentName != null && _attachmentName!.isNotEmpty)
             'attachment_name': _attachmentName,
-          if (_attachmentLocalPath == null ||
-              _attachmentLocalPath!.isEmpty)
+          if (_attachmentLocalPath == null || _attachmentLocalPath!.isEmpty)
             'attachment_local_path': FieldValue.delete(),
           if (_attachmentName == null || _attachmentName!.isEmpty)
             'attachment_name': FieldValue.delete(),
@@ -286,7 +294,6 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
         }
       }
 
-      // مزامنة مع الفاتورة إن وُجدت
       if (hasBill) {
         await BillService.instance.updateBill(
           billId: widget.billId!,
@@ -296,7 +303,7 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
         );
       }
 
-      // إعادة جدولة تذكير الضمان
+      // إعادة جدولة تذكير الضمان (محميّة)
       try {
         await _notifs.rescheduleWarrantyReminder(
           warrantyId: warrantyId,
@@ -329,157 +336,310 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
   }
 
   // ================= UI =================
-
   void _snack(String m) =>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
 
   @override
   Widget build(BuildContext context) {
-    final shownName =
-    _attachmentLocalPath == null || _attachmentLocalPath!.isEmpty
+    final shownName = (_attachmentLocalPath == null || _attachmentLocalPath!.isEmpty)
         ? 'No file'
-        : (_attachmentName ?? _attachmentLocalPath!.split('/').last);
+        : (_attachmentName ?? _attachmentLocalPath!.split(Platform.pathSeparator).last);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(isEdit ? 'Edit Warranty' : 'Add Warranty'),
-        actions: [
-          if (isEdit)
-            IconButton(
-              icon: const Icon(Icons.delete_outline),
-              tooltip: 'Delete',
-              onPressed: _saving
-                  ? null
-                  : () async {
-                final ok = await showDialog<bool>(
-                  context: context,
-                  builder: (_) => AlertDialog(
-                    title: const Text('Delete warranty?'),
-                    content: const Text(
-                        'Are you sure you want to delete this warranty?'),
-                    actions: [
-                      TextButton(
-                          onPressed: () =>
-                              Navigator.pop(context, false),
-                          child: const Text('Cancel')),
-                      FilledButton(
-                          onPressed: () =>
-                              Navigator.pop(context, true),
-                          child: const Text('Delete')),
+    return Directionality(
+      textDirection: ui.TextDirection.ltr,
+      child: Scaffold(
+        backgroundColor: _kBgDark,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          foregroundColor: Colors.white,
+          title: Text(isEdit ? 'Edit Warranty' : 'Add Warranty'),
+          flexibleSpace: Container(decoration: const BoxDecoration(gradient: _kHeaderGrad)),
+          actions: [
+            if (isEdit)
+              IconButton(
+                icon: const Icon(Icons.delete_outline, color: Colors.white),
+                tooltip: 'Delete',
+                onPressed: _saving
+                    ? null
+                    : () async {
+                  final ok = await showDialog<bool>(
+                    context: context,
+                    builder: (_) => AlertDialog(
+                      title: const Text('Delete warranty?'),
+                      content: const Text('Are you sure you want to delete this warranty?'),
+                      actions: [
+                        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+                        FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
+                      ],
+                    ),
+                  );
+                  if (ok == true) await _delete();
+                },
+              ),
+          ],
+        ),
+
+        // زرّ حفظ/تحديث بالأسفل
+        bottomNavigationBar: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: _GradButton(
+              text: _saving ? 'Saving...' : (isEdit ? 'Update' : 'Save'),
+              icon: Icons.save,
+              onPressed: _saving ? null : _save,
+            ),
+          ),
+        ),
+
+        body: AbsorbPointer(
+          absorbing: _saving,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+            children: [
+              if (!hasBill)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(.06),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white.withOpacity(.18)),
+                  ),
+                  child: Row(
+                    children: const [
+                      Icon(Icons.info_outline, size: 18, color: Colors.white),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text('This warranty is not linked to a bill.', style: TextStyle(color: Colors.white)),
+                      ),
                     ],
                   ),
-                );
-                if (ok == true) await _delete();
-              },
-            ),
-        ],
-      ),
-      body: AbsorbPointer(
-        absorbing: _saving,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            if (!hasBill)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
+                ),
+
+              // Provider
+              _GlassField(
+                controller: _providerCtrl,
+                label: 'Provider / Store',
+                icon: Icons.store_outlined,
+              ),
+              const SizedBox(height: 12),
+
+              // Serial
+              _GlassField(
+                controller: _serialCtrl,
+                label: 'Serial number (optional)',
+                icon: Icons.confirmation_number_outlined,
+              ),
+              const SizedBox(height: 12),
+
+              // Attachment row (محلي)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(.06),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.white.withOpacity(.18)),
+                ),
                 child: Row(
-                  children: const [
-                    Icon(Icons.info_outline, size: 18),
-                    SizedBox(width: 8),
+                  children: [
+                    _TinyGradButton(
+                      text: 'Attach file',
+                      icon: Icons.attach_file,
+                      onPressed: _pickAttachment,
+                    ),
+                    const SizedBox(width: 10),
                     Expanded(
-                        child:
-                        Text('This warranty is not linked to a bill.')),
+                      child: Text(
+                        shownName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                    ),
+                    if (_attachmentLocalPath != null && _attachmentLocalPath!.isNotEmpty)
+                      IconButton(
+                        tooltip: 'Remove',
+                        onPressed: _removeAttachment,
+                        icon: const Icon(Icons.close, color: Colors.white70),
+                      ),
                   ],
                 ),
               ),
 
-            // Provider
-            TextField(
-              controller: _providerCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Provider / Store',
-                prefixIcon: Icon(Icons.store_outlined),
+              const SizedBox(height: 12),
+
+              // Start date
+              _GlassRow(
+                left: 'Warranty start date',
+                right: _fmt.format(_start),
+                rightIcon: Icons.date_range,
+                onTap: () => _pickDate(
+                  initial: _start,
+                  onPick: (d) => setState(() {
+                    _start = d;
+                    if (_end.isBefore(_start)) _end = _start.add(const Duration(days: 1));
+                  }),
+                ),
               ),
-              textInputAction: TextInputAction.next,
-            ),
 
-            const SizedBox(height: 12),
+              const SizedBox(height: 10),
 
-            // Serial
-            TextField(
-              controller: _serialCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Serial number (optional)',
-                prefixIcon: Icon(Icons.confirmation_number_outlined),
+              // End date
+              _GlassRow(
+                left: 'Warranty end date',
+                right: _fmt.format(_end),
+                rightIcon: Icons.verified_user,
+                onTap: () => _pickDate(
+                  initial: _end.isBefore(_start) ? _start : _end,
+                  onPick: (d) => setState(() => _end = d),
+                ),
               ),
-              textInputAction: TextInputAction.next,
-            ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
-            const SizedBox(height: 12),
+// ===== Widgets ستايل موحّد =====
+class _GlassField extends StatelessWidget {
+  final TextEditingController controller;
+  final String label;
+  final IconData icon;
+  const _GlassField({required this.controller, required this.label, required this.icon});
 
-            // Attachment (محلي)
-            Row(
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withOpacity(.18)),
+      ),
+      child: TextField(
+        controller: controller,
+        style: const TextStyle(color: Colors.white),
+        decoration: InputDecoration(
+          labelText: label,
+          labelStyle: const TextStyle(color: Colors.white70),
+          prefixIcon: Icon(icon, color: Colors.white70),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+        ),
+      ),
+    );
+  }
+}
+
+class _GlassRow extends StatelessWidget {
+  final String left;
+  final String right;
+  final IconData rightIcon;
+  final VoidCallback onTap;
+  const _GlassRow({
+    required this.left,
+    required this.right,
+    required this.rightIcon,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(.06),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white.withOpacity(.18)),
+        ),
+        child: Row(
+          children: [
+            Expanded(child: Text(left, style: const TextStyle(color: Colors.white))),
+            Text(right, style: const TextStyle(color: Colors.white70)),
+            const SizedBox(width: 8),
+            Icon(rightIcon, color: Colors.white70),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GradButton extends StatelessWidget {
+  final String text;
+  final IconData icon;
+  final VoidCallback? onPressed;
+  final Color bgFrom;
+  final Color bgTo;
+
+  const _GradButton({
+    required this.text,
+    required this.icon,
+    required this.onPressed,
+    this.bgFrom = _kGrad1,
+    this.bgTo   = _kGrad3,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 48,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onPressed,
+        child: Ink(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(colors: [bgFrom, bgTo]),
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(color: bgTo.withOpacity(.35), blurRadius: 14, offset: const Offset(0, 8)),
+            ],
+          ),
+          child: Center(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                FilledButton.tonalIcon(
-                  onPressed: _pickAttachment,
-                  icon: const Icon(Icons.attach_file),
-                  label: const Text('Attach / Capture'),
-                ),
+                Icon(icon, color: Colors.white),
                 const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    shownName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                if (_attachmentLocalPath != null &&
-                    _attachmentLocalPath!.isNotEmpty)
-                  IconButton(
-                    tooltip: 'Remove',
-                    onPressed: _removeAttachment,
-                    icon: const Icon(Icons.close),
-                  ),
+                Text(text, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
-            const SizedBox(height: 12),
+class _TinyGradButton extends StatelessWidget {
+  final String text;
+  final IconData icon;
+  final VoidCallback onPressed;
+  const _TinyGradButton({required this.text, required this.icon, required this.onPressed});
 
-            // Start date
-            ListTile(
-              title: const Text('Warranty start date'),
-              subtitle: Text(_fmt.format(_start)),
-              trailing: const Icon(Icons.date_range),
-              onTap: () => _pickDate(
-                initial: _start,
-                onPick: (d) => setState(() {
-                  _start = d;
-                  if (_end.isBefore(_start)) {
-                    _end = _start.add(const Duration(days: 1));
-                  }
-                }),
-              ),
-            ),
-
-            // End date
-            ListTile(
-              title: const Text('Warranty end date'),
-              subtitle: Text(_fmt.format(_end)),
-              trailing: const Icon(Icons.verified_user),
-              onTap: () => _pickDate(
-                initial: _end.isBefore(_start) ? _start : _end,
-                onPick: (d) => setState(() => _end = d),
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            FilledButton.icon(
-              onPressed: _saving ? null : _save,
-              icon: const Icon(Icons.save),
-              label:
-              Text(_saving ? 'Saving...' : (isEdit ? 'Update' : 'Save')),
-            ),
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: onPressed,
+      child: Ink(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(colors: [_kGrad1, _kGrad3]),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: Colors.white),
+            const SizedBox(width: 6),
+            Text(text, style: const TextStyle(color: Colors.white)),
           ],
         ),
       ),

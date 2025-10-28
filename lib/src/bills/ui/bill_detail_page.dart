@@ -27,7 +27,7 @@ class _BillDetailPageState extends State<BillDetailPage> {
   final _money = NumberFormat.currency(locale: 'en', symbol: 'SAR ', decimalDigits: 2);
 
   // ===== receipt image state =====
-  String? _receiptPath;                // could be local path OR http url
+  String? _receiptPath; // local path OR http url
   bool _loadingReceipt = false;
   String? _receiptError;
 
@@ -271,6 +271,15 @@ class _BillDetailPageState extends State<BillDetailPage> {
 
   // ===== UI helpers =====
 
+  Widget _pill(String text) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+    decoration: BoxDecoration(
+      color: Colors.deepPurple.withOpacity(.08),
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Text(text, style: Theme.of(context).textTheme.labelMedium),
+  );
+
   Widget _receiptSection() {
     if (_loadingReceipt) {
       return const Padding(
@@ -285,7 +294,7 @@ class _BillDetailPageState extends State<BillDetailPage> {
       );
     }
     if (_receiptPath == null) {
-      return const SizedBox.shrink(); // لا صورة محفوظة
+      return const SizedBox.shrink();
     }
 
     final isNetwork = _receiptPath!.startsWith('http');
@@ -302,10 +311,7 @@ class _BillDetailPageState extends State<BillDetailPage> {
         const SizedBox(height: 8),
         Text('Receipt image', style: Theme.of(context).textTheme.titleSmall),
         const SizedBox(height: 8),
-        GestureDetector(
-          onTap: _openFullScreenReceipt,
-          child: imageWidget,
-        ),
+        GestureDetector(onTap: _openFullScreenReceipt, child: imageWidget),
         const SizedBox(height: 4),
         TextButton.icon(
           onPressed: _openFullScreenReceipt,
@@ -339,29 +345,34 @@ class _BillDetailPageState extends State<BillDetailPage> {
     return Directionality(
       textDirection: ui.TextDirection.ltr,
       child: Scaffold(
+        // === هيدر مطابق للضمان/الهوم (تدرّج + سهم رجوع + لوقو) ===
         appBar: AppBar(
           backgroundColor: Colors.transparent,
           elevation: 0,
           foregroundColor: Colors.white,
+          leading: IconButton(
+            tooltip: 'Back',
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
+            onPressed: () => Navigator.of(context).maybePop(),
+          ),
+          actions: const [_LogoStub()],
+          title: const Text('Bill'),
           flexibleSpace: Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
-                colors: [Color(0xFF6A73FF), Color(0xFFE6E9FF)],
-                begin: Alignment.topRight,
-                end: Alignment.bottomLeft,
+                colors: [Color(0xFF1B0E3E), Color(0xFF0B0B1A)], // نفس أجواء الضمان الداكنة
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
             ),
           ),
-          title: const Text('Bill'),
-          actions: const [
-            _LogoStub(),
-          ],
         ),
 
         body: ListView(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
           children: [
             Card(
+              color: const Color(0xFF19142A), // مثل ضمان
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
               elevation: 0,
               child: Padding(
@@ -371,28 +382,17 @@ class _BillDetailPageState extends State<BillDetailPage> {
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.receipt_long),
+                        const Icon(Icons.receipt_long, color: Colors.white70),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
                             _d.title,
-                            style: Theme.of(context).textTheme.titleMedium,
+                            style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Colors.white),
                             overflow: TextOverflow.ellipsis,
                             maxLines: 1,
                           ),
                         ),
-                        if (_primaryEnd != null)
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: Colors.deepPurple.withOpacity(.08),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              'Expires ${_pretty(_primaryEnd!)}',
-                              style: Theme.of(context).textTheme.labelMedium,
-                            ),
-                          ),
+                        if (_primaryEnd != null) _pill('Expires ${_pretty(_primaryEnd!)}'),
                       ],
                     ),
 
@@ -417,7 +417,6 @@ class _BillDetailPageState extends State<BillDetailPage> {
                     if (_d.exchangeDeadline != null) _kv('Exchange deadline', _ymd(_d.exchangeDeadline)),
                     if (_d.warrantyExpiry != null) _kv('Warranty expiry', _ymd(_d.warrantyExpiry)),
 
-                    // ===== receipt preview =====
                     _receiptSection(),
                   ],
                 ),
@@ -426,25 +425,38 @@ class _BillDetailPageState extends State<BillDetailPage> {
           ],
         ),
 
-        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-        floatingActionButton: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            FloatingActionButton.small(
-              heroTag: 'billEditFab',
-              onPressed: _openEditSheet,
-              tooltip: 'Edit',
-              child: const Icon(Icons.edit),
-            ),
-            const SizedBox(height: 10),
-            FloatingActionButton.small(
-              heroTag: 'billDeleteFab',
-              onPressed: _deleteBill,
-              tooltip: 'Delete',
-              child: const Icon(Icons.delete_outline),
-            ),
-          ],
+        // ===== أزرار سفلية بنفس ستايل الضمان =====
+        bottomNavigationBar: SafeArea(
+          minimum: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: _openEditSheet,
+                  icon: const Icon(Icons.edit),
+                  label: const Text('Edit'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF4A6CF7),
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFFE53935),
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: _deleteBill,
+                  icon: const Icon(Icons.delete_outline),
+                  label: const Text('Delete'),
+                ),
+              ),
+            ],
+          ),
         ),
+        backgroundColor: const Color(0xFF0E0A1C), // خلفية داكنة مثل صفحة الضمان
       ),
     );
   }
@@ -454,13 +466,18 @@ class _BillDetailPageState extends State<BillDetailPage> {
 
 class _LogoStub extends StatelessWidget {
   const _LogoStub();
+
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Text('B', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Colors.white)),
-        Text('ill Wise', style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.white70)),
-      ],
+    return Padding(
+      padding: const EdgeInsets.only(right: 12),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text('B', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Colors.white)),
+          Text('ill Wise', style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.white70)),
+        ],
+      ),
     );
   }
 }
@@ -470,8 +487,8 @@ Widget _kv(String k, String v) => Padding(
   child: Row(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      SizedBox(width: 160, child: Text(k, style: const TextStyle(fontWeight: FontWeight.w600))),
-      Expanded(child: Text(v)),
+      SizedBox(width: 160, child: Text(k, style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.white))),
+      Expanded(child: Text(v, style: const TextStyle(color: Colors.white70))),
     ],
   ),
 );
@@ -485,7 +502,7 @@ Widget _section({
   return Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+      Text(title, style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.white)),
       const SizedBox(height: 6),
       ExpiryProgress(
         title: title,

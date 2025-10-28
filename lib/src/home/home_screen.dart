@@ -1,4 +1,4 @@
-// ================== Home Screen (Content Only) ==================
+// ================== Home Screen (Search + Column Tiles + Tall OCR + GradientBottomBar) ==================
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -9,10 +9,12 @@ import '../ocr/scan_receipt_page.dart';
 
 import '../bills/ui/add_bill_page.dart';
 import '../bills/ui/bill_detail_page.dart';
+import '../bills/ui/bill_list_page.dart';           // ✅ جديد
 import '../common/models.dart';
 
 import '../warranties/ui/add_warranty_page.dart';
 import '../warranties/ui/warranty_detail_page.dart';
+import '../warranties/ui/warranty_list_page.dart';  // ✅ جديد
 
 // صفحة الإشعارات
 import '../notifications/notifications_page.dart';
@@ -20,18 +22,30 @@ import '../notifications/notifications_page.dart';
 // صفحة البروفايل
 import '../profile/profile_page.dart';
 
-/// تدرّج الهيدر: #5F33E1 → #000000
+// ===== ألوان متوافقة مع المرجع =====
+const Color _kBgDark    = Color(0xFF0E0722);
+const Color _kGrad1     = Color(0xFF6C3EFF);
+const Color _kGrad2     = Color(0xFF934DFE);
+const Color _kGrad3     = Color(0xFF3E8EFD);
+const Color _kCardDark  = Color(0x1AFFFFFF);
+const Color _kTextDim   = Colors.white70;
+
+// تدرّج الهيدر
 const LinearGradient kHeaderGradient = LinearGradient(
-  colors: [Color(0xFF5F33E1), Color(0xFF000000)],
-  begin: Alignment.centerLeft,
-  end: Alignment.centerRight,
+  colors: [Color(0xFF1A0B3A), Color(0xFF0E0722)],
+  begin: Alignment.topLeft,
+  end: Alignment.bottomRight,
 );
 
-// === إعدادات الهيدر والتداخل مع الدوائر ===
-const double _kHeaderHeight = 300;          // هيدر أطول
-const double _kActionSize   = 100;          // حجم دائرة الإجراء
-const double _kActionsOverlap = _kActionSize / 2; // نصف الدائرة يطلع تحت
-const double _kActionsLabelsHeight = 44;    // تعويض لعناوين الأزرار تحت الدوائر
+// === إعدادات ===
+const double _kHeaderHeight = 360;
+
+// أحجام البلاطات (ثابتة ومتناسقة)
+const double _kMiniSide        = 128;
+const double _kTilesGap        = 12;
+const double _kColGap          = 12;
+const double _kTilesYOffset    = -8;
+const double _kTilesBlockHeight = _kMiniSide * 2 + _kTilesGap;
 
 /// واجهة المحتوى فقط — تُستخدم داخل AppShell
 class HomeContent extends StatefulWidget {
@@ -42,6 +56,7 @@ class HomeContent extends StatefulWidget {
 
 class _HomeContentState extends State<HomeContent> {
   final _searchCtrl = TextEditingController();
+  int _selectedTab = 0; // 0 = Warranties, 1 = Bills
 
   @override
   void dispose() {
@@ -63,104 +78,162 @@ class _HomeContentState extends State<HomeContent> {
 
     return Directionality(
       textDirection: ui.TextDirection.ltr,
-      child: Stack(
-        clipBehavior: Clip.none, // يسمح بتداخل الدوائر
-        children: [
-          // 1) الهيدر
-          Positioned(
-            top: 0, left: 0, right: 0,
-            child: _Header(
-              name: _greetName(user),
-              searchCtrl: _searchCtrl,
-              onLogout: () async {
-                await FirebaseAuth.instance.signOut();
-                if (!context.mounted) return;
-                Navigator.pushNamedAndRemoveUntil(
-                  context,
-                  LoginScreen.route,
-                      (_) => false,
-                );
-              },
-              onNotifications: () => Navigator.of(context, rootNavigator: true)
-                  .pushNamed(NotificationsPage.route),
-              onProfile: () => Navigator.of(context, rootNavigator: true)
-                  .pushNamed(ProfilePage.route),
+      child: Scaffold(
+        backgroundColor: _kBgDark,
+        // === شريط سفلي متدرّج مرن ===
+        bottomNavigationBar: GradientBottomBar(
+          selectedIndex: _selectedTab,
+          onTap: (i) {
+            setState(() => _selectedTab = i);
+            if (i == 0) {
+              Navigator.of(context, rootNavigator: true)
+                  .pushNamed(WarrantyListPage.route); // ✅ يفتح صفحة الوارنتيز
+            } else if (i == 1) {
+              Navigator.of(context, rootNavigator: true)
+                  .pushNamed(BillListPage.route);     // ✅ يفتح صفحة البيلز
+            }
+          },
+          startColor: _kGrad1,
+          endColor: _kGrad3,
+        ),
+        body: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            // 1) الهيدر
+            Positioned.fill(
+              top: 0,
+              bottom: null,
+              child: _Header(
+                name: _greetName(user),
+                searchCtrl: _searchCtrl,
+                onSearchChanged: (_) => setState(() {}),
+                onSearchSubmitted: (_) => setState(() {}),
+                onLogout: () async {
+                  await FirebaseAuth.instance.signOut();
+                  if (!context.mounted) return;
+                  Navigator.pushNamedAndRemoveUntil(
+                    context, LoginScreen.route, (_) => false,
+                  );
+                },
+                onNotifications: () => Navigator.of(context, rootNavigator: true)
+                    .pushNamed(NotificationsPage.route),
+                onProfile: () => Navigator.of(context, rootNavigator: true)
+                    .pushNamed(ProfilePage.route),
+              ),
             ),
-          ),
 
-          // 2) المحتوى — يتّرسَم قبل الأزرار عشان ما يغطيها
-          Positioned.fill(
-            top: _kHeaderHeight,
-            child: SafeArea(
-              top: false,
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // تعويض الجزء المتداخل من الدوائر + عنوان الأزرار
-                    const SizedBox(height: _kActionsOverlap + _kActionsLabelsHeight),
+            // 2) البلاطات: عمود يسار + مستطيل OCR يمين
+            Positioned(
+              top: _kHeaderHeight - (_kTilesBlockHeight / 2) + _kTilesYOffset,
+              left: 16,
+              right: 16,
+              child: LayoutBuilder(
+                builder: (context, c) {
+                  final double leftColWidth = _kMiniSide;
+                  final double rightWidth   = c.maxWidth - leftColWidth - _kColGap;
 
-                    // باقي المحتوى
-                    _ExpiringMixed3(userId: user?.uid, query: _searchCtrl.text),
+                  return SizedBox(
+                    height: _kTilesBlockHeight,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // يسار: بلاطتان متساويتان
+                        SizedBox(
+                          width: leftColWidth,
+                          child: Column(
+                            children: [
+                              SizedBox(
+                                width: _kMiniSide, height: _kMiniSide,
+                                child: _ActionMiniTile(
+                                  title: 'Receipt',
+                                  subtitle: 'Add Bill',
+                                  icon: Icons.receipt_long_rounded,
+                                  gradient: const [_kGrad3, _kGrad1],
+                                  onTap: () => Navigator.of(context, rootNavigator: true)
+                                      .push(MaterialPageRoute(builder: (_) => const AddBillPage())),
+                                ),
+                              ),
+                              const SizedBox(height: _kTilesGap),
+                              SizedBox(
+                                width: _kMiniSide, height: _kMiniSide,
+                                child: _ActionMiniTile(
+                                  title: 'Coverage',
+                                  subtitle: 'Add Warranty',
+                                  icon: Icons.verified_user_rounded,
+                                  gradient: const [Color(0xFFFD6C8E), _kGrad2],
+                                  onTap: () => Navigator.of(context, rootNavigator: true).push(
+                                    MaterialPageRoute(builder: (_) => const AddWarrantyPage(
+                                      billId: null, defaultStartDate: null, defaultEndDate: null,
+                                    )),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: _kColGap),
 
-                    const SizedBox(height: 16),
-                  ],
+                        // يمين: بطاقة OCR طويلة
+                        SizedBox(
+                          width: rightWidth,
+                          height: _kTilesBlockHeight,
+                          child: _ActionRectTall(
+                            title: 'Quick Add',
+                            subtitle: 'OCR',
+                            icon: Icons.document_scanner_outlined,
+                            gradient: const [_kGrad1, _kGrad2],
+                            onTap: () => Navigator.of(context, rootNavigator: true)
+                                .push(MaterialPageRoute(builder: (_) => const ScanReceiptPage())),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+
+            // 3) المحتوى تحت
+            Positioned.fill(
+              top: _kHeaderHeight + (_kTilesBlockHeight / 2) + _kTilesYOffset + 12,
+              child: SafeArea(
+                top: false,
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _ExpiringMixed3(userId: user?.uid, query: _searchCtrl.text),
+                      const SizedBox(height: 16),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-
-          // 3) صف الدوائر — آخر عنصر = فوق الكل = يضغط
-          Positioned(
-            top: _kHeaderHeight - _kActionsOverlap,
-            left: 16,
-            right: 16,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: const [
-                _RoundAction(
-                  icon: Icons.center_focus_strong, // OCR
-                  label: 'Quick Add\n(OCR)',
-                ),
-                _RoundAction(
-                  icon: Icons.receipt_long, // Bill
-                  label: 'Add Bill',
-                ),
-                _RoundAction(
-                  icon: Icons.verified_user, // Warranty
-                  label: 'Add Warranty',
-                ),
-              ],
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 }
 
-/// للتوافق مع Route قديمة إن وُجدت
+/// للتوافق مع Route قديمة
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
   static const route = '/home';
   @override
-  Widget build(BuildContext context) {
-    return const Scaffold(
-      backgroundColor: Colors.transparent,
-      body: HomeContent(),
-    );
-  }
+  Widget build(BuildContext context) => const HomeContent();
 }
 
-// ================= Header (مستطيل + بحث داخله) =================
-
+// ================= Header =================
 class _Header extends StatelessWidget {
   final String name;
   final TextEditingController searchCtrl;
   final VoidCallback onLogout;
   final VoidCallback onNotifications;
   final VoidCallback onProfile;
+  final ValueChanged<String> onSearchChanged;
+  final ValueChanged<String> onSearchSubmitted;
 
   const _Header({
     required this.name,
@@ -168,23 +241,22 @@ class _Header extends StatelessWidget {
     required this.onLogout,
     required this.onNotifications,
     required this.onProfile,
+    required this.onSearchChanged,
+    required this.onSearchSubmitted,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       height: _kHeaderHeight,
-      decoration: const BoxDecoration(
-        gradient: kHeaderGradient,
-      ),
+      decoration: const BoxDecoration(gradient: kHeaderGradient),
       child: SafeArea(
         bottom: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // الصف العلوي: أفاتار + اسم + أيقونات
               Row(
                 children: [
                   Expanded(
@@ -196,24 +268,12 @@ class _Header extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                'Hello,',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .labelLarge
-                                    ?.copyWith(color: Colors.white),
-                              ),
+                              const Text('Hello,', style: TextStyle(color: _kTextDim, fontSize: 14)),
                               Text(
                                 name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleLarge
-                                    ?.copyWith(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w700,
-                                ),
+                                maxLines: 1, overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    color: Colors.white, fontSize: 20, fontWeight: FontWeight.w700),
                               ),
                             ],
                           ),
@@ -221,48 +281,27 @@ class _Header extends StatelessWidget {
                       ],
                     ),
                   ),
-                  Row(
-                    children: [
-                      IconButton(
-                        tooltip: 'Notifications',
-                        onPressed: onNotifications,
-                        icon: const Icon(Icons.notifications, color: Colors.white),
-                      ),
-                      const SizedBox(width: 4),
-                      IconButton(
-                        tooltip: 'Sign out',
-                        onPressed: onLogout,
-                        icon: const Icon(Icons.logout, color: Colors.white),
-                      ),
-                    ],
+                  IconButton(
+                    tooltip: 'Notifications',
+                    onPressed: onNotifications,
+                    icon: const Icon(Icons.notifications_none_rounded, color: Colors.white),
+                  ),
+                  const SizedBox(width: 4),
+                  IconButton(
+                    tooltip: 'Sign out',
+                    onPressed: onLogout,
+                    icon: const Icon(Icons.logout, color: Colors.white),
                   ),
                 ],
               ),
-
-              const SizedBox(height: 16),
-
-              // خانة البحث داخل الهيدر (فوق الدوائر)
-              TextField(
+              const SizedBox(height: 18),
+              _SearchBar(
                 controller: searchCtrl,
-                decoration: InputDecoration(
-                  hintText: 'Search by title / store / provider',
-                  prefixIcon: const Icon(Icons.search),
-                  filled: true,
-                  fillColor: Colors.white,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide(color: Colors.white.withOpacity(0.0)),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide(color: Colors.white.withOpacity(0.0)),
-                  ),
-                ),
+                hint: 'Search bills or warranties...',
+                onChanged: onSearchChanged,
+                onSubmitted: onSearchSubmitted,
               ),
-
-              // مسافة سفلية داخل الهيدر للتنفس
-              const SizedBox(height: 12),
+              const Spacer(),
             ],
           ),
         ),
@@ -271,7 +310,223 @@ class _Header extends StatelessWidget {
   }
 }
 
-// ======= أفاتارات جاهزة (emoji + gradient) تُستخدم في الهيدر =======
+// =============== Search Bar (TextField فعلي) ===============
+class _SearchBar extends StatelessWidget {
+  final TextEditingController controller;
+  final String hint;
+  final ValueChanged<String>? onChanged;
+  final ValueChanged<String>? onSubmitted;
+
+  const _SearchBar({
+    required this.controller,
+    required this.hint,
+    this.onChanged,
+    this.onSubmitted,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        gradient: const LinearGradient(
+          colors: [_kGrad1, _kGrad3],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        boxShadow: [
+          BoxShadow(color: _kGrad2.withOpacity(0.45), blurRadius: 16, offset: const Offset(0, 6)),
+        ],
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.search, color: Colors.white, size: 22),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              onChanged: onChanged,
+              onSubmitted: onSubmitted,
+              style: const TextStyle(color: Colors.white, fontSize: 16),
+              cursorColor: Colors.white,
+              decoration: const InputDecoration(
+                hintText: 'Search bills or warranties...',
+                hintStyle: TextStyle(color: Colors.white70),
+                border: InputBorder.none,
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
+          ),
+          if (controller.text.isNotEmpty)
+            IconButton(
+              tooltip: 'Clear',
+              onPressed: () {
+                controller.clear();
+                if (onChanged != null) onChanged!('');
+              },
+              icon: const Icon(Icons.close_rounded, color: Colors.white),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// =============== بطاقات الإجراءات ===============
+class _ActionMiniTile extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final List<Color> gradient;
+  final VoidCallback onTap;
+
+  const _ActionMiniTile({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.gradient,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: Material(
+        color: Colors.transparent,
+        child: Ink(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(colors: gradient, begin: Alignment.topLeft, end: Alignment.bottomRight),
+            boxShadow: [BoxShadow(color: gradient.last.withOpacity(.40), blurRadius: 14, offset: Offset(0, 8))],
+          ),
+          child: InkWell(
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 40, height: 40,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(.15),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    alignment: Alignment.center,
+                    child: Icon(icon, color: Colors.white, size: 24),
+                  ),
+                  const Spacer(),
+                  Text(title,
+                      maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 2),
+                  Text(subtitle,
+                      maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ActionRectTall extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final List<Color> gradient;
+  final VoidCallback onTap;
+
+  const _ActionRectTall({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.gradient,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(22),
+      child: Material(
+        color: Colors.transparent,
+        child: Ink(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: gradient,
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: gradient.last.withOpacity(.40),
+                blurRadius: 16,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: InkWell(
+            onTap: onTap,
+            child: LayoutBuilder(
+              builder: (context, c) {
+                final shortest = c.maxWidth < c.maxHeight ? c.maxWidth : c.maxHeight;
+                final double iconBg  = (shortest * 0.32).clamp(64, 96);
+                final double iconSz  = (iconBg * 0.60).clamp(36, 56);
+                const double pad = 16;
+
+                return Stack(
+                  children: [
+                    Positioned(
+                      top: pad,
+                      left: pad,
+                      child: Container(
+                        width: iconBg,
+                        height: iconBg,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(.20),
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        alignment: Alignment.center,
+                        child: Icon(icon, size: iconSz, color: Colors.white),
+                      ),
+                    ),
+                    Positioned(
+                      left: pad,
+                      right: pad,
+                      bottom: pad,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: const [
+                          Text('Quick Add',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700)),
+                          SizedBox(height: 4),
+                          Text('OCR',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(color: Colors.white70, fontSize: 13)),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ======= أفاتارات =======
 const Map<String, List<dynamic>> _kAvatarPresets = {
   'fox_purple':     ['🦊', [Color(0xFF6A73FF), Color(0xFFE6E9FF)]],
   'panda_blue':     ['🐼', [Color(0xFF38BDF8), Color(0xFFD1FAFF)]],
@@ -292,11 +547,7 @@ class _ProfileAvatar extends StatelessWidget {
   final VoidCallback? onTap;
   const _ProfileAvatar({required this.name, this.onTap});
 
-  String _initialOf(String text) {
-    final t = text.trim();
-    if (t.isEmpty) return 'U';
-    return t.substring(0, 1).toUpperCase();
-  }
+  String _initialOf(String text) => (text.trim().isEmpty ? 'U' : text.trim()[0].toUpperCase());
 
   Widget _fallbackCircle(BuildContext context, String initials) {
     return Container(
@@ -304,22 +555,12 @@ class _ProfileAvatar extends StatelessWidget {
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: Colors.white.withOpacity(0.9),
-        boxShadow: [
-          BoxShadow(
-            blurRadius: 10,
-            color: Colors.black.withOpacity(0.08),
-            offset: const Offset(0, 2),
-          ),
-        ],
+        boxShadow: [BoxShadow(blurRadius: 10, color: Colors.black.withOpacity(0.08), offset: Offset(0, 2))],
       ),
       alignment: Alignment.center,
-      child: Text(
-        initials,
-        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-          color: Colors.black87,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
+      child: Text(initials, style: Theme.of(context).textTheme.titleMedium?.copyWith(
+        color: Colors.black87, fontWeight: FontWeight.w700,
+      )),
     );
   }
 
@@ -352,174 +593,40 @@ class _ProfileAvatar extends StatelessWidget {
               width: 42, height: 42,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                gradient: LinearGradient(
-                  colors: colors,
-                  begin: Alignment.topRight,
-                  end: Alignment.bottomLeft,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.08),
-                    blurRadius: 10,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
+                gradient: LinearGradient(colors: colors, begin: Alignment.topRight, end: Alignment.bottomLeft),
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 10, offset: Offset(0, 2))],
               ),
               alignment: Alignment.center,
               child: Text(emoji, style: const TextStyle(fontSize: 22)),
             );
           }
         }
-
-        return onTap == null
-            ? child
-            : InkWell(onTap: onTap, borderRadius: BorderRadius.circular(21), child: child);
+        return onTap == null ? child : InkWell(onTap: onTap, borderRadius: BorderRadius.circular(21), child: child);
       },
     );
   }
 }
 
-// =================== Gradient Icon ===================
-
-class GradientIcon extends StatelessWidget {
-  final IconData icon;
-  final double size;
-  final Gradient gradient;
-  const GradientIcon({
-    super.key,
-    required this.icon,
-    required this.size,
-    required this.gradient,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ShaderMask(
-      shaderCallback: (Rect bounds) =>
-          gradient.createShader(Rect.fromLTWH(0, 0, size, size)),
-      blendMode: BlendMode.srcIn,
-      child: Icon(icon, size: size, color: Colors.white),
-    );
-  }
-}
-
-// =================== Round Actions ===================
-
-class _RoundAction extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  const _RoundAction({required this.icon, required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    Future<void> _go(Widget page) async {
-      final s = ScaffoldMessenger.of(context);
-      s.clearSnackBars();
-      await Navigator.of(context, rootNavigator: true)
-          .push(MaterialPageRoute(builder: (_) => page));
-    }
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () {
-          if (label.contains('OCR')) {
-            _go(const ScanReceiptPage());
-          } else if (label.contains('Bill')) {
-            _go(const AddBillPage());
-          } else {
-            _go(const AddWarrantyPage(
-              billId: null,
-              defaultStartDate: null,
-              defaultEndDate: null,
-            ));
-          }
-        },
-        borderRadius: BorderRadius.circular(56),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // دائرة الأيقونة
-            Container(
-              width: _kActionSize,
-              height: _kActionSize,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    blurRadius: 10,
-                    color: Colors.black.withOpacity(0.06),
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              alignment: Alignment.center,
-              child: GradientIcon(
-                icon: icon,
-                size: _kActionSize * 0.4, // ≈40 عند 100
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF5F33E1), Color(0xFF000000)],
-                  begin: Alignment.centerLeft,
-                  end: Alignment.centerRight,
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 8),
-
-            // العنوان أسفل الأيقونة (حتى لسطرين)
-            SizedBox(
-              width: _kActionSize,
-              child: Text(
-                label,
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                softWrap: true,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: Colors.black87, height: 1.1),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// =================== Expiring Mixed (3 عناصر) ===================
-
+// =================== Expiring Mixed (بحث مفعّل) ===================
 class _ExpiringMixed3 extends StatelessWidget {
   final String? userId;
   final String query;
   const _ExpiringMixed3({required this.userId, required this.query});
 
-  String _fmt(DateTime dt) =>
-      '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+  String _fmt(DateTime dt) => '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
   DateTime _only(DateTime d) => DateTime(d.year, d.month, d.day);
 
   @override
   Widget build(BuildContext context) {
     final uid = userId;
     final billsCol = FirebaseFirestore.instance.collection('Bills');
-    final warrCol = FirebaseFirestore.instance.collection('Warranties');
+    final warrCol  = FirebaseFirestore.instance.collection('Warranties');
 
-    final billsBase =
-    uid != null ? billsCol.where('user_id', isEqualTo: uid) : billsCol;
-    final warrBase =
-    uid != null ? warrCol.where('user_id', isEqualTo: uid) : warrCol;
+    final billsBase = uid != null ? billsCol.where('user_id', isEqualTo: uid) : billsCol;
+    final warrBase  = uid != null ? warrCol.where('user_id', isEqualTo: uid) : warrCol;
 
-    final billsStream = billsBase
-        .orderBy('created_at', descending: true)
-        .limit(200)
-        .snapshots();
-    final warrStream = warrBase
-        .orderBy('created_at', descending: true)
-        .limit(200)
-        .snapshots();
+    final billsStream = billsBase.orderBy('created_at', descending: true).limit(200).snapshots();
+    final warrStream  = warrBase.orderBy('created_at', descending: true).limit(200).snapshots();
 
     Color sColor(DateTime todayOnly, DateTime e) {
       final diff = e.difference(todayOnly).inDays;
@@ -545,72 +652,49 @@ class _ExpiringMixed3 extends StatelessWidget {
 
             final items = <Map<String, dynamic>>[];
 
-            // Bills
             for (final doc in bSnap.data!.docs) {
               final d = doc.data();
               final title = (d['title'] ?? '—').toString();
-              final shop = (d['shop_name'] ?? '').toString();
+              final shop  = (d['shop_name'] ?? '').toString();
 
-              final purchase =
-              (d['purchase_date'] as Timestamp?)?.toDate().toLocal();
-              final ret =
-              (d['return_deadline'] as Timestamp?)?.toDate().toLocal();
-              final ex =
-              (d['exchange_deadline'] as Timestamp?)?.toDate().toLocal();
+              final purchase = (d['purchase_date'] as Timestamp?)?.toDate().toLocal();
+              final ret      = (d['return_deadline'] as Timestamp?)?.toDate().toLocal();
+              final ex       = (d['exchange_deadline'] as Timestamp?)?.toDate().toLocal();
 
               final amountN = (d['total_amount'] as num?);
-              final amount = amountN?.toDouble() ?? 0.0;
+              final amount  = amountN?.toDouble() ?? 0.0;
 
               if (ret != null) {
                 items.add({
-                  'type': 'bill',
-                  'subtype': 'return',
-                  'id': doc.id,
-                  'title': title,
-                  'subtitle': shop,
-                  'purchase': purchase,
-                  'amount': amount,
-                  'expiry': _only(ret),
+                  'type': 'bill','subtype': 'return','id': doc.id,
+                  'title': title,'subtitle': shop,'purchase': purchase,
+                  'amount': amount,'expiry': _only(ret),
                 });
               }
               if (ex != null) {
                 items.add({
-                  'type': 'bill',
-                  'subtype': 'exchange',
-                  'id': doc.id,
-                  'title': title,
-                  'subtitle': shop,
-                  'purchase': purchase,
-                  'amount': amount,
-                  'expiry': _only(ex),
+                  'type': 'bill','subtype': 'exchange','id': doc.id,
+                  'title': title,'subtitle': shop,'purchase': purchase,
+                  'amount': amount,'expiry': _only(ex),
                 });
               }
             }
 
-            // Warranties
             for (final doc in wSnap.data!.docs) {
               final d = doc.data();
-              final provider =
-              (d['provider']?.toString().trim().isNotEmpty == true)
-                  ? d['provider'].toString().trim()
-                  : 'Warranty';
+              final provider = (d['provider']?.toString().trim().isNotEmpty == true)
+                  ? d['provider'].toString().trim() : 'Warranty';
               final wTitle = (d['title']?.toString().trim().isNotEmpty == true)
-                  ? d['title'].toString().trim()
-                  : provider;
+                  ? d['title'].toString().trim() : provider;
 
-              final start =
-              (d['start_date'] as Timestamp?)?.toDate().toLocal();
-              final end = (d['end_date'] as Timestamp?)?.toDate().toLocal();
+              final start = (d['start_date'] as Timestamp?)?.toDate().toLocal();
+              final end   = (d['end_date'] as Timestamp?)?.toDate().toLocal();
               if (end == null) continue;
 
               items.add({
-                'type': 'warranty',
-                'id': doc.id,
-                'title': provider,
-                'subtitle': wTitle,
-                'start': start,
-                'end': _only(end),
-                'expiry': _only(end),
+                'type': 'warranty','id': doc.id,
+                'title': provider,'subtitle': wTitle,
+                'start': start,'end': _only(end),'expiry': _only(end),
               });
             }
 
@@ -628,118 +712,86 @@ class _ExpiringMixed3 extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text('Expiring soon',
-                      style: Theme.of(context).textTheme.titleMedium),
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Colors.white)),
                   const SizedBox(height: 8),
-                  Card(
-                    elevation: 0,
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Text(q.isEmpty
-                          ? 'No items with deadlines.'
-                          : 'No results for "$q".'),
-                    ),
+                  Container(
+                    decoration: BoxDecoration(color: _kCardDark, borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.all(16),
+                    child: Text(q.isEmpty ? 'No items with deadlines.' : 'No results for "$q".',
+                        style: const TextStyle(color: Colors.white70)),
                   ),
                 ],
               );
             }
 
-            final upcoming = items
-              ..retainWhere((e) => !(e['expiry'] as DateTime).isBefore(todayOnly));
-            upcoming.sort((a, b) =>
-                (a['expiry'] as DateTime).compareTo(b['expiry'] as DateTime));
+            final upcoming = items..retainWhere((e) => !(e['expiry'] as DateTime).isBefore(todayOnly));
+            upcoming.sort((a, b) => (a['expiry'] as DateTime).compareTo(b['expiry'] as DateTime));
 
-            final past = items
-                .where((e) => (e['expiry'] as DateTime).isBefore(todayOnly))
-                .toList()
-              ..sort((a, b) =>
-                  (b['expiry'] as DateTime).compareTo(a['expiry'] as DateTime));
+            final past = items.where((e) => (e['expiry'] as DateTime).isBefore(todayOnly)).toList()
+              ..sort((a, b) => (b['expiry'] as DateTime).compareTo(a['expiry'] as DateTime));
 
             final selected = <Map<String, dynamic>>[]..addAll(upcoming.take(3));
-            if (selected.length < 3) {
-              selected.addAll(past.take(3 - selected.length));
-            }
+            if (selected.length < 3) selected.addAll(past.take(3 - selected.length));
 
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text('Expiring soon',
-                    style: Theme.of(context).textTheme.titleMedium),
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Colors.white)),
                 const SizedBox(height: 8),
                 ...selected.map((e) {
-                  final type = e['type'] as String;
+                  final type   = e['type'] as String;
                   final expiry = e['expiry'] as DateTime;
                   final subtype = (e['subtype'] as String?);
 
                   final diff = expiry.difference(todayOnly).inDays;
                   final stx = diff == 0
                       ? 'Due today'
-                      : (diff > 0
-                      ? 'In $diff day${diff == 1 ? '' : 's'}'
+                      : (diff > 0 ? 'In $diff day${diff == 1 ? '' : 's'}'
                       : '${diff.abs()} day${diff.abs() == 1 ? '' : 's'} ago');
                   final scolor = sColor(todayOnly, expiry);
 
                   IconData leadingIcon;
                   String kindLabel = '';
                   if (type == 'bill') {
-                    if (subtype == 'return') {
-                      leadingIcon = Icons.keyboard_return;
-                      kindLabel = 'Return';
-                    } else if (subtype == 'exchange') {
-                      leadingIcon = Icons.swap_horiz;
-                      kindLabel = 'Exchange';
-                    } else {
-                      leadingIcon = Icons.receipt_long;
-                    }
+                    if (subtype == 'return') { leadingIcon = Icons.keyboard_return; kindLabel = 'Exchange/Return'; }
+                    else if (subtype == 'exchange') { leadingIcon = Icons.swap_horiz; kindLabel = 'Exchange'; }
+                    else { leadingIcon = Icons.receipt_long; }
                   } else {
-                    leadingIcon = Icons.verified_user;
-                    kindLabel = 'Warranty';
+                    leadingIcon = Icons.verified_user; kindLabel = 'Warranty';
                   }
 
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 8),
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    decoration: BoxDecoration(color: _kCardDark, borderRadius: BorderRadius.circular(12)),
                     child: ListTile(
-                      leading: Icon(leadingIcon),
+                      leading: Icon(leadingIcon, color: Colors.white70),
                       title: Row(
                         children: [
-                          Expanded(
-                            child: Text(
-                              e['title'] as String,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
+                          Expanded(child: Text(e['title'] as String,
+                              maxLines: 1, overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(color: Colors.white))),
                           if (kindLabel.isNotEmpty)
                             Container(
                               margin: const EdgeInsets.only(left: 8),
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: Colors.black.withOpacity(0.06),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Text(kindLabel,
-                                  style: const TextStyle(fontSize: 11)),
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(color: Colors.white.withOpacity(0.08),
+                                  borderRadius: BorderRadius.circular(10)),
+                              child: Text(kindLabel, style: const TextStyle(fontSize: 11, color: Colors.white70)),
                             ),
                         ],
                       ),
                       subtitle: Text(
-                        (e['subtitle'] as String?)?.isEmpty == true
-                            ? '—'
-                            : (e['subtitle'] as String? ?? '—'),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                        (e['subtitle'] as String?)?.isEmpty == true ? '—' : (e['subtitle'] as String? ?? '—'),
+                        maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70),
                       ),
                       trailing: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
-                          Text(_fmt(expiry),
-                              style: Theme.of(context).textTheme.labelMedium),
+                          Text(_fmt(expiry), style: const TextStyle(color: Colors.white70)),
                           const SizedBox(height: 2),
-                          Text(
-                            stx,
-                            style: TextStyle(fontSize: 11, color: scolor),
-                          ),
+                          Text(stx, style: TextStyle(fontSize: 11, color: scolor)),
                         ],
                       ),
                       onTap: () {
@@ -749,32 +801,24 @@ class _ExpiringMixed3 extends StatelessWidget {
                             title: e['title'] as String,
                             product: (e['subtitle'] as String? ?? ''),
                             amount: (e['amount'] as double?) ?? 0.0,
-                            purchaseDate:
-                            (e['purchase'] as DateTime?) ?? DateTime.now(),
-                            returnDeadline:
-                            subtype == 'return' ? expiry : null,
+                            purchaseDate: (e['purchase'] as DateTime?) ?? DateTime.now(),
+                            returnDeadline: subtype == 'return' ? expiry : null,
                             warrantyExpiry: null,
                           );
                           Navigator.of(context, rootNavigator: true).push(
-                            MaterialPageRoute(
-                              builder: (_) => BillDetailPage(details: details),
-                            ),
+                            MaterialPageRoute(builder: (_) => BillDetailPage(details: details)),
                           );
                         } else {
                           final details = WarrantyDetails(
                             id: e['id'] as String,
                             product: e['title'] as String,
                             title: e['subtitle'] as String? ?? '',
-                            warrantyStart:
-                            (e['start'] as DateTime?) ?? DateTime.now(),
+                            warrantyStart: (e['start'] as DateTime?) ?? DateTime.now(),
                             warrantyExpiry: expiry,
                             returnDeadline: null,
                           );
                           Navigator.of(context, rootNavigator: true).push(
-                            MaterialPageRoute(
-                              builder: (_) =>
-                                  WarrantyDetailPage(details: details),
-                            ),
+                            MaterialPageRoute(builder: (_) => WarrantyDetailPage(details: details)),
                           );
                         }
                       },
@@ -786,6 +830,127 @@ class _ExpiringMixed3 extends StatelessWidget {
           },
         );
       },
+    );
+  }
+}
+
+// =================== Bottom Gradient Bar (مرن) ===================
+class GradientBottomBar extends StatelessWidget {
+  final int selectedIndex;               // 0 = Warranties, 1 = Bills
+  final ValueChanged<int> onTap;         // استدعاء عند الضغط
+  final Color startColor;                // لون بداية التدرّج
+  final Color endColor;                  // لون نهاية التدرّج
+
+  const GradientBottomBar({
+    super.key,
+    required this.selectedIndex,
+    required this.onTap,
+    this.startColor = const Color(0xFF6C3EFF),
+    this.endColor   = const Color(0xFF3E8EFD),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 84,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [startColor, endColor],
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+        ),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.25),
+            blurRadius: 16,
+            offset: const Offset(0, -6),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      child: Row(
+        children: [
+          Expanded(
+            child: _BottomItem(
+              icon: Icons.verified_user_rounded,
+              label: 'Warranties',
+              selected: selectedIndex == 0,
+              onTap: () => onTap(0),
+            ),
+          ),
+          const SizedBox(width: 12),
+          const _FabDot(),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _BottomItem(
+              icon: Icons.receipt_long_rounded,
+              label: 'Bills',
+              selected: selectedIndex == 1,
+              onTap: () => onTap(1),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BottomItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback? onTap;
+  const _BottomItem({required this.icon, required this.label, this.selected = false, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = selected ? Colors.white : Colors.white70;
+    final selectedBg = Colors.white.withOpacity(.14);
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? selectedBg : Colors.transparent,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: fg, size: 20),
+            const SizedBox(width: 8),
+            Text(label, style: TextStyle(color: fg, fontWeight: FontWeight.w600)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FabDot extends StatelessWidget {
+  const _FabDot();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 56, height: 56,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: const LinearGradient(
+          colors: [Color(0xFF6C3EFF), Color(0xFF3E8EFD)],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Color(0xFF934DFE).withOpacity(.45),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+        border: Border.all(color: Colors.white, width: 2),
+      ),
+      child: const Icon(Icons.home_filled, color: Colors.white),
     );
   }
 }

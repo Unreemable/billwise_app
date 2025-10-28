@@ -25,6 +25,14 @@ class _NotificationsPageState extends State<NotificationsPage> {
 
   final Set<String> _dismissed = {};
 
+  // ألوان وهوية الصفحة (مطابقة لبقية الصفحات)
+  static const _kPrimary = Color(0xFF5B6BFF); // أزرار/هايلايت
+  static const _kHeaderGrad = LinearGradient(
+    colors: [Color(0xFF1B0B66), Color(0xFF0B0425)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+
   @override
   void initState() {
     super.initState();
@@ -39,7 +47,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
         return;
       }
 
-      final now = DateTime.now();
+      final now = DateTime.now(); // ← تعريف واحد
       final startWindow = now.subtract(const Duration(days: 14));
       final endWindow = now.add(const Duration(days: 30));
 
@@ -221,14 +229,22 @@ class _NotificationsPageState extends State<NotificationsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Notifications')),
+      appBar: AppBar(
+        title: const Text('Notifications'),
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        foregroundColor: Colors.white,
+        flexibleSpace: Container(decoration: const BoxDecoration(gradient: _kHeaderGrad)),
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
         onRefresh: _load,
         child: ListView(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 88),
           children: [
             _section('Due today', _today, isToday: true),
             _section('Upcoming', _upcoming),
@@ -239,8 +255,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
       floatingActionButton: FloatingActionButton(
         onPressed: _sendNow,
         tooltip: 'Send test notification',
+        backgroundColor: _kPrimary,
         child: const Icon(Icons.bolt),
       ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+      backgroundColor: cs.surface, // ينسّق مع الثيم الداكن
     );
   }
 
@@ -267,15 +286,18 @@ class _NotificationsPageState extends State<NotificationsPage> {
       children: [
         Padding(
           padding: const EdgeInsets.only(left: 12, top: 12, bottom: 6),
-          child: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+          child: Text(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
         ),
         ...visible.map((e) {
-          final s = _styleFor(e.kind, isToday);
+          final s = _styleFor(e.kind);
           final tile = _NotifTile(
             isToday: isToday,
             dim: dim,
             baseColor: s.baseColor,
-            todayBackground: isToday ? Colors.purple.shade500 : null, // بطاقات اليوم موف
+            todayBackground: isToday ? _kPrimary : null, // بطاقات اليوم موف
             icon: s.icon,
             kindLabel: s.kindLabel,
             title: e.title,
@@ -315,8 +337,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
     );
   }
 
-  // الألوان ِ
-  _KindStyle _styleFor(_NotifKind k, bool isToday) {
+  _KindStyle _styleFor(_NotifKind k) {
     switch (k) {
       case _NotifKind.returnReminder:
         return _KindStyle(
@@ -406,6 +427,7 @@ class _NotifTile extends StatelessWidget {
   final String whenText;
 
   const _NotifTile({
+    super.key,
     required this.isToday,
     required this.dim,
     required this.baseColor,
@@ -424,7 +446,7 @@ class _NotifTile extends StatelessWidget {
     final dimmed = dim ? onSurface.withValues(alpha: 0.55) : onSurface;
 
     final bgColor = isToday
-        ? (todayBackground ?? Colors.purple).withValues(alpha: 0.08)
+        ? (todayBackground ?? Colors.purple).withValues(alpha: 0.10)
         : Theme.of(context).cardColor;
 
     return Container(
@@ -468,7 +490,7 @@ class _NotifTile extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // صف علوي ثابت: البادج يتمدد، والوقت يمين
+                  // صف علوي: البادج يتمدد، والوقت يمين
                   Row(
                     children: [
                       Expanded(child: _badge(kindLabel, baseColor)),

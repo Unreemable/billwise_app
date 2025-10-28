@@ -5,6 +5,20 @@ import 'package:flutter/material.dart';
 import '../../common/models.dart';
 import '../../common/widgets/expiry_progress.dart';
 
+// ===== نفس ألوان وستايل الهوم =====
+const Color _kBgDark  = Color(0xFF0E0722);
+const Color _kGrad1   = Color(0xFF6C3EFF);
+const Color _kGrad2   = Color(0xFF934DFE);
+const Color _kGrad3   = Color(0xFF3E8EFD);
+const Color _kCard    = Color(0x1AFFFFFF);
+const Color _kTextDim = Colors.white70;
+
+const LinearGradient _kHeaderGrad = LinearGradient(
+  colors: [Color(0xFF1A0B3A), Color(0xFF0E0722)],
+  begin: Alignment.topLeft,
+  end: Alignment.bottomRight,
+);
+
 const List<String> _kMonthNames = [
   'January','February','March','April','May','June',
   'July','August','September','October','November','December'
@@ -96,6 +110,7 @@ class _WarrantyDetailPageState extends State<WarrantyDetailPage> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
+      backgroundColor: _kBgDark,
       builder: (ctx) {
         return Padding(
           padding: EdgeInsets.only(
@@ -108,54 +123,38 @@ class _WarrantyDetailPageState extends State<WarrantyDetailPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text('Edit warranty', style: Theme.of(ctx).textTheme.titleLarge),
+                    Text('Edit warranty',
+                        style: Theme.of(ctx).textTheme.titleLarge?.copyWith(color: Colors.white)),
                     const SizedBox(height: 12),
 
-                    TextField(
+                    _GlassField(
                       controller: titleCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'Title',
-                        prefixIcon: Icon(Icons.text_fields),
-                      ),
+                      label: 'Title',
+                      icon: Icons.text_fields,
                     ),
                     const SizedBox(height: 8),
 
-                    TextField(
+                    _GlassField(
                       controller: productCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'Product / Provider',
-                        prefixIcon: Icon(Icons.verified_user_outlined),
-                      ),
+                      label: 'Product / Provider',
+                      icon: Icons.verified_user_outlined,
                     ),
                     const SizedBox(height: 12),
 
-                    Row(
-                      children: [
-                        Expanded(child: Text('Start date:  ${_ymd(start)}')),
-                        IconButton(
-                          icon: const Icon(Icons.event),
-                          onPressed: () async {
-                            await pickDate(ctx, start, (v) => setLocal(() => start = v));
-                          },
-                        ),
-                      ],
+                    _GlassRow(
+                      left: 'Start date:  ${_ymd(start)}',
+                      onPick: () async => await pickDate(ctx, start, (v) => setLocal(() => start = v)),
                     ),
-                    Row(
-                      children: [
-                        Expanded(child: Text('Expiry date:  ${_ymd(end)}')),
-                        IconButton(
-                          icon: const Icon(Icons.event),
-                          onPressed: () async {
-                            await pickDate(ctx, end, (v) => setLocal(() => end = v));
-                          },
-                        ),
-                      ],
+                    const SizedBox(height: 8),
+                    _GlassRow(
+                      left: 'Expiry date:  ${_ymd(end)}',
+                      onPick: () async => await pickDate(ctx, end, (v) => setLocal(() => end = v)),
                     ),
 
                     const SizedBox(height: 16),
-                    FilledButton.icon(
-                      icon: const Icon(Icons.save),
-                      label: const Text('Save changes'),
+                    _GradButton(
+                      text: 'Save changes',
+                      icon: Icons.save,
                       onPressed: () => Navigator.pop(ctx, true),
                     ),
                   ],
@@ -209,68 +208,72 @@ class _WarrantyDetailPageState extends State<WarrantyDetailPage> {
     return Directionality(
       textDirection: ui.TextDirection.ltr,
       child: Scaffold(
+        backgroundColor: _kBgDark,
         appBar: AppBar(
           backgroundColor: Colors.transparent,
           elevation: 0,
           foregroundColor: Colors.white,
-          flexibleSpace: Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Color(0xFF6A73FF), Color(0xFFE6E9FF)],
-                begin: Alignment.topRight,
-                end: Alignment.bottomLeft,
-              ),
-            ),
-          ),
           title: const Text('Warranty'),
-          actions: const [
-            _LogoStub(), // هنا يظهر اللوقو يمين العنوان
-          ],
+          flexibleSpace: Container(decoration: const BoxDecoration(gradient: _kHeaderGrad)),
+          actions: const [_LogoStub()],
         ),
 
-        // زرين تحت يمين
-        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-        floatingActionButton: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            FloatingActionButton.small(
-              heroTag: 'fabEditWarranty',
-              onPressed: _openEditSheet,
-              tooltip: 'Edit',
-              child: const Icon(Icons.edit),
+        // شريط أزرار عائم متناسق
+        bottomNavigationBar: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _GradButton(
+                    text: 'Edit',
+                    icon: Icons.edit,
+                    onPressed: _openEditSheet,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _GradButton(
+                    text: 'Delete',
+                    icon: Icons.delete_outline,
+                    bgFrom: Colors.redAccent,
+                    bgTo: Colors.red,
+                    onPressed: _deleteWarranty,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
-            FloatingActionButton.small(
-              heroTag: 'fabDeleteWarranty',
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-              onPressed: _deleteWarranty,
-              tooltip: 'Delete',
-              child: const Icon(Icons.delete_outline),
-            ),
-          ],
+          ),
         ),
 
         body: ListView(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
           children: [
-            Card(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-              elevation: 0,
+            Container(
+              decoration: BoxDecoration(
+                color: _kCard,
+                borderRadius: BorderRadius.circular(18),
+              ),
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    // العنوان والشارة
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        const Icon(Icons.verified_user_outlined),
+                        const Icon(Icons.verified_user_outlined, color: Colors.white),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
                             _d.title,
-                            style: Theme.of(context).textTheme.titleMedium,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                            ),
                             overflow: TextOverflow.ellipsis,
                             maxLines: 1,
                           ),
@@ -281,12 +284,12 @@ class _WarrantyDetailPageState extends State<WarrantyDetailPage> {
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                               decoration: BoxDecoration(
-                                color: Colors.deepPurple.withOpacity(.08),
+                                color: Colors.white.withOpacity(.10),
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Text(
                                 'Expires ${_fmtPretty(_d.warrantyExpiry)}',
-                                style: Theme.of(context).textTheme.labelMedium,
+                                style: const TextStyle(color: Colors.white),
                               ),
                             ),
                           ),
@@ -322,33 +325,140 @@ class _WarrantyDetailPageState extends State<WarrantyDetailPage> {
   }
 }
 
-// ===== small reusable bits
+// ===== عناصر واجهة صغيرة متناسقة مع الهوم =====
 Widget _kv(String k, String v) => Padding(
-  padding: const EdgeInsets.only(bottom: 8),
+  padding: const EdgeInsets.only(bottom: 10),
   child: Row(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      SizedBox(width: 160, child: Text(k, style: const TextStyle(fontWeight: FontWeight.w600))),
-      Expanded(child: Text(v)),
+      SizedBox(
+        width: 160,
+        child: Text(k, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+      ),
+      Expanded(child: Text(v, style: const TextStyle(color: Colors.white))),
     ],
   ),
 );
+
 class _LogoStub extends StatelessWidget {
   const _LogoStub();
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Text(
-          'B',
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Colors.white),
+    return Padding(
+      padding: const EdgeInsets.only(right: 12),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text('B', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Colors.white)),
+          Text('ill Wise', style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.white70)),
+        ],
+      ),
+    );
+  }
+}
+
+// ===== حقول زجاجية وأزرار متدرجة للشيت =====
+class _GlassField extends StatelessWidget {
+  final TextEditingController controller;
+  final String label;
+  final IconData icon;
+  const _GlassField({required this.controller, required this.label, required this.icon});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withOpacity(.18)),
+      ),
+      child: TextField(
+        controller: controller,
+        style: const TextStyle(color: Colors.white),
+        decoration: InputDecoration(
+          labelText: label,
+          labelStyle: const TextStyle(color: Colors.white70),
+          prefixIcon: Icon(icon, color: Colors.white70),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
         ),
-        Text(
-          'ill Wise',
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.white70),
+      ),
+    );
+  }
+}
+
+class _GlassRow extends StatelessWidget {
+  final String left;
+  final VoidCallback onPick;
+  const _GlassRow({required this.left, required this.onPick});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withOpacity(.18)),
+      ),
+      height: 48,
+      child: Row(
+        children: [
+          Expanded(child: Text(left, style: const TextStyle(color: Colors.white))),
+          IconButton(
+            tooltip: 'Pick date',
+            onPressed: onPick,
+            icon: const Icon(Icons.event, color: Colors.white70),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GradButton extends StatelessWidget {
+  final String text;
+  final IconData icon;
+  final VoidCallback onPressed;
+  final Color bgFrom;
+  final Color bgTo;
+
+  const _GradButton({
+    required this.text,
+    required this.icon,
+    required this.onPressed,
+    this.bgFrom = _kGrad1,
+    this.bgTo   = _kGrad3,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 48,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onPressed,
+        child: Ink(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(colors: [bgFrom, bgTo]),
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(color: bgTo.withOpacity(.35), blurRadius: 14, offset: const Offset(0, 8)),
+            ],
+          ),
+          child: Center(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, color: Colors.white),
+                const SizedBox(width: 8),
+                Text(text, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+              ],
+            ),
+          ),
         ),
-      ],
+      ),
     );
   }
 }

@@ -42,38 +42,53 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
+    final isHome = _index == 0;
+
     return WillPopScope(
       onWillPop: _onWillPop,
       child: Scaffold(
         backgroundColor: Colors.transparent,
         extendBody: true,
+
+        // ✅ لا زر ولا شريط عندما نكون في الهوم
         floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
-        floatingActionButton: _CenterHomeButton(
+        floatingActionButton: isHome
+            ? null
+            : _CenterHomeButton(
           selected: _index == 0,
           onTap: () => setState(() => _index = 0),
         ),
-        bottomNavigationBar: _CurvedBottomBar(
+        bottomNavigationBar: isHome
+            ? null
+            : _CurvedBottomBar(
           selectedTab: _index,
-          onTapLeft: () => setState(() => _index = 1),
+          onTapLeft:  () => setState(() => _index = 1),
           onTapRight: () => setState(() => _index = 2),
         ),
+
         body: IndexedStack(
           index: _index,
           children: [
             Navigator(
               key: _homeKey,
-              onGenerateRoute: (s) =>
-                  MaterialPageRoute(builder: (_) => const HomeContent(), settings: s),
+              onGenerateRoute: (s) => MaterialPageRoute(
+                builder: (_) => const HomeContent(),
+                settings: s,
+              ),
             ),
             Navigator(
               key: _warrKey,
-              onGenerateRoute: (s) =>
-                  MaterialPageRoute(builder: (_) => const WarrantyListPage(), settings: s),
+              onGenerateRoute: (s) => MaterialPageRoute(
+                builder: (_) => const WarrantyListPage(),
+                settings: s,
+              ),
             ),
             Navigator(
               key: _billKey,
-              onGenerateRoute: (s) =>
-                  MaterialPageRoute(builder: (_) => const BillListPage(), settings: s),
+              onGenerateRoute: (s) => MaterialPageRoute(
+                builder: (_) => const BillListPage(),
+                settings: s,
+              ),
             ),
           ],
         ),
@@ -100,7 +115,10 @@ class _CurvedBottomBar extends StatelessWidget {
     return BottomAppBar(
       shape: const AutomaticNotchedShape(
         RoundedRectangleBorder(
-          borderRadius: BorderRadius.only(topLeft: Radius.circular(26), topRight: Radius.circular(26)),
+          borderRadius: BorderRadius.only(
+            topLeft: Radius.circular(26),
+            topRight: Radius.circular(26),
+          ),
         ),
         CircleBorder(),
       ),
@@ -156,7 +174,12 @@ class _BottomItem extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
-  const _BottomItem({required this.icon, required this.label, required this.selected, required this.onTap});
+  const _BottomItem({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -196,7 +219,8 @@ class _CenterHomeButton extends StatelessWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         transform: Matrix4.translationValues(0, selected ? -6 : 0, 0),
-        width: 64, height: 64,
+        width: 64,
+        height: 64,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           gradient: const LinearGradient(
@@ -205,7 +229,13 @@ class _CenterHomeButton extends StatelessWidget {
             end: Alignment.centerRight,
           ),
           border: Border.all(color: Colors.white, width: 4),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 12, offset: const Offset(0, 4))],
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.15),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
         child: const Icon(Icons.home_filled, color: Colors.white, size: 28),
       ),

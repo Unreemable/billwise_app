@@ -1,17 +1,6 @@
-import 'package:flutter/material.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-
-import 'firebase_options.dart';
-
-// Auth + Home
-import 'src/auth/login_screen.dart';
-import 'src/auth/register_screen.dart';
 // lib/main.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 // Firebase
 import 'package:firebase_core/firebase_core.dart';
@@ -19,13 +8,13 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-// تخزين محلي خفيف
+// Local storage
 import 'package:shared_preferences/shared_preferences.dart';
 
-// تحميل متغيرات البيئة (.env)
+// .env
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
-// خيارات فايربيس (مولدة من firebase cli)
+// Firebase options
 import 'firebase_options.dart';
 
 // Auth + Home
@@ -50,20 +39,19 @@ import 'src/ocr/scan_receipt_page.dart';
 // Notifications
 import 'src/notifications/notifications_service.dart';
 import 'src/notifications/notifications_page.dart';
-// إنشاء قناة billwise_reminders
 import 'src/notifications/notifications_bootstrap.dart';
 
 // Profile
 import 'src/profile/profile_page.dart';
 import 'src/profile/edit_profile_page.dart';
 
-// خلفية الباستيل
+// الخلفية العامة
 import 'src/common/soft_pastel_background.dart';
 
-// App Shell (النافقيشن السفلي الدائم)
+// App Shell
 import 'src/shell/app_shell.dart';
 
-/// معالج رسائل FCM في الخلفية/عند إغلاق التطبيق (must be a top-level function)
+/// معالج FCM في الخلفية (top-level)
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   final n = message.notification;
@@ -79,20 +67,25 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 1) حمّل ملف .env مبكرًا (لـ GEMINI_API_KEY وغيرها)
-  // تأكدي إضافة:
-  // flutter:
-  //   assets:
-  //     - .env
+  // واجهة حافة-لحافة + صبغ أشرطة النظام
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: Brightness.light,
+    systemNavigationBarColor: Color(0xFF0E0722), // داكن
+    systemNavigationBarIconBrightness: Brightness.light,
+  ));
+
+  // .env
   await dotenv.load(fileName: ".env");
 
-  // 2) Firebase
+  // Firebase
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
-  // 3) إنشاء قناة الإشعارات محليًا (Android 8+) — قبل أي عرض محلي
+  // قناة الإشعارات المحلية
   await setupLocalNotifications();
 
-  // 4) تسجيل معالج الخلفية قبل runApp
+  // معالج الخلفية
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
   runApp(const App());
@@ -103,19 +96,38 @@ class App extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const bg = Color(0xFF0E0722);
+
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'BillWise',
       theme: ThemeData(
         useMaterial3: true,
-        scaffoldBackgroundColor: Colors.transparent, // للخلفية
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF3C7EFF)),
+        brightness: Brightness.dark,
+        // نخلي الخلفيات شفافة لأن عندنا SoftPastelBackground
+        scaffoldBackgroundColor: Colors.transparent,
+        canvasColor: Colors.transparent,
+        cardColor: const Color(0x1AFFFFFF),
+
+        // لا نحدد BottomAppBarTheme / NavigationBarTheme هنا لتفادي اختلاف الأنواع
+        // نضبط ألوان السطح عبر الـ ColorScheme
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF6C3EFF),
+          brightness: Brightness.dark,
+          surface: bg,        // بديل background (المحذوف)
+          onSurface: Colors.white,
+          primary: const Color(0xFF6C3EFF),
+          onPrimary: Colors.white,
+        ),
       ),
-      // الخلفية العامة
-      builder: (context, child) => SoftPastelBackground(
-        child: child ?? const SizedBox.shrink(),
-      ),
+
+      // الخلفية العامة الناعمة
+      builder: (context, child) => const SoftPastelBackground(
+        child: SizedBox.expand(child: ColoredBox(color: Colors.transparent)),
+      ).copyWithChild(child ?? const SizedBox.shrink()),
+
       home: const _RootGate(),
+
       routes: {
         LoginScreen.route: (_) => const LoginScreen(),
         RegisterScreen.route: (_) => const RegisterScreen(),
@@ -128,20 +140,17 @@ class App extends StatelessWidget {
         NotificationsPage.route: (_) => const NotificationsPage(),
         ProfilePage.route: (_) => const ProfilePage(),
       },
+
       onGenerateRoute: (settings) {
-        if (settings.name == BillDetailPage.route &&
-            settings.arguments is BillDetails) {
+        if (settings.name == BillDetailPage.route && settings.arguments is BillDetails) {
           return MaterialPageRoute(
-            builder: (_) =>
-                BillDetailPage(details: settings.arguments as BillDetails),
+            builder: (_) => BillDetailPage(details: settings.arguments as BillDetails),
             settings: settings,
           );
         }
-        if (settings.name == WarrantyDetailPage.route &&
-            settings.arguments is WarrantyDetails) {
+        if (settings.name == WarrantyDetailPage.route && settings.arguments is WarrantyDetails) {
           return MaterialPageRoute(
-            builder: (_) =>
-                WarrantyDetailPage(details: settings.arguments as WarrantyDetails),
+            builder: (_) => WarrantyDetailPage(details: settings.arguments as WarrantyDetails),
             settings: settings,
           );
         }
@@ -234,7 +243,7 @@ class _RootGateState extends State<_RootGate> {
 
     await _saveFcmTokenForUser(token);
 
-    // فورغراوند: أظهر تنبيه محلي على قناة billwise_reminders
+    // فورغراوند: تنبيه محلي
     FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
       final n = message.notification;
       if (n != null) {
@@ -245,7 +254,7 @@ class _RootGateState extends State<_RootGate> {
       }
     });
 
-    // فتح من التنبيه (foreground/background)
+    // فتح من التنبيه
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
       if (mounted) {
         Navigator.of(context, rootNavigator: true)
@@ -294,11 +303,18 @@ class _RootGateState extends State<_RootGate> {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             _autoBackfillRemindersDaily();
           });
-          // البار السفلي ثابت في كل الصفحات
+          // ملاحظة: AppShell لازم يستخدم Scaffold(extendBody: true, backgroundColor: Colors.transparent)
           return const AppShell();
         }
         return const LoginScreen();
       },
     );
+  }
+}
+
+// ====== تمديد Widget بسيط يسمح بتمرير child ديناميكي لـ SoftPastelBackground ======
+extension on SoftPastelBackground {
+  Widget copyWithChild(Widget newChild) {
+    return SoftPastelBackground(child: newChild);
   }
 }

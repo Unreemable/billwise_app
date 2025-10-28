@@ -1,15 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'edit_profile_page.dart'; // <-- مهم
+import 'edit_profile_page.dart';
 
-class ProfilePage extends StatefulWidget {
-  const ProfilePage({super.key});
-  static const route = '/profile';
+// ========= لوحة الألوان (مطابقة للهوم/النوتفكيشن) =========
+const LinearGradient kHeaderGradient = LinearGradient(
+  colors: [Color(0xFF5F33E1), Color(0xFF0B0A1C)], // بنفسجي → غامق
+  begin: Alignment.topRight,
+  end: Alignment.bottomLeft,
+);
 
-  @override
-  State<ProfilePage> createState() => _ProfilePageState();
-}
+const Color kBg       = Color(0xFF0E0B1F); // خلفية عامة داكنة
+const Color kCard     = Color(0xFF1A1530); // لون الكروت
+const Color kStroke   = Color(0x22FFFFFF); // حدود شفافة
+const Color kText     = Color(0xFFFFFFFF);
+const Color kTextSub  = Color(0x99FFFFFF);
+const Color kAccent   = Color(0xFF6A73FF); // بنفسجي فاتح للأزرار/الأيقونات
+const Color kDanger   = Color(0xFFFF5252);
 
 // ====== نفس Presets المستخدمة في صفحة التعديل (للعرض فقط) ======
 class _AvatarPreset {
@@ -34,21 +41,16 @@ const List<_AvatarPreset> _presets = [
   _AvatarPreset('robot_lavender', '🤖', [Color(0xFF93C5FD), Color(0xFFE0E7FF)]),
 ];
 
+class ProfilePage extends StatefulWidget {
+  const ProfilePage({super.key});
+  static const route = '/profile';
+
+  @override
+  State<ProfilePage> createState() => _ProfilePageState();
+}
+
 class _ProfilePageState extends State<ProfilePage> {
   bool _busy = false;
-
-  // ألوان وتدرج موحد مثل الهوم
-  static const LinearGradient _kAppGradient = LinearGradient(
-    colors: [Color(0xFF6A73FF), Color(0xFFE6E9FF)],
-    begin: Alignment.topRight,
-    end: Alignment.bottomLeft,
-  );
-
-  final Color _bg = const Color(0xFFF6F8FF);
-  final Color _card = Colors.white;
-  final Color _divider = const Color(0x1A000000);
-  final Color _title = const Color(0xFF0F172A);
-  final Color _sub = const Color(0x990F172A);
 
   User? get _user => FirebaseAuth.instance.currentUser;
 
@@ -70,7 +72,6 @@ class _ProfilePageState extends State<ProfilePage> {
 
   Future<void> _openEdit() async {
     final res = await Navigator.of(context).pushNamed(EditProfilePage.route);
-    // لو تم الحفظ في صفحة التعديل، ننعش العرض
     if (mounted && res == true) setState(() {});
   }
 
@@ -80,11 +81,23 @@ class _ProfilePageState extends State<ProfilePage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Reset Data?'),
-        content: const Text('سيتم حذف جميع الفواتير والضمانات الخاصة بك. لا يمكن التراجع.'),
+        backgroundColor: kCard,
+        surfaceTintColor: Colors.transparent,
+        title: const Text('Reset Data?', style: TextStyle(color: kText)),
+        content: const Text(
+          'سيتم حذف جميع الفواتير والضمانات الخاصة بك. لا يمكن التراجع.',
+          style: TextStyle(color: kTextSub),
+        ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton.tonal(onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
+          FilledButton.tonal(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: kDanger.withOpacity(.12),
+              foregroundColor: kDanger,
+            ),
+            child: const Text('Delete'),
+          ),
         ],
       ),
     );
@@ -127,21 +140,21 @@ class _ProfilePageState extends State<ProfilePage> {
     showModalBottomSheet(
       context: context,
       showDragHandle: true,
-      backgroundColor: Colors.white,
+      backgroundColor: kCard,
       builder: (_) => Padding(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: const [
             ListTile(
-              leading: Icon(Icons.email_outlined),
-              title: Text('Email'),
-              subtitle: Text('support@billwise.app'),
+              leading: Icon(Icons.email_outlined, color: kText),
+              title: Text('Email', style: TextStyle(color: kText)),
+              subtitle: Text('support@billwise.app', style: TextStyle(color: kTextSub)),
             ),
             ListTile(
-              leading: Icon(Icons.chat_bubble_outline),
-              title: Text('Feedback'),
-              subtitle: Text('Tell us what to improve'),
+              leading: Icon(Icons.chat_bubble_outline, color: kText),
+              title: Text('Feedback', style: TextStyle(color: kText)),
+              subtitle: Text('Tell us what to improve', style: TextStyle(color: kTextSub)),
             ),
           ],
         ),
@@ -153,12 +166,15 @@ class _ProfilePageState extends State<ProfilePage> {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Help & FAQ'),
+        backgroundColor: kCard,
+        surfaceTintColor: Colors.transparent,
+        title: const Text('Help & FAQ', style: TextStyle(color: kText)),
         content: const Text(
           '• أضف فواتيرك وضماناتك لتتبع المواعيد.\n'
               '• استخدم OCR لقراءة البيانات من الفاتورة.\n'
               '• فعّل الإشعارات للتذكير بالاسترجاع أو الضمان.\n'
               '• قريبًا: النسخ الاحتياطي والتصدير.',
+          style: TextStyle(color: kTextSub),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
@@ -176,11 +192,13 @@ class _ProfilePageState extends State<ProfilePage> {
       child: Stack(
         children: [
           Scaffold(
-            backgroundColor: _bg,
+            backgroundColor: kBg,
             appBar: AppBar(
+              foregroundColor: Colors.white,
               elevation: 0,
-              backgroundColor: _bg,
+              backgroundColor: Colors.transparent,
               title: const Text('Profile'),
+              flexibleSpace: Container(decoration: const BoxDecoration(gradient: kHeaderGradient)),
             ),
             body: ListView(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
@@ -192,10 +210,6 @@ class _ProfilePageState extends State<ProfilePage> {
                     email: _email,
                     accountType: _accountType,
                     onEdit: _openEdit,
-                    card: _card,
-                    divider: _divider,
-                    title: _title,
-                    sub: _sub,
                     avatarId: null,
                   )
                 else
@@ -203,74 +217,50 @@ class _ProfilePageState extends State<ProfilePage> {
                     stream: FirebaseFirestore.instance.collection('users').doc(uid).snapshots(),
                     builder: (context, snap) {
                       final avatarId = snap.data?.data()?['avatar_id'] as String?;
-                      final phone = snap.data?.data()?['phone'] as String?;
-                      // ممكن نستخدم phone لاحقًا إذا تبغين عرضه.
                       return _ProfileHeader(
                         displayName: _displayName,
                         email: _email,
                         accountType: _accountType,
                         onEdit: _openEdit,
-                        card: _card,
-                        divider: _divider,
-                        title: _title,
-                        sub: _sub,
                         avatarId: avatarId,
                       );
                     },
                   ),
 
                 const SizedBox(height: 18),
-                Text(
-                  'Tools',
-                  style: TextStyle(color: _title, fontSize: 13, fontWeight: FontWeight.w700),
-                ),
+                const Text('Tools',
+                    style: TextStyle(color: kText, fontSize: 13, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 8),
 
                 _SettingTile(
-                  gradient: _kAppGradient,
                   icon: Icons.cloud_upload_outlined,
                   title: 'Backup',
                   subtitle: 'Save a copy of your data',
                   onTap: _backupComingSoon,
-                  titleColor: _title,
-                  subColor: _sub,
-                  divider: _divider,
                 ),
                 _SettingTile(
-                  gradient: _kAppGradient,
                   icon: Icons.delete_sweep_outlined,
                   title: 'Reset Data',
                   subtitle: 'Delete all bills & warranties',
-                  danger: true,
                   onTap: _confirmResetData,
-                  titleColor: _title,
-                  subColor: _sub,
-                  divider: _divider,
+                  danger: true,
                 ),
                 _SettingTile(
-                  gradient: _kAppGradient,
                   icon: Icons.chat_bubble_outline,
                   title: 'Contact Us',
                   subtitle: 'Support & feedback',
                   onTap: _contactUs,
-                  titleColor: _title,
-                  subColor: _sub,
-                  divider: _divider,
                 ),
                 _SettingTile(
-                  gradient: _kAppGradient,
                   icon: Icons.help_outline,
                   title: 'Help / FAQ',
                   subtitle: 'How BillWise works',
                   onTap: _showHelp,
-                  titleColor: _title,
-                  subColor: _sub,
-                  divider: _divider,
                 ),
 
                 const SizedBox(height: 24),
-                Center(
-                  child: Text('BillWise • v1.0.0', style: TextStyle(color: _sub, fontSize: 12)),
+                const Center(
+                  child: Text('BillWise • v1.0.0', style: TextStyle(color: kTextSub, fontSize: 12)),
                 ),
               ],
             ),
@@ -280,7 +270,7 @@ class _ProfilePageState extends State<ProfilePage> {
             Container(
               color: Colors.black26,
               alignment: Alignment.center,
-              child: const CircularProgressIndicator(),
+              child: const CircularProgressIndicator(color: kAccent),
             ),
         ],
       ),
@@ -293,18 +283,13 @@ class _ProfileHeader extends StatelessWidget {
   final String email;
   final String accountType;
   final VoidCallback onEdit;
-  final Color card, divider, title, sub;
-  final String? avatarId; // جديد
+  final String? avatarId;
 
   const _ProfileHeader({
     required this.displayName,
     required this.email,
     required this.accountType,
     required this.onEdit,
-    required this.card,
-    required this.divider,
-    required this.title,
-    required this.sub,
     this.avatarId,
   });
 
@@ -322,39 +307,39 @@ class _ProfileHeader extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: card,
+        color: kCard,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: divider),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12, offset: const Offset(0, 4))],
+        border: Border.all(color: kStroke),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.25), blurRadius: 24, spreadRadius: -18),
+        ],
       ),
       padding: const EdgeInsets.all(16),
       child: Row(
         children: [
-          _Avatar(
-            name: displayName,
-            title: title,
-            preset: preset, // لو موجود نعرضه
-          ),
+          _Avatar(name: displayName, preset: preset),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(displayName, style: TextStyle(color: title, fontSize: 18, fontWeight: FontWeight.w700)),
-                Text(email, style: TextStyle(color: sub, fontSize: 13)),
+                Text(displayName,
+                    style: const TextStyle(color: kText, fontSize: 18, fontWeight: FontWeight.w700)),
+                Text(email, style: const TextStyle(color: kTextSub, fontSize: 13)),
                 const SizedBox(height: 6),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: divider),
+                    border: Border.all(color: kStroke),
                     gradient: const LinearGradient(
-                      colors: [Color(0x1A6A73FF), Color(0x1AE6E9FF)],
+                      colors: [Color(0x1A6A73FF), Color(0x1A000000)],
                       begin: Alignment.topRight,
                       end: Alignment.bottomLeft,
                     ),
                   ),
-                  child: Text(accountType, style: TextStyle(color: title, fontSize: 12, fontWeight: FontWeight.w600)),
+                  child: const Text('Basic Account',
+                      style: TextStyle(color: kText, fontSize: 12, fontWeight: FontWeight.w600)),
                 ),
               ],
             ),
@@ -362,8 +347,14 @@ class _ProfileHeader extends StatelessWidget {
           const SizedBox(width: 8),
           OutlinedButton.icon(
             onPressed: onEdit,
-            icon: const Icon(Icons.edit_outlined, size: 18),
-            label: const Text('Edit'),
+            icon: const Icon(Icons.edit_outlined, size: 18, color: kText),
+            label: const Text('Edit', style: TextStyle(color: kText)),
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: kStroke),
+              backgroundColor: Colors.white.withOpacity(0.02),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
           ),
         ],
       ),
@@ -373,14 +364,12 @@ class _ProfileHeader extends StatelessWidget {
 
 class _Avatar extends StatelessWidget {
   final String name;
-  final Color title;
-  final _AvatarPreset? preset; // جديد
+  final _AvatarPreset? preset;
 
-  const _Avatar({required this.name, required this.title, this.preset});
+  const _Avatar({required this.name, this.preset});
 
   @override
   Widget build(BuildContext context) {
-    // لو فيه preset نعرض الإيموجي + التدرج
     if (preset != null) {
       return Container(
         width: 56,
@@ -392,59 +381,59 @@ class _Avatar extends StatelessWidget {
             begin: Alignment.topRight,
             end: Alignment.bottomLeft,
           ),
-          border: Border.all(color: const Color(0x1A000000)),
+          border: Border.all(color: kStroke),
         ),
         alignment: Alignment.center,
         child: Text(preset!.emoji, style: const TextStyle(fontSize: 24)),
       );
     }
 
-    // خلاف ذلك: الأحرف الأولى
-    String initials = name.isNotEmpty ? name.characters.first.toUpperCase() : 'U';
+    final initials = name.isNotEmpty ? name.characters.first.toUpperCase() : 'U';
     return Container(
       width: 56,
       height: 56,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: Colors.white,
-        border: Border.all(color: const Color(0x1A000000)),
+        color: const Color(0x22FFFFFF),
+        border: Border.all(color: kStroke),
       ),
       alignment: Alignment.center,
-      child: Text(initials, style: TextStyle(color: title, fontSize: 20, fontWeight: FontWeight.w800)),
+      child: const Text(
+        'U',
+        style: TextStyle(color: kText, fontSize: 20, fontWeight: FontWeight.w800),
+      ),
     );
   }
 }
 
 class _SettingTile extends StatelessWidget {
-  final LinearGradient gradient;
   final IconData icon;
   final String title;
   final String subtitle;
   final VoidCallback onTap;
   final bool danger;
-  final Color titleColor, subColor, divider;
 
   const _SettingTile({
-    required this.gradient,
     required this.icon,
     required this.title,
     required this.subtitle,
     required this.onTap,
-    required this.titleColor,
-    required this.subColor,
-    required this.divider,
     this.danger = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final Color tint = danger ? kDanger : kAccent;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: kCard,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: divider),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12, offset: const Offset(0, 4))],
+        border: Border.all(color: kStroke),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.25), blurRadius: 24, spreadRadius: -18),
+        ],
       ),
       child: ListTile(
         leading: Container(
@@ -453,23 +442,18 @@ class _SettingTile extends StatelessWidget {
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             gradient: LinearGradient(
-              colors: danger
-                  ? [const Color(0xFFFF8A80).withOpacity(0.20), const Color(0xFFFF5252).withOpacity(0.20)]
-                  : [gradient.colors.first.withOpacity(0.20), gradient.colors.last.withOpacity(0.20)],
-              begin: gradient.begin,
-              end: gradient.end,
+              colors: [tint.withOpacity(.18), kBg.withOpacity(.18)],
+              begin: Alignment.topRight,
+              end: Alignment.bottomLeft,
             ),
-            border: Border.all(
-              color: danger ? const Color(0xFFFF5252) : gradient.colors.first,
-              width: 1.2,
-            ),
+            border: Border.all(color: tint, width: 1.2),
           ),
           alignment: Alignment.center,
-          child: Icon(icon, size: 22, color: danger ? const Color(0xFFFF5252) : gradient.colors.first),
+          child: Icon(icon, size: 22, color: tint),
         ),
-        title: Text(title, style: TextStyle(color: titleColor, fontWeight: FontWeight.w700)),
-        subtitle: Text(subtitle, style: TextStyle(color: subColor)),
-        trailing: Icon(Icons.chevron_right, color: Colors.black.withOpacity(0.45)),
+        title: Text(title, style: const TextStyle(color: kText, fontWeight: FontWeight.w700)),
+        subtitle: Text(subtitle, style: const TextStyle(color: kTextSub)),
+        trailing: const Icon(Icons.chevron_right, color: kTextSub),
         onTap: onTap,
       ),
     );

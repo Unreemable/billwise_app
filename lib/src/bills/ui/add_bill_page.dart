@@ -7,15 +7,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../warranties/ui/add_warranty_page.dart';
 import '../data/bill_service.dart';
-
-// إشعارات
 import '../../notifications/notifications_service.dart';
 
 class AddBillPage extends StatefulWidget {
   const AddBillPage({
     super.key,
-    this.billId,                // إذا كان موجود = تعديل
-    this.prefill,               // بيانات من OCR عند الإضافة
+    this.billId,
+    this.prefill,
     this.suggestWarranty = false,
   });
 
@@ -30,37 +28,45 @@ class AddBillPage extends StatefulWidget {
 }
 
 class _AddBillPageState extends State<AddBillPage> {
+  // ====== Palette (نفس الضمان) ======
+  static const _bg = Color(0xFF0B0B2E);
+  static const _card = Color(0xFF171636);
+  static const _cardStroke = Color(0x1FFFFFFF);
+  static const _textDim = Color(0xFFBFC3D9);
+  static const _accent = Color(0xFF5D6BFF); // أزرار أساسية
+  static const _danger = Color(0xFFEF5350);
+  static const _headerGrad = LinearGradient(
+    colors: [Color(0xFF0B0B2E), Color(0xFF21124C)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+
   // ===== Controllers =====
-  final _titleCtrl  = TextEditingController();
-  final _shopCtrl   = TextEditingController();
+  final _titleCtrl = TextEditingController();
+  final _shopCtrl = TextEditingController();
   final _amountCtrl = TextEditingController();
 
-  // ===== Notifications singleton =====
+  // ===== Notifications =====
   final _notifs = NotificationsService.I;
 
   // ===== Dates =====
   DateTime? _purchaseDate;
-  DateTime? _returnDeadline;   // اختيارية
-  DateTime? _exchangeDeadline; // اختيارية
+  DateTime? _returnDeadline;
+  DateTime? _exchangeDeadline;
 
-  // هل عدّلها المستخدم يدويًا؟ (عشان ما نعيد حسابها تلقائيًا)
   bool _returnManual = false;
   bool _exchangeManual = false;
 
-  // أزرار تشغيل/إيقاف لكل تاريخ
   bool _enableReturn = true;
   bool _enableExchange = true;
 
-  // Warranty flag only (لا ندير تواريخ الضمان هنا)
+  // Warranty
   bool _hasWarranty = false;
-
-  // OCR-based default warranty dates to pass to AddWarrantyPage
   DateTime? _ocrWarrantyStart;
   DateTime? _ocrWarrantyEnd;
 
-  // Policy days extracted from OCR (لو موجودة نفضّلها على 3/7)
-  int? _retDays; // return
-  int? _exDays;  // exchange
+  int? _retDays;
+  int? _exDays;
 
   // Attachment
   final _picker = ImagePicker();
@@ -70,28 +76,25 @@ class _AddBillPageState extends State<AddBillPage> {
 
   bool _saving = false;
   bool _loadingExisting = false;
-
-  // For edit mode: detect existing warranty linked to this bill
   bool _checkingWarranty = false;
   bool _hasExistingWarranty = false;
 
   @override
   void initState() {
     super.initState();
-    // نطلب صلاحيات الإشعار بعد أول فريم
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _notifs.requestPermissions(context);
     });
   }
 
-  // ============ Small helpers ============
+  // ===== Helpers =====
   DateTime? _parseDate(dynamic v) {
     if (v == null) return null;
     if (v is Timestamp) return v.toDate();
     if (v is DateTime) return v;
     final d = DateTime.tryParse(v.toString());
     if (d == null) return null;
-    if (d.year < 2015 || d.year > 2100) return null; // sanity
+    if (d.year < 2015 || d.year > 2100) return null;
     return d;
   }
 
@@ -105,26 +108,19 @@ class _AddBillPageState extends State<AddBillPage> {
   int? _extractDays(dynamic v) {
     if (v == null) return null;
     var normalized = v.toString().trim();
-
-    // convert Arabic numerals
     const eastern = '٠١٢٣٤٥٦٧٨٩';
     for (var i = 0; i < eastern.length; i++) {
       normalized = normalized.replaceAll(eastern[i], i.toString());
     }
-
     final lower = normalized.toLowerCase();
-    final m = RegExp(r'(\d{1,3})\s*(day|days|يوم|يوماً|يوما|ايام|أيام)', caseSensitive: false)
-        .firstMatch(lower);
+    final m = RegExp(r'(\d{1,3})\s*(day|days|يوم|يوماً|يوما|ايام|أيام)', caseSensitive: false).firstMatch(lower);
     if (m != null) return int.tryParse(m.group(1)!);
-
     if (RegExp(r'(يومان|يومين)').hasMatch(lower)) return 2;
     if (RegExp(r'\b(a day)\b').hasMatch(lower)) return 1;
     if (RegExp(r'(يوم|يوماً|يوما)').hasMatch(lower)) return 1;
-
     return int.tryParse(lower.replaceAll(RegExp(r'[^0-9]'), ''));
   }
 
-  // يحسب الديدلاين ويستثني يوم الشراء (31/03 + 3 أيام ⇒ 03/04)
   DateTime _deadlineFrom(DateTime start, int days, {bool includeStart = false}) {
     final base = DateTime(start.year, start.month, start.day);
     final add = includeStart ? (days - 1) : days;
@@ -133,26 +129,19 @@ class _AddBillPageState extends State<AddBillPage> {
 
   String _fmtOrDash(DateTime? d) => d == null ? '—' : _fmt.format(d);
 
-  // احسب افتراض 3/7 أيام بناءً على تاريخ الشراء (لا تمس الأزرار)
   void _applyAutoWindowsFromPurchase(DateTime purchase) {
     final defRet = _retDays ?? 3;
-    final defEx  = _exDays  ?? 7;
-
-    if (!_returnManual)   _returnDeadline   = _deadlineFrom(purchase, defRet, includeStart: false);
-    if (!_exchangeManual) _exchangeDeadline = _deadlineFrom(purchase, defEx,  includeStart: false);
+    final defEx = _exDays ?? 7;
+    if (!_returnManual) _returnDeadline = _deadlineFrom(purchase, defRet);
+    if (!_exchangeManual) _exchangeDeadline = _deadlineFrom(purchase, defEx);
   }
 
-  // ============ Lifecycle / data bootstrapping ============
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-
     if (widget.billId != null && !_loadingExisting) {
       _loadExisting(widget.billId!);
-      return;
-    }
-
-    if (widget.billId == null) {
+    } else if (widget.billId == null) {
       _applyPrefillOnce();
     }
   }
@@ -166,35 +155,28 @@ class _AddBillPageState extends State<AddBillPage> {
       final data = await BillService.instance.getBill(billId);
       if (data == null) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Bill not found')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bill not found')));
         Navigator.of(context).pop();
         return;
       }
-
-      _titleCtrl.text  = (data['title'] ?? '').toString();
-      _shopCtrl.text   = (data['shop_name'] ?? '').toString();
-
+      _titleCtrl.text = (data['title'] ?? '').toString();
+      _shopCtrl.text = (data['shop_name'] ?? '').toString();
       final amount = data['total_amount'];
       if (amount != null) _amountCtrl.text = amount.toString();
 
-      _purchaseDate     = _parseDate(data['purchase_date']);
-      _returnDeadline   = _parseDate(data['return_deadline']);
+      _purchaseDate = _parseDate(data['purchase_date']);
+      _returnDeadline = _parseDate(data['return_deadline']);
       _exchangeDeadline = _parseDate(data['exchange_deadline']);
 
-      // بما إن الفاتورة قديمة، نعتبر التواريخ الحالية "يدوية" حتى لا نعيد حسابها تلقائيًا لو تغيّر الشراء
-      _returnManual   = _returnDeadline != null;
+      _returnManual = _returnDeadline != null;
       _exchangeManual = _exchangeDeadline != null;
 
-      // الأزرار تعتمد على وجود التاريخ المخزن
-      _enableReturn   = _returnDeadline != null;
+      _enableReturn = _returnDeadline != null;
       _enableExchange = _exchangeDeadline != null;
 
-      _hasWarranty      = (data['warranty_coverage'] as bool?) ?? false;
+      _hasWarranty = (data['warranty_coverage'] as bool?) ?? false;
       _receiptImagePath = (data['receipt_image_path'] as String?);
 
-      // Check if a warranty exists for this bill
       final snap = await FirebaseFirestore.instance
           .collection('Warranties')
           .where('bill_id', isEqualTo: billId)
@@ -203,18 +185,12 @@ class _AddBillPageState extends State<AddBillPage> {
       _hasExistingWarranty = snap.docs.isNotEmpty;
 
       setState(() {});
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error loading bill: $e')),
-      );
     } finally {
-      if (mounted) {
-        setState(() {
-          _loadingExisting = false;
-          _checkingWarranty = false;
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        _loadingExisting = false;
+        _checkingWarranty = false;
+      });
     }
   }
 
@@ -232,30 +208,27 @@ class _AddBillPageState extends State<AddBillPage> {
       prefill = {...prefill, ...fromArgs};
       if (args['suggestWarranty'] == true) suggestWarranty = true;
     }
-    if (widget.prefill != null) {
-      prefill = {...prefill, ...widget.prefill!};
-    }
+    if (widget.prefill != null) prefill = {...prefill, ...widget.prefill!};
 
     _titleCtrl.text = (prefill['title'] ?? _titleCtrl.text).toString();
-    _shopCtrl.text  = (prefill['store'] ?? _shopCtrl.text).toString();
+    _shopCtrl.text = (prefill['store'] ?? _shopCtrl.text).toString();
     final amt = _parseAmount(prefill['amount']);
     if (amt != null) _amountCtrl.text = amt.toString();
 
-    _purchaseDate     ??= _parseDate(prefill['purchaseDate']);
-    _returnDeadline   ??= _parseDate(prefill['returnDeadline']);
+    _purchaseDate ??= _parseDate(prefill['purchaseDate']);
+    _returnDeadline ??= _parseDate(prefill['returnDeadline']);
     _exchangeDeadline ??= _parseDate(prefill['exchangeDeadline']);
 
     _retDays ??= _extractDays(prefill['returnDays'] ?? prefill['returnPolicy'] ?? prefill['return_text'] ?? prefill['return'] ?? prefill['policy']);
-    _exDays  ??= _extractDays(prefill['exchangeDays'] ?? prefill['exchangePolicy'] ?? prefill['exchange_text'] ?? prefill['exchange'] ?? prefill['policy']);
+    _exDays ??= _extractDays(prefill['exchangeDays'] ?? prefill['exchangePolicy'] ?? prefill['exchange_text'] ?? prefill['exchange'] ?? prefill['policy']);
 
-    // إن وُجد تاريخ شراء ولم تُعط تواريخ، نحسب 3/7 تلقائيًا
     if (_purchaseDate != null) {
-      if (_returnDeadline == null)   _returnDeadline   = _deadlineFrom(_purchaseDate!, (_retDays ?? 3), includeStart: false);
-      if (_exchangeDeadline == null) _exchangeDeadline = _deadlineFrom(_purchaseDate!, (_exDays  ?? 7), includeStart: false);
+      _returnDeadline ??= _deadlineFrom(_purchaseDate!, (_retDays ?? 3));
+      _exchangeDeadline ??= _deadlineFrom(_purchaseDate!, (_exDays ?? 7));
     }
 
     _ocrWarrantyStart = _parseDate(prefill['warrantyStart']);
-    _ocrWarrantyEnd   = _parseDate(prefill['warrantyEnd']);
+    _ocrWarrantyEnd = _parseDate(prefill['warrantyEnd']);
 
     final path = (prefill['receiptPath'] ?? '') as String;
     if (path.isNotEmpty) _receiptImagePath = path;
@@ -264,30 +237,23 @@ class _AddBillPageState extends State<AddBillPage> {
       _hasWarranty = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Warranty detected from OCR')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Warranty detected from OCR')));
       });
     }
 
-    // الأزرار تتبع وجود القيم المبدئية
-    _enableReturn   = _returnDeadline != null;
+    _enableReturn = _returnDeadline != null;
     _enableExchange = _exchangeDeadline != null;
 
     setState(() {});
   }
 
-  // ============ Pickers ============
-  Future<void> _pickDate(
-      BuildContext ctx,
-      DateTime? initial,
-      ValueChanged<DateTime> onPick,
-      ) async {
+  // ===== Pickers =====
+  Future<void> _pickDate(BuildContext ctx, DateTime? initial, ValueChanged<DateTime> onPick) async {
     final min = DateTime(2015);
     final max = DateTime(2100);
     var init = initial ?? DateTime.now();
     if (init.isBefore(min)) init = min;
-    if (init.isAfter(max))  init = max;
+    if (init.isAfter(max)) init = max;
 
     final d = await showDatePicker(
       context: ctx,
@@ -305,97 +271,63 @@ class _AddBillPageState extends State<AddBillPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(
-              leading: const Icon(Icons.camera_alt),
-              title: const Text('Camera'),
-              onTap: () => Navigator.pop(ctx, ImageSource.camera),
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library),
-              title: const Text('Gallery'),
-              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
-            ),
+            ListTile(leading: const Icon(Icons.camera_alt), title: const Text('Camera'), onTap: () => Navigator.pop(ctx, ImageSource.camera)),
+            ListTile(leading: const Icon(Icons.photo_library), title: const Text('Gallery'), onTap: () => Navigator.pop(ctx, ImageSource.gallery)),
           ],
         ),
       ),
     );
     if (source == null) return;
-
     final x = await _picker.pickImage(source: source, imageQuality: 85);
     if (x != null) setState(() => _receiptImagePath = x.path);
   }
 
-  // ============ Save / Update / Delete ============
+  // ===== Save / Update / Delete =====
   Future<String?> _saveNewBill() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please sign in first')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please sign in first')));
       return null;
     }
-
-    // الحقول المطلوبة فقط: العنوان + المتجر + المبلغ + تاريخ الشراء
-    if (_titleCtrl.text.trim().isEmpty ||
-        _shopCtrl.text.trim().isEmpty  ||
-        _amountCtrl.text.trim().isEmpty||
-        _purchaseDate == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please complete all required fields')),
-      );
+    if (_titleCtrl.text.trim().isEmpty || _shopCtrl.text.trim().isEmpty || _amountCtrl.text.trim().isEmpty || _purchaseDate == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please complete all required fields')));
       return null;
     }
-
     final amount = num.tryParse(_amountCtrl.text.trim());
     if (amount == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Invalid amount')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Invalid amount')));
       return null;
     }
 
     setState(() => _saving = true);
     try {
-      // ✅ عبّي التلقائي فقط لما الزر شغّال
-      if (_enableReturn)   { _returnDeadline   ??= _deadlineFrom(_purchaseDate!, (_retDays ?? 3)); }
-      if (_enableExchange) { _exchangeDeadline ??= _deadlineFrom(_purchaseDate!, (_exDays  ?? 7)); }
+      if (_enableReturn) _returnDeadline ??= _deadlineFrom(_purchaseDate!, (_retDays ?? 3));
+      if (_enableExchange) _exchangeDeadline ??= _deadlineFrom(_purchaseDate!, (_exDays ?? 7));
 
       final id = await BillService.instance.createBill(
         title: _titleCtrl.text.trim(),
         shopName: _shopCtrl.text.trim(),
         purchaseDate: _purchaseDate!,
         totalAmount: amount,
-
-        // احترام الأزرار
-        returnDeadline:   _enableReturn   ? _returnDeadline   : null,
+        returnDeadline: _enableReturn ? _returnDeadline : null,
         exchangeDeadline: _enableExchange ? _exchangeDeadline : null,
-
         warrantyCoverage: _hasWarranty,
         userId: uid,
         receiptImagePath: _receiptImagePath,
       );
 
-      // جدولة التذكيرات — باحترام الأزرار
       await _tryRescheduleWithUX(
         billId: id,
         title: _titleCtrl.text.trim(),
         shop: _shopCtrl.text.trim(),
         purchaseDate: _purchaseDate!,
-        returnDeadline:   _enableReturn   ? _returnDeadline   : null,
+        returnDeadline: _enableReturn ? _returnDeadline : null,
         exchangeDeadline: _enableExchange ? _exchangeDeadline : null,
       );
 
       if (!mounted) return id;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Bill saved ✅')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bill saved ✅')));
       return id;
-    } catch (e) {
-      if (!mounted) return null;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
-      return null;
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -403,29 +335,20 @@ class _AddBillPageState extends State<AddBillPage> {
 
   Future<void> _updateBill() async {
     if (widget.billId == null) return;
-
-    if (_titleCtrl.text.trim().isEmpty ||
-        _shopCtrl.text.trim().isEmpty  ||
-        _amountCtrl.text.trim().isEmpty||
-        _purchaseDate == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please complete all required fields')),
-      );
+    if (_titleCtrl.text.trim().isEmpty || _shopCtrl.text.trim().isEmpty || _amountCtrl.text.trim().isEmpty || _purchaseDate == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please complete all required fields')));
       return;
     }
-
     final amount = num.tryParse(_amountCtrl.text.trim());
     if (amount == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Invalid amount')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Invalid amount')));
       return;
     }
 
     setState(() => _saving = true);
     try {
-      if (_enableReturn)   { _returnDeadline   ??= _deadlineFrom(_purchaseDate!, (_retDays ?? 3)); }
-      if (_enableExchange) { _exchangeDeadline ??= _deadlineFrom(_purchaseDate!, (_exDays  ?? 7)); }
+      if (_enableReturn) _returnDeadline ??= _deadlineFrom(_purchaseDate!, (_retDays ?? 3));
+      if (_enableExchange) _exchangeDeadline ??= _deadlineFrom(_purchaseDate!, (_exDays ?? 7));
 
       await BillService.instance.updateBill(
         billId: widget.billId!,
@@ -433,10 +356,8 @@ class _AddBillPageState extends State<AddBillPage> {
         shopName: _shopCtrl.text.trim(),
         purchaseDate: _purchaseDate!,
         totalAmount: amount,
-
-        returnDeadline:   _enableReturn   ? _returnDeadline   : null,
+        returnDeadline: _enableReturn ? _returnDeadline : null,
         exchangeDeadline: _enableExchange ? _exchangeDeadline : null,
-
         warrantyCoverage: _hasWarranty,
         receiptImagePath: _receiptImagePath,
       );
@@ -446,20 +367,13 @@ class _AddBillPageState extends State<AddBillPage> {
         title: _titleCtrl.text.trim(),
         shop: _shopCtrl.text.trim(),
         purchaseDate: _purchaseDate!,
-        returnDeadline:   _enableReturn   ? _returnDeadline   : null,
+        returnDeadline: _enableReturn ? _returnDeadline : null,
         exchangeDeadline: _enableExchange ? _exchangeDeadline : null,
       );
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Bill updated ✅')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bill updated ✅')));
       Navigator.of(context).pop();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -484,15 +398,11 @@ class _AddBillPageState extends State<AddBillPage> {
       await BillService.instance.deleteBill(widget.billId!);
       await _notifs.cancelBillReminders(widget.billId!);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Bill deleted ✅')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bill deleted ✅')));
       Navigator.of(context).pop();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
     }
   }
 
@@ -508,45 +418,30 @@ class _AddBillPageState extends State<AddBillPage> {
   Future<void> _saveAndAddWarranty() async {
     if (widget.billId != null && _hasExistingWarranty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('A warranty already exists for this bill.')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('A warranty already exists for this bill.')));
       return;
     }
-
     if (widget.billId != null) {
       await _updateBill();
       if (!mounted) return;
       final baseStart = _ocrWarrantyStart ?? _purchaseDate ?? DateTime.now();
-      final baseEnd   = _ocrWarrantyEnd   ?? baseStart.add(const Duration(days: 365));
+      final baseEnd = _ocrWarrantyEnd ?? baseStart.add(const Duration(days: 365));
       await Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => AddWarrantyPage(
-          billId: widget.billId!,
-          defaultStartDate: baseStart,
-          defaultEndDate: baseEnd,
-        ),
+        builder: (_) => AddWarrantyPage(billId: widget.billId!, defaultStartDate: baseStart, defaultEndDate: baseEnd),
       ));
       if (mounted) Navigator.of(context).pop();
       return;
     }
-
     final newId = await _saveNewBill();
     if (newId == null || !mounted) return;
-
     final baseStart = _ocrWarrantyStart ?? _purchaseDate ?? DateTime.now();
-    final baseEnd   = _ocrWarrantyEnd   ?? baseStart.add(const Duration(days: 365));
-
+    final baseEnd = _ocrWarrantyEnd ?? baseStart.add(const Duration(days: 365));
     await Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => AddWarrantyPage(
-        billId: newId,
-        defaultStartDate: baseStart,
-        defaultEndDate: baseEnd,
-      ),
+      builder: (_) => AddWarrantyPage(billId: newId, defaultStartDate: baseStart, defaultEndDate: baseEnd),
     ));
     if (mounted) Navigator.of(context).pop();
   }
 
-  /// يجرب إعادة جدولة التذكيرات ويعرض رسائل مفهومة للمستخدم
   Future<void> _tryRescheduleWithUX({
     required String billId,
     required String title,
@@ -566,242 +461,346 @@ class _AddBillPageState extends State<AddBillPage> {
       );
     } catch (e) {
       final msg = e.toString();
+      if (!mounted) return;
       if (msg.contains('exact_alarms_not_permitted')) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'تم حفظ الفاتورة، لكن منع النظام التنبيه الدقيق.\n'
-                  'تقدرين تفعّلينه من: Settings → Apps → Special app access → Alarms & reminders → BillWise → Allow.\n'
-                  'راح نستخدم تذكيراً غير دقيق بشكل تلقائي.',
-            ),
-            duration: Duration(seconds: 6),
-          ),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+              'تم حفظ الفاتورة، لكن منع النظام التنبيه الدقيق.\nSettings → Apps → Special app access → Alarms & reminders → BillWise → Allow'),
+          duration: Duration(seconds: 6),
+        ));
       } else {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Saved, but notification scheduling failed: $e')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Saved, but notifications failed: $e')));
       }
     }
   }
 
-  // ============ UI ============
-  @override
-  void dispose() {
-    _titleCtrl.dispose();
-    _shopCtrl.dispose();
-    _amountCtrl.dispose();
-    super.dispose();
+  // ===== UI =====
+  InputDecoration _filled(String label, {IconData? icon}) {
+    return InputDecoration(
+      labelText: label,
+      prefixIcon: icon == null ? null : Icon(icon),
+      filled: true,
+      fillColor: const Color(0xFF202048),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+      labelStyle: const TextStyle(color: _textDim),
+    );
+  }
+
+  Widget _sectionCard({required Widget child}) {
+    return Container(
+      decoration: BoxDecoration(
+        color: _card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _cardStroke),
+      ),
+      padding: const EdgeInsets.all(14),
+      child: child,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final isEdit = widget.billId != null;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(isEdit ? 'Edit Bill' : 'Add Bill'),
-        actions: [
-          if (isEdit)
-            IconButton(
-              tooltip: 'Delete',
-              onPressed: _saving ? null : _deleteBill,
-              icon: const Icon(Icons.delete),
-            ),
-        ],
+    return Theme(
+      data: Theme.of(context).copyWith(
+        scaffoldBackgroundColor: _bg,
+        appBarTheme: const AppBarTheme(
+          foregroundColor: Colors.white,
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+        ),
+        textTheme: Theme.of(context).textTheme.apply(bodyColor: Colors.white, displayColor: Colors.white),
+        switchTheme: const SwitchThemeData(
+          trackOutlineColor: WidgetStatePropertyAll(Colors.transparent),
+        ),
       ),
-      body: _loadingExisting
-          ? const Center(child: CircularProgressIndicator())
-          : AbsorbPointer(
-        absorbing: _saving,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            TextField(
-              controller: _titleCtrl,
-              decoration: const InputDecoration(labelText: 'Bill title/description'),
-              textInputAction: TextInputAction.next,
-            ),
-            TextField(
-              controller: _shopCtrl,
-              decoration: const InputDecoration(labelText: 'Store name'),
-              textInputAction: TextInputAction.next,
-            ),
-            TextField(
-              controller: _amountCtrl,
-              decoration: const InputDecoration(labelText: 'Amount (SAR)'),
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
-            ),
-            const SizedBox(height: 12),
-
-            // Attachment
-            Row(
-              children: [
-                ElevatedButton.icon(
-                  onPressed: _pickReceipt,
-                  icon: const Icon(Icons.attach_file),
-                  label: const Text('Attach receipt'),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    _receiptImagePath == null ? 'No file' : _receiptImagePath!.split('/').last,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-
-            // ===== Purchase date =====
-            ListTile(
-              title: const Text('Purchase date'),
-              subtitle: Text(_fmtOrDash(_purchaseDate)),
-              trailing: const Icon(Icons.date_range),
-              onTap: () => _pickDate(context, _purchaseDate, (d) {
-                setState(() {
-                  _purchaseDate = d;
-                  _applyAutoWindowsFromPurchase(d);
-                });
-              }),
-            ),
-
-            // ===== Return deadline =====
-            IgnorePointer(
-              ignoring: !_enableReturn,
-              child: ListTile(
-                enabled: _enableReturn,
-                title: const Text('Return deadline'),
-                subtitle: Text(
-                  _enableReturn ? _fmtOrDash(_returnDeadline) : '— (موقّف، لن يُحفظ)',
-                  style: TextStyle(color: _enableReturn ? null : Colors.grey),
-                ),
-                trailing: const Icon(Icons.event),
-                onTap: () => _pickDate(
-                  context,
-                  _returnDeadline ?? _purchaseDate ?? DateTime.now(),
-                      (d) => setState(() {
-                    _returnManual = true;
-                    _returnDeadline = d;
-                  }),
-                ),
-                onLongPress: () {
-                  if (!_enableReturn) return;
-                  setState(() {
-                    _returnManual = false;
-                    _returnDeadline = null;
-                  });
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Return deadline cleared')),
-                  );
-                },
+      child: Scaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
+            onPressed: () => Navigator.maybePop(context),
+          ),
+          title: Text(isEdit ? 'Edit Bill' : 'Add Bill'),
+          actions: [
+            if (isEdit)
+              IconButton(
+                tooltip: 'Delete',
+                onPressed: _saving ? null : _deleteBill,
+                icon: const Icon(Icons.delete_outline),
               ),
-            ),
-            Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: TextButton.icon(
-                onPressed: () => setState(() => _enableReturn = !_enableReturn),
-                icon: Icon(_enableReturn ? Icons.visibility_off : Icons.visibility),
-                label: Text(_enableReturn ? 'إيقاف الاسترجاع (لن يُحفظ)' : 'تشغيل الاسترجاع'),
-              ),
-            ),
-            const SizedBox(height: 8),
+          ],
+          flexibleSpace: Container(decoration: const BoxDecoration(gradient: _headerGrad)),
+        ),
 
-            // ===== Exchange deadline =====
-            IgnorePointer(
-              ignoring: !_enableExchange,
-              child: ListTile(
-                enabled: _enableExchange,
-                title: const Text('Exchange deadline'),
-                subtitle: Text(
-                  _enableExchange ? _fmtOrDash(_exchangeDeadline) : '— (موقّف، لن يُحفظ)',
-                  style: TextStyle(color: _enableExchange ? null : Colors.grey),
+        body: _loadingExisting
+            ? const Center(child: CircularProgressIndicator())
+            : SafeArea(
+          minimum: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          child: ListView(
+            children: [
+              // ===== Inputs card =====
+              _sectionCard(
+                child: Column(
+                  children: [
+                    TextField(
+                      controller: _titleCtrl,
+                      decoration: _filled('Bill title/description', icon: Icons.text_format),
+                      textInputAction: TextInputAction.next,
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: _shopCtrl,
+                      decoration: _filled('Store name', icon: Icons.store),
+                      textInputAction: TextInputAction.next,
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: _amountCtrl,
+                      decoration: _filled('Amount (SAR)', icon: Icons.attach_money),
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _accent,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          ),
+                          onPressed: _pickReceipt,
+                          icon: const Icon(Icons.attach_file),
+                          label: const Text('Attach receipt'),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            _receiptImagePath == null ? 'No file' : _receiptImagePath!.split('/').last,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: _textDim),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
-                trailing: const Icon(Icons.event_repeat),
-                onTap: () => _pickDate(
-                  context,
-                  _exchangeDeadline ?? _purchaseDate ?? DateTime.now(),
-                      (d) => setState(() {
-                    _exchangeManual = true;
-                    _exchangeDeadline = d;
-                  }),
-                ),
-                onLongPress: () {
-                  if (!_enableExchange) return;
-                  setState(() {
-                    _exchangeManual = false;
-                    _exchangeDeadline = null;
-                  });
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Exchange deadline cleared')),
-                  );
-                },
-              ),
-            ),
-            Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: TextButton.icon(
-                onPressed: () => setState(() => _enableExchange = !_enableExchange),
-                icon: Icon(_enableExchange ? Icons.visibility_off : Icons.visibility),
-                label: Text(_enableExchange ? 'إيقاف الاستبدال (لن يُحفظ)' : 'تشغيل الاستبدال'),
-              ),
-            ),
-            const SizedBox(height: 8),
-
-            const Divider(),
-
-            // Warranty flag only
-            SwitchListTile(
-              value: _hasWarranty,
-              onChanged: (v) => setState(() => _hasWarranty = v),
-              title: const Text('Has warranty?'),
-            ),
-
-            if (_hasWarranty && isEdit && _checkingWarranty)
-              const Padding(
-                padding: EdgeInsets.only(bottom: 8),
-                child: LinearProgressIndicator(minHeight: 2),
               ),
 
-            if (_hasWarranty && isEdit && _hasExistingWarranty)
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(12),
+              const SizedBox(height: 14),
+
+              // ===== Dates card =====
+              _sectionCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Purchase date', style: TextStyle(fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 6),
+                    ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(_fmtOrDash(_purchaseDate), style: const TextStyle(color: Colors.white)),
+                      leading: const Icon(Icons.date_range),
+                      trailing: const Icon(Icons.edit_calendar),
+                      iconColor: _textDim,
+                      textColor: Colors.white,
+                      onTap: () => _pickDate(context, _purchaseDate, (d) {
+                        setState(() {
+                          _purchaseDate = d;
+                          _applyAutoWindowsFromPurchase(d);
+                        });
+                      }),
+                    ),
+                    const Divider(height: 12, color: _cardStroke),
+
+                    // Return
+                    Row(
+                      children: [
+                        const Icon(Icons.event, color: _textDim),
+                        const SizedBox(width: 8),
+                        const Expanded(child: Text('Return deadline')),
+                        Switch(
+                          value: _enableReturn,
+                          activeColor: _accent,
+                          onChanged: (v) {
+                            setState(() {
+                              _enableReturn = v;
+                              if (v && _returnDeadline == null && _purchaseDate != null) {
+                                _returnDeadline = _deadlineFrom(_purchaseDate!, (_retDays ?? 3));
+                              }
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                    Opacity(
+                      opacity: _enableReturn ? 1 : .5,
+                      child: ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(
+                          _enableReturn ? _fmtOrDash(_returnDeadline) : '— (موقّف، لن يُحفظ)',
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                        trailing: const Icon(Icons.edit),
+                        iconColor: _textDim,
+                        onTap: _enableReturn
+                            ? () => _pickDate(
+                          context,
+                          _returnDeadline ?? _purchaseDate ?? DateTime.now(),
+                              (d) => setState(() {
+                            _returnManual = true;
+                            _returnDeadline = d;
+                          }),
+                        )
+                            : null,
+                        onLongPress: _enableReturn
+                            ? () {
+                          setState(() {
+                            _returnManual = false;
+                            _returnDeadline = null;
+                          });
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Return deadline cleared')));
+                        }
+                            : null,
+                      ),
+                    ),
+
+                    const Divider(height: 12, color: _cardStroke),
+
+                    // Exchange
+                    Row(
+                      children: [
+                        const Icon(Icons.event_repeat, color: _textDim),
+                        const SizedBox(width: 8),
+                        const Expanded(child: Text('Exchange deadline')),
+                        Switch(
+                          value: _enableExchange,
+                          activeColor: _accent,
+                          onChanged: (v) {
+                            setState(() {
+                              _enableExchange = v;
+                              if (v && _exchangeDeadline == null && _purchaseDate != null) {
+                                _exchangeDeadline = _deadlineFrom(_purchaseDate!, (_exDays ?? 7));
+                              }
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                    Opacity(
+                      opacity: _enableExchange ? 1 : .5,
+                      child: ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(
+                          _enableExchange ? _fmtOrDash(_exchangeDeadline) : '— (موقّف، لن يُحفظ)',
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                        trailing: const Icon(Icons.edit),
+                        iconColor: _textDim,
+                        onTap: _enableExchange
+                            ? () => _pickDate(
+                          context,
+                          _exchangeDeadline ?? _purchaseDate ?? DateTime.now(),
+                              (d) => setState(() {
+                            _exchangeManual = true;
+                            _exchangeDeadline = d;
+                          }),
+                        )
+                            : null,
+                        onLongPress: _enableExchange
+                            ? () {
+                          setState(() {
+                            _exchangeManual = false;
+                            _exchangeDeadline = null;
+                          });
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Exchange deadline cleared')));
+                        }
+                            : null,
+                      ),
+                    ),
+                  ],
                 ),
-                child: const Text('A warranty already exists for this bill.'),
               ),
 
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _saving ? null : _save,
-                    icon: const Icon(Icons.save_outlined),
-                    label: Text(_saving
-                        ? (isEdit ? 'Updating...' : 'Saving...')
-                        : (isEdit ? 'Update' : 'Save')),
-                  ),
+              const SizedBox(height: 14),
+
+              // ===== Warranty card =====
+              _sectionCard(
+                child: SwitchListTile.adaptive(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  activeColor: _accent,
+                  value: _hasWarranty,
+                  onChanged: (v) => setState(() => _hasWarranty = v),
+                  title: const Text('Has warranty?'),
+                  subtitle: (_hasWarranty && widget.billId != null)
+                      ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (_checkingWarranty) const SizedBox(height: 8),
+                      if (_checkingWarranty) const LinearProgressIndicator(minHeight: 2),
+                      if (!_checkingWarranty && _hasExistingWarranty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Text('A warranty already exists for this bill.',
+                              style: const TextStyle(color: _textDim)),
+                        ),
+                    ],
+                  )
+                      : null,
                 ),
-                const SizedBox(width: 12),
-                if (_hasWarranty && !(isEdit && _hasExistingWarranty))
+              ),
+
+              const SizedBox(height: 22),
+
+              // ===== Bottom buttons =====
+              Row(
+                children: [
                   Expanded(
-                    child: FilledButton.icon(
-                      onPressed: _saving ? null : _saveAndAddWarranty,
-                      icon: const Icon(Icons.verified_user),
-                      label: Text(isEdit
-                          ? 'Update & add warranty'
-                          : 'Save & add warranty'),
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _accent,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      ),
+                      onPressed: _saving ? null : _save,
+                      icon: const Icon(Icons.save_outlined),
+                      label: Text(_saving ? (isEdit ? 'Updating…' : 'Saving…') : (isEdit ? 'Update' : 'Save')),
                     ),
                   ),
-              ],
-            ),
-          ],
+                  if (_hasWarranty && !(isEdit && _hasExistingWarranty)) ...[
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF2C2B52),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        ),
+                        onPressed: _saving ? null : _saveAndAddWarranty,
+                        icon: const Icon(Icons.verified_user),
+                        label: Text(isEdit ? 'Update & add' : 'Save & add'),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 8),
+              if (isEdit)
+                TextButton.icon(
+                  onPressed: _saving ? null : _deleteBill,
+                  icon: const Icon(Icons.delete_outline, color: _danger),
+                  label: const Text('Delete bill', style: TextStyle(color: _danger)),
+                ),
+            ],
+          ),
         ),
       ),
     );

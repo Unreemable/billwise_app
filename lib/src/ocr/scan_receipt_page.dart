@@ -6,7 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:image/image.dart' as img;
 
-import '../gemini_service.dart';           // Gemini OCR
+import '../gemini_service.dart';           // Gemini OCR (لا تغييرات)
 import '../bills/ui/add_bill_page.dart';
 import 'receipt_parser.dart';              // Fallback parser
 
@@ -19,6 +19,19 @@ class ScanReceiptPage extends StatefulWidget {
 }
 
 class _ScanReceiptPageState extends State<ScanReceiptPage> {
+  // ===== ألوان وتصميم فقط =====
+  static const _bg = Color(0xFF0B0B2E);
+  static const _card = Color(0xFF171636);
+  static const _cardStroke = Color(0x1FFFFFFF);
+  static const _textDim = Color(0xFFBFC3D9);
+  static const _accent = Color(0xFF5D6BFF);
+  static const _secondaryBtn = Color(0xFF2C2B52);
+  static const _headerGrad = LinearGradient(
+    colors: [Color(0xFF0B0B2E), Color(0xFF21124C)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+
   File? _image;
   bool _processing = false;
   String? _error;
@@ -78,7 +91,6 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
       Map<String, dynamic>? prefill;
 
       if (receipt != null) {
-        // نجح JSON
         final purchaseIso = receipt.purchaseDate?.toIso8601String();
         final returnIso   = receipt.returnDeadline?.toIso8601String();
         final exchangeIso = receipt.exchangeDeadline?.toIso8601String();
@@ -106,7 +118,7 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
           'raw_source': 'gemini-ocr-json',
         };
       } else {
-        // 3) فشل JSON → OCR نصّي + ReceiptParser (حسب الحقول المتوفرة في ParsedReceipt)
+        // 3) OCR نصّي + ReceiptParser
         final plain = await GeminiOcrService.I.ocrToText(
           processedBytes,
           mimeType: mime,
@@ -128,7 +140,6 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
           'store':     parsed.storeName,
           'total_amount': parsed.totalAmount,
           'amount':       parsed.totalAmount,
-          // مافيه currency/returnDeadline/exchangeDeadline في ParsedReceipt الافتراضي
           'purchase_date': parsed.purchaseDate,
           'purchaseDate':  parsed.purchaseDate?.toIso8601String(),
           'warrantyStart': parsed.warrantyStartDate?.toIso8601String(),
@@ -140,7 +151,6 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
         };
       }
 
-      // 4) الذهاب لصفحة الإضافة
       final args = {
         'suggestWarranty': (prefill['warrantyEnd'] != null) ||
             ((prefill['rawText'] ?? '').toString().toLowerCase().contains('warranty')),
@@ -156,65 +166,180 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
     }
   }
 
+  // ===== التصميم فقط في build =====
+  BoxDecoration _cardBox() => BoxDecoration(
+    color: _card,
+    borderRadius: BorderRadius.circular(16),
+    border: Border.all(color: _cardStroke),
+  );
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Quick Add (Gemini OCR)')),
-      body: Column( // ✅ كان child: — عدّلناها إلى body:
-        children: [
-          Expanded(
-            child: Center(
-              child: _image == null
-                  ? const Text('Take a photo of the receipt or select from gallery')
-                  : Image.file(_image!, fit: BoxFit.contain),
-            ),
+    final canRun = _image != null && !_processing;
+
+    return Theme(
+      data: Theme.of(context).copyWith(
+        scaffoldBackgroundColor: _bg,
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Colors.transparent,
+          foregroundColor: Colors.white,
+          elevation: 0,
+        ),
+        textTheme: Theme.of(context)
+            .textTheme
+            .apply(bodyColor: Colors.white, displayColor: Colors.white),
+      ),
+      child: Scaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
+            onPressed: () => Navigator.maybePop(context),
           ),
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Text(
-                _error!,
-                style: const TextStyle(color: Colors.red),
-                textAlign: TextAlign.center,
-              ),
-            ),
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _processing ? null : () => _pick(false),
-                    icon: const Icon(Icons.photo_library),
-                    label: const Text('From Gallery'),
+          title: const Text('Quick Add (Gemini OCR)'),
+          flexibleSpace: Container(
+            decoration: const BoxDecoration(gradient: _headerGrad),
+          ),
+        ),
+        body: SafeArea(
+          minimum: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          child: Column(
+            children: [
+              // بطاقة المعاينة
+              Container(
+                width: double.infinity,
+                decoration: _cardBox(),
+                padding: const EdgeInsets.all(14),
+                child: AspectRatio(
+                  aspectRatio: 16 / 9,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Colors.white.withOpacity(0.12),
+                      ),
+                      color: const Color(0xFF202048),
+                    ),
+                    child: Stack(
+                      children: [
+                        if (_image == null)
+                          Center(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                              child: Text(
+                                'Take a photo of the receipt or select from gallery',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: _textDim),
+                              ),
+                            ),
+                          )
+                        else
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Image.file(
+                              _image!,
+                              fit: BoxFit.contain,
+                              width: double.infinity,
+                              height: double.infinity,
+                            ),
+                          ),
+                        if (_processing)
+                          Container(
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.35),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Center(
+                              child: CircularProgressIndicator(),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: _processing ? null : () => _pick(true),
-                    icon: const Icon(Icons.photo_camera),
-                    label: const Text('From Camera'),
+              ),
+
+              if (_error != null) ...[
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.red.withOpacity(0.2)),
                   ),
+                  child: Text(_error!, textAlign: TextAlign.center),
                 ),
               ],
-            ),
+
+              const SizedBox(height: 16),
+
+              // أزرار الالتقاط
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        side: const BorderSide(color: _accent),
+                        backgroundColor: Colors.transparent,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      onPressed: _processing ? null : () => _pick(false),
+                      icon: const Icon(Icons.photo_library),
+                      label: const Text('From Gallery'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _accent,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      onPressed: _processing ? null : () => _pick(true),
+                      icon: const Icon(Icons.photo_camera),
+                      label: const Text('From Camera'),
+                    ),
+                  ),
+                ],
+              ),
+
+              const Spacer(),
+
+              // زر التعرف
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: canRun ? _accent : _secondaryBtn,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  onPressed: canRun ? _runOcrAndGo : null,
+                  icon: _processing
+                      ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  )
+                      : const Icon(Icons.auto_fix_high),
+                  label: Text(_processing ? 'Recognizing…' : 'Recognize & Fill Fields'),
+                ),
+              ),
+            ],
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
-            child: FilledButton.icon(
-              onPressed: (_image == null || _processing) ? null : _runOcrAndGo,
-              icon: _processing
-                  ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-                  : const Icon(Icons.text_snippet),
-              label: const Text('Recognize & Fill Fields'),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

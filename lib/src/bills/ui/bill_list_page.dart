@@ -10,6 +10,21 @@ import '../data/bill_service.dart';
 import 'add_bill_page.dart';
 import 'bill_detail_page.dart';
 
+// ===== نفس ألوان الهوم =====
+const Color _kBgDark   = Color(0xFF0E0722);
+const Color _kCardDark = Color(0x1AFFFFFF);
+const Color _kTextDim  = Colors.white70;
+const LinearGradient _kHeaderGradient = LinearGradient(
+  colors: [Color(0xFF1A0B3A), Color(0xFF0E0722)],
+  begin: Alignment.topLeft,
+  end: Alignment.bottomRight,
+);
+const LinearGradient _kSearchGradient = LinearGradient(
+  colors: [Color(0xFF6C3EFF), Color(0xFF3E8EFD)],
+  begin: Alignment.topLeft,
+  end: Alignment.bottomRight,
+);
+
 class BillListPage extends StatefulWidget {
   const BillListPage({super.key});
   static const route = '/bills';
@@ -32,10 +47,9 @@ class _BillListPageState extends State<BillListPage> {
     super.dispose();
   }
 
-  // ================= Helpers =================
+  // ================ Helpers ================
   DateTime _onlyDate(DateTime d) => DateTime(d.year, d.month, d.day);
 
-  // --- Return (3 أيام) ---
   Color? _threeDayReturnColor(DateTime? startUtc, DateTime? endUtc) {
     if (startUtc == null || endUtc == null) return null;
     final s = _onlyDate(startUtc.toLocal());
@@ -45,11 +59,11 @@ class _BillListPageState extends State<BillListPage> {
     final today = _onlyDate(DateTime.now());
     final diff = today.difference(s).inDays;
 
-    if (diff < 0) return Colors.blueGrey; // قبل البدء
-    if (diff == 0) return Colors.green;   // اليوم 1
-    if (diff == 1) return Colors.orange;  // اليوم 2
-    if (diff == 2) return Colors.red;     // اليوم 3 (الأخير)
-    return Colors.grey;                   // انتهى
+    if (diff < 0) return Colors.blueGrey;
+    if (diff == 0) return Colors.green;
+    if (diff == 1) return Colors.orange;
+    if (diff == 2) return Colors.red;
+    return Colors.grey;
   }
 
   String? _threeDayReturnLabel(DateTime? startUtc, DateTime? endUtc) {
@@ -68,7 +82,6 @@ class _BillListPageState extends State<BillListPage> {
     return 'Expired';
   }
 
-  // --- Exchange (7 أيام) ---
   Color? _sevenDayExchangeColor(DateTime? startUtc, DateTime? endUtc) {
     if (startUtc == null || endUtc == null) return null;
     final s = _onlyDate(startUtc.toLocal());
@@ -76,13 +89,13 @@ class _BillListPageState extends State<BillListPage> {
     if (e.difference(s).inDays != 7) return null;
 
     final today = _onlyDate(DateTime.now());
-    final diff = today.difference(s).inDays + 1; // أول يوم = 1
+    final diff = today.difference(s).inDays + 1;
 
     if (diff <= 0) return Colors.blueGrey;
-    if (diff >= 1 && diff <= 3) return Colors.green;  // 1–3
-    if (diff >= 4 && diff <= 6) return Colors.orange; // 4–6
-    if (diff == 7) return Colors.red;                 // 7
-    return Colors.grey;                               // انتهى
+    if (diff >= 1 && diff <= 3) return Colors.green;
+    if (diff >= 4 && diff <= 6) return Colors.orange;
+    if (diff == 7) return Colors.red;
+    return Colors.grey;
   }
 
   String? _sevenDayExchangeLabel(DateTime? startUtc, DateTime? endUtc) {
@@ -101,7 +114,6 @@ class _BillListPageState extends State<BillListPage> {
     return 'Expired';
   }
 
-  // --- Warranty (3 أثلاث/سنتين) ---
   int _monthsBetween(DateTime a, DateTime b) {
     final aa = DateTime(a.year, a.month);
     final bb = DateTime(b.year, b.month);
@@ -170,7 +182,6 @@ class _BillListPageState extends State<BillListPage> {
     return 'Final third';
   }
 
-  // تقبّل لون مخصّص عند كونها "active"
   Chip _statusChip(DateTime? startUtc, DateTime? endUtc, {Color? overrideColor}) {
     if (startUtc == null || endUtc == null) return const Chip(label: Text('—'));
 
@@ -205,7 +216,6 @@ class _BillListPageState extends State<BillListPage> {
     );
   }
 
-  /// بلوك السياسة + شريط التقدّم + الحالة (اللون موحّد)
   Widget _policyBlock({
     required String title,
     required DateTime? start,
@@ -227,7 +237,6 @@ class _BillListPageState extends State<BillListPage> {
     final warrantyColor = isWarranty ? _warrantyColor(start, end) : null;
     final warrantyLabel = isWarranty ? _warrantyLabel(start, end) : null;
 
-    // لون موحّد للشريط والشارة
     final barColor = threeDayColor ?? sevenDayColor ?? warrantyColor;
 
     return Column(
@@ -238,7 +247,7 @@ class _BillListPageState extends State<BillListPage> {
             children: [
               Container(width: 10, height: 10, decoration: BoxDecoration(color: threeDayColor, shape: BoxShape.circle)),
               const SizedBox(width: 8),
-              Text(threeDayLabel ?? 'Return (3-day window)', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+              Text(threeDayLabel ?? 'Return (3-day window)', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500)),
             ],
           ),
           const SizedBox(height: 6),
@@ -248,7 +257,7 @@ class _BillListPageState extends State<BillListPage> {
             children: [
               Container(width: 10, height: 10, decoration: BoxDecoration(color: sevenDayColor, shape: BoxShape.circle)),
               const SizedBox(width: 8),
-              Text(sevenDayLabel ?? 'Exchange (7-day window)', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+              Text(sevenDayLabel ?? 'Exchange (7-day window)', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500)),
             ],
           ),
           const SizedBox(height: 6),
@@ -258,13 +267,12 @@ class _BillListPageState extends State<BillListPage> {
             children: [
               Container(width: 10, height: 10, decoration: BoxDecoration(color: warrantyColor, shape: BoxShape.circle)),
               const SizedBox(width: 8),
-              Text(warrantyLabel ?? 'Warranty (3 segments)', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+              Text(warrantyLabel ?? 'Warranty (3 segments)', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500)),
             ],
           ),
           const SizedBox(height: 6),
         ],
 
-        // الشريط بنفس اللون، والضمان بالأشهر
         ExpiryProgress(
           title: title,
           startDate: start,
@@ -283,7 +291,6 @@ class _BillListPageState extends State<BillListPage> {
     );
   }
 
-  /// أقرب انتهاء للفاتورة بين (return/exchange/warranty)
   DateTime? _nearestExpiry(Map<String, dynamic> d) {
     DateTime? parseTs(dynamic v) => (v is Timestamp) ? v.toDate().toLocal() : null;
 
@@ -307,7 +314,16 @@ class _BillListPageState extends State<BillListPage> {
     return Directionality(
       textDirection: ui.TextDirection.ltr,
       child: Scaffold(
-        appBar: AppBar(title: const Text('Bills')),
+        backgroundColor: _kBgDark,
+        appBar: AppBar(
+          automaticallyImplyLeading: false, // نتحكم يدويًا
+          leading: const BackButton(color: Colors.white), // ✅ سهم رجوع ثابت
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          title: const Text('Bills', style: TextStyle(color: Colors.white)),
+          actions: const [_LogoStub()],
+          flexibleSpace: Container(decoration: const BoxDecoration(gradient: _kHeaderGradient)),
+        ),
         floatingActionButton: FloatingActionButton(
           onPressed: () async {
             await Navigator.of(context, rootNavigator: true)
@@ -317,24 +333,56 @@ class _BillListPageState extends State<BillListPage> {
           child: const Icon(Icons.add),
         ),
         body: uid == null
-            ? const Center(child: Text('Please sign in to view your bills.'))
+            ? const Center(child: Text('Please sign in to view your bills.', style: TextStyle(color: Colors.white)))
             : Column(
           children: [
-            // Search
+            // ====== شريط بحث بنفس ستايل الهوم ======
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              child: TextField(
-                controller: _searchCtrl,
-                decoration: const InputDecoration(
-                  hintText: 'Search by title or store',
-                  prefixIcon: Icon(Icons.search),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  gradient: _kSearchGradient,
+                  boxShadow: [
+                    BoxShadow(color: const Color(0xFF934DFE).withOpacity(.45), blurRadius: 16, offset: const Offset(0, 6)),
+                  ],
                 ),
-                onChanged: (_) => setState(() {}),
+                child: Row(
+                  children: [
+                    const Icon(Icons.search, color: Colors.white, size: 22),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: _searchCtrl,
+                        style: const TextStyle(color: Colors.white, fontSize: 16),
+                        cursorColor: Colors.white,
+                        decoration: const InputDecoration(
+                          hintText: 'Search by title or store',
+                          hintStyle: TextStyle(color: Colors.white70),
+                          border: InputBorder.none,
+                          isDense: true,
+                          contentPadding: EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                    ),
+                    if (_searchCtrl.text.isNotEmpty)
+                      IconButton(
+                        tooltip: 'Clear',
+                        onPressed: () {
+                          _searchCtrl.clear();
+                          setState(() {});
+                        },
+                        icon: const Icon(Icons.close_rounded, color: Colors.white),
+                      ),
+                  ],
+                ),
               ),
             ),
             const SizedBox(height: 8),
 
-            // Sort chips
+            // ====== فلاتر الفرز ======
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Wrap(
@@ -344,22 +392,32 @@ class _BillListPageState extends State<BillListPage> {
                     label: const Text('Newest'),
                     selected: _sort == _BillSort.newest,
                     onSelected: (_) => setState(() => _sort = _BillSort.newest),
+                    labelStyle: TextStyle(color: _sort == _BillSort.newest ? Colors.white : _kTextDim),
+                    selectedColor: Colors.white.withOpacity(.14),
+                    backgroundColor: Colors.white.withOpacity(.06),
                   ),
                   ChoiceChip(
                     label: const Text('Oldest'),
                     selected: _sort == _BillSort.oldest,
                     onSelected: (_) => setState(() => _sort = _BillSort.oldest),
+                    labelStyle: TextStyle(color: _sort == _BillSort.oldest ? Colors.white : _kTextDim),
+                    selectedColor: Colors.white.withOpacity(.14),
+                    backgroundColor: Colors.white.withOpacity(.06),
                   ),
                   ChoiceChip(
                     label: const Text('Near expiry'),
                     selected: _sort == _BillSort.nearExpiry,
                     onSelected: (_) => setState(() => _sort = _BillSort.nearExpiry),
+                    labelStyle: TextStyle(color: _sort == _BillSort.nearExpiry ? Colors.white : _kTextDim),
+                    selectedColor: Colors.white.withOpacity(.14),
+                    backgroundColor: Colors.white.withOpacity(.06),
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 4),
 
+            // ====== القائمة ======
             Expanded(
               child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                 stream: BillService.instance.streamBillsSnapshot(
@@ -369,7 +427,7 @@ class _BillListPageState extends State<BillListPage> {
                 ),
                 builder: (context, s) {
                   if (s.hasError) {
-                    return Center(child: Text('Error: ${s.error}'));
+                    return Center(child: Text('Error: ${s.error}', style: const TextStyle(color: Colors.white)));
                   }
                   if (!s.hasData) {
                     return const Center(child: CircularProgressIndicator());
@@ -377,7 +435,6 @@ class _BillListPageState extends State<BillListPage> {
 
                   var docs = s.data!.docs;
 
-                  // Filter by search
                   final q = _searchCtrl.text.trim().toLowerCase();
                   if (q.isNotEmpty) {
                     docs = docs.where((e) {
@@ -389,16 +446,15 @@ class _BillListPageState extends State<BillListPage> {
                   }
 
                   if (docs.isEmpty) {
-                    return const Center(child: Text('No bills found.'));
+                    return const Center(child: Text('No bills found.', style: TextStyle(color: Colors.white)));
                   }
 
-                  // Local sort for Near expiry
                   if (_sort == _BillSort.nearExpiry) {
                     docs.sort((a, b) {
                       final ax = _nearestExpiry(a.data());
                       final bx = _nearestExpiry(b.data());
                       if (ax == null && bx == null) return 0;
-                      if (ax == null) return 1; // nulls last
+                      if (ax == null) return 1;
                       if (bx == null) return -1;
                       return ax.compareTo(bx);
                     });
@@ -425,21 +481,26 @@ class _BillListPageState extends State<BillListPage> {
 
                       final hasReceipt = (d['receipt_image_path'] as String?)?.trim().isNotEmpty == true;
 
-                      return Card(
+                      return Container(
+                        decoration: BoxDecoration(
+                          color: _kCardDark,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         child: ListTile(
                           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                           title: Text(
                             shop,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontWeight: FontWeight.w600),
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
                           ),
                           subtitle: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              const SizedBox(height: 2),
                               Text(
                                 '${title == shop ? '' : '$title • '}${amount == null ? '-' : _money.format(amount)}',
-                                style: Theme.of(context).textTheme.bodySmall,
+                                style: const TextStyle(color: Colors.white70, fontSize: 12),
                               ),
                               const SizedBox(height: 10),
 
@@ -454,10 +515,10 @@ class _BillListPageState extends State<BillListPage> {
                           ),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (hasReceipt) const Icon(Icons.attachment, size: 18),
-                              const SizedBox(width: 4),
-                              const Icon(Icons.chevron_right),
+                            children: const [
+                              // ملاحظة: ممكن تبدّل للأيقونة حسب hasReceipt لو تبغين
+                              // لكن على خلفية داكنة نخليه بسيط
+                              Icon(Icons.chevron_right, color: Colors.white),
                             ],
                           ),
                           onTap: () {
@@ -472,7 +533,6 @@ class _BillListPageState extends State<BillListPage> {
                               hasWarranty: hasWarranty,
                               warrantyExpiry: wEnd,
                             );
-                            // ✅ افتح التفاصيل مباشرة على الـroot
                             Navigator.of(context, rootNavigator: true).push(
                               MaterialPageRoute(builder: (_) => BillDetailPage(details: details)),
                             );
@@ -486,6 +546,25 @@ class _BillListPageState extends State<BillListPage> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// =============== Small bits ===============
+class _LogoStub extends StatelessWidget {
+  const _LogoStub();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 12),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text('B', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Colors.white)),
+          Text('ill Wise', style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.white70)),
+        ],
       ),
     );
   }
