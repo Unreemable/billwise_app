@@ -9,15 +9,18 @@ import '../ocr/scan_receipt_page.dart';
 
 import '../bills/ui/add_bill_page.dart';
 import '../bills/ui/bill_detail_page.dart';
-import '../bills/ui/bill_list_page.dart';           // ✅
+import '../bills/ui/bill_list_page.dart';
 import '../common/models.dart';
 
 import '../warranties/ui/add_warranty_page.dart';
 import '../warranties/ui/warranty_detail_page.dart';
-import '../warranties/ui/warranty_list_page.dart';  // ✅
+import '../warranties/ui/warranty_list_page.dart';
 
 import '../notifications/notifications_page.dart';
 import '../profile/profile_page.dart';
+
+// === شريط الانتهاء الصغير ===
+import '../common/widgets/expiry_progress.dart';
 
 // ===== ألوان عامة =====
 const Color _kBgDark   = Color(0xFF0E0722);
@@ -333,7 +336,7 @@ class _SearchBar extends StatelessWidget {
           end: Alignment.bottomRight,
         ),
         boxShadow: [
-          BoxShadow(color: _kGrad2.withOpacity(0.45), blurRadius: 16, offset: const Offset(0, 6)),
+          BoxShadow(color: _kGrad2.withOpacity(0.45), blurRadius: 16, offset: Offset(0, 6)),
         ],
       ),
       child: Row(
@@ -524,12 +527,11 @@ class _ActionRectTall extends StatelessWidget {
 }
 
 // ======= أفاتارات =======
-// استبدلنا الكلب بغزالة 🦌 مع تدرّج صحراوي لطيف، مع الإبقاء على نفس المفتاح dog_orange
 const Map<String, List<dynamic>> _kAvatarPresets = {
   'fox_purple':     ['🦊', [Color(0xFF6A73FF), Color(0xFFE6E9FF)]],
   'panda_blue':     ['🐼', [Color(0xFF38BDF8), Color(0xFFD1FAFF)]],
   'cat_pink':       ['🐱', [Color(0xFFF472B6), Color(0xFFFCE7F3)]],
-  'deer_gold':      ['🦌', [Color(0xFFFBBF24), Color(0xFFFFF7ED)]], // ← كان 🐶
+  'deer_gold':      ['🦌', [Color(0xFFFBBF24), Color(0xFFFFF7ED)]],
   'koala_green':    ['🐨', [Color(0xFF34D399), Color(0xFFD1FAE5)]],
   'penguin_sky':    ['🐧', [Color(0xFF60A5FA), Color(0xFFE0E7FF)]],
   'bear_violet':    ['🐻', [Color(0xFFA78BFA), Color(0xFFEDE9FE)]],
@@ -616,6 +618,24 @@ class _ExpiringMixed3 extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // helpers لقراءة الحقول مهما اختلف اسمها
+    Timestamp? _ts(Map<String, dynamic> d, List<String> keys) {
+      for (final k in keys) {
+        final v = d[k];
+        if (v is Timestamp) return v;
+        if (v is DateTime) return Timestamp.fromDate(v);
+      }
+      return null;
+    }
+
+    String _str(Map<String, dynamic> d, List<String> keys, {String fallback = ''}) {
+      for (final k in keys) {
+        final v = d[k];
+        if (v is String && v.trim().isNotEmpty) return v.trim();
+      }
+      return fallback;
+    }
+
     final uid = userId;
     final billsCol = FirebaseFirestore.instance.collection('Bills');
     final warrCol  = FirebaseFirestore.instance.collection('Warranties');
@@ -624,7 +644,9 @@ class _ExpiringMixed3 extends StatelessWidget {
     final warrBase  = uid != null ? warrCol.where('user_id', isEqualTo: uid) : warrCol;
 
     final billsStream = billsBase.orderBy('created_at', descending: true).limit(200).snapshots();
-    final warrStream  = warrBase.orderBy('created_at', descending: true).limit(200).snapshots();
+
+    // ⛔ بدون orderBy('created_at') عشان وثائق قديمة بدون الحقل ما تختفي
+    final warrStream  = warrBase.limit(300).snapshots();
 
     Color sColor(DateTime todayOnly, DateTime e) {
       final diff = e.difference(todayOnly).inDays;
@@ -650,6 +672,7 @@ class _ExpiringMixed3 extends StatelessWidget {
 
             final items = <Map<String, dynamic>>[];
 
+            // ===== Bills =====
             for (final doc in bSnap.data!.docs) {
               final d = doc.data();
               final title = (d['title'] ?? '—').toString();
@@ -678,16 +701,21 @@ class _ExpiringMixed3 extends StatelessWidget {
               }
             }
 
+            // ===== Warranties (مرن بالأسماء) =====
             for (final doc in wSnap.data!.docs) {
               final d = doc.data();
-              final provider = (d['provider']?.toString().trim().isNotEmpty == true)
-                  ? d['provider'].toString().trim() : 'Warranty';
-              final wTitle = (d['title']?.toString().trim().isNotEmpty == true)
-                  ? d['title'].toString().trim() : provider;
 
-              final start = (d['start_date'] as Timestamp?)?.toDate().toLocal();
-              final end   = (d['end_date'] as Timestamp?)?.toDate().toLocal();
+              final provider = _str(d, ['provider', 'brand', 'vendor'], fallback: 'Warranty');
+              final wTitle   = _str(d, ['title', 'product', 'item_name'], fallback: provider);
+
+              final startTs  = _ts(d, ['start_date', 'warranty_start', 'start']);
+              final endTs    = _ts(d, ['end_date', 'warranty_end_date', 'expiry', 'expires_at']);
+
+              final end   = endTs?.toDate().toLocal();
               if (end == null) continue;
+
+              // لو ما عندنا start، نفترض سنة قبل الانتهاء كافتراضي للتقدّم
+              final start = (startTs?.toDate().toLocal()) ?? end.subtract(const Duration(days: 365));
 
               items.add({
                 'type': 'warranty','id': doc.id,
@@ -696,6 +724,7 @@ class _ExpiringMixed3 extends StatelessWidget {
               });
             }
 
+            // فلترة البحث
             final q = query.trim().toLowerCase();
             if (q.isNotEmpty) {
               items.retainWhere((e) {
@@ -738,31 +767,32 @@ class _ExpiringMixed3 extends StatelessWidget {
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Colors.white)),
                 const SizedBox(height: 8),
                 ...selected.map((e) {
-                  final type   = e['type'] as String;
-                  final expiry = e['expiry'] as DateTime;
+                  final type    = e['type'] as String;
+                  final expiry  = e['expiry'] as DateTime;
                   final subtype = (e['subtype'] as String?);
-
-                  final diff = expiry.difference(todayOnly).inDays;
-                  final stx = diff == 0
-                      ? 'Due today'
-                      : (diff > 0 ? 'In $diff day${diff == 1 ? '' : 's'}'
-                      : '${diff.abs()} day${diff.abs() == 1 ? '' : 's'} ago');
-                  final scolor = sColor(todayOnly, expiry);
 
                   IconData leadingIcon;
                   String kindLabel = '';
                   if (type == 'bill') {
-                    if (subtype == 'return') { leadingIcon = Icons.keyboard_return; kindLabel = 'Exchange/Return'; }
+                    if (subtype == 'return') { leadingIcon = Icons.keyboard_return; kindLabel = 'Return'; }
                     else if (subtype == 'exchange') { leadingIcon = Icons.swap_horiz; kindLabel = 'Exchange'; }
                     else { leadingIcon = Icons.receipt_long; }
                   } else {
                     leadingIcon = Icons.verified_user; kindLabel = 'Warranty';
                   }
 
+                  // احسب start لاستخدامه في شريط التقدم
+                  final startForBar = (e['start'] as DateTime?) ??
+                      (e['purchase'] as DateTime?) ??
+                      DateTime.now();
+
                   return Container(
                     margin: const EdgeInsets.only(bottom: 10),
                     decoration: BoxDecoration(color: _kCardDark, borderRadius: BorderRadius.circular(12)),
                     child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      isThreeLine: true,
+                      minVerticalPadding: 6,
                       leading: Icon(leadingIcon, color: Colors.white70),
                       title: Row(
                         children: [
@@ -773,8 +803,10 @@ class _ExpiringMixed3 extends StatelessWidget {
                             Container(
                               margin: const EdgeInsets.only(left: 8),
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(color: Colors.white.withOpacity(0.08),
-                                  borderRadius: BorderRadius.circular(10)),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.08),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
                               child: Text(kindLabel, style: const TextStyle(fontSize: 11, color: Colors.white70)),
                             ),
                         ],
@@ -783,14 +815,25 @@ class _ExpiringMixed3 extends StatelessWidget {
                         (e['subtitle'] as String?)?.isEmpty == true ? '—' : (e['subtitle'] as String? ?? '—'),
                         maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70),
                       ),
-                      trailing: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Text(_fmt(expiry), style: const TextStyle(color: Colors.white70)),
-                          const SizedBox(height: 2),
-                          Text(stx, style: TextStyle(fontSize: 11, color: scolor)),
-                        ],
+                      // ===== يمين: التاريخ + شريط التقدّم =====
+                      trailing: SizedBox(
+                        width: 172,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(_fmt(expiry), style: const TextStyle(color: Colors.white70)),
+                            const SizedBox(height: 6),
+                            // شريط التقدم
+                            ExpiryProgress(
+                              startDate: startForBar,
+                              endDate:   expiry,
+                              title:     '',         // بدون عنوان فوق الشريط
+                              dense:     true,
+                              showInMonths: (type == 'warranty'), // ✅ الضمان بالأشهر
+                            ),
+                          ],
+                        ),
                       ),
                       onTap: () {
                         if (type == 'bill') {
@@ -965,7 +1008,7 @@ class _FabDot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 54, height: 54, // صغّرناها قليلاً كـ buffer
+      width: 54, height: 54,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         gradient: const LinearGradient(

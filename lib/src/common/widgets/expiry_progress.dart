@@ -13,6 +13,12 @@ class ExpiryProgress extends StatelessWidget {
   /// لون مخصص لشريط التقدم. إن لم يُمرَّر سيُحسب تلقائياً.
   final Color? barColor;
 
+  /// إظهار نص العنوان فوق الشريط.
+  final bool showTitle;
+
+  /// إظهار سطر الحالة (Expires in …) تحت الشريط.
+  final bool showStatus;
+
   const ExpiryProgress({
     super.key,
     required this.startDate,
@@ -20,7 +26,9 @@ class ExpiryProgress extends StatelessWidget {
     required this.title,
     this.dense = false,
     this.showInMonths = false,
-    this.barColor, // NEW
+    this.barColor,
+    this.showTitle = true,   // NEW
+    this.showStatus = true,  // NEW
   });
 
   DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
@@ -87,9 +95,11 @@ class ExpiryProgress extends StatelessWidget {
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Text(title, style: Theme.of(context).textTheme.bodySmall),
-        const SizedBox(height: 4),
+        if (showTitle && title.isNotEmpty) // NEW
+          Text(title, style: Theme.of(context).textTheme.bodySmall),
+        if (showTitle && title.isNotEmpty) const SizedBox(height: 4), // NEW
 
         // شريط التقدم
         ClipRRect(
@@ -103,8 +113,9 @@ class ExpiryProgress extends StatelessWidget {
           ),
         ),
 
-        const SizedBox(height: 4),
-        Text(label, style: Theme.of(context).textTheme.labelSmall),
+        if (showStatus) const SizedBox(height: 4), // NEW
+        if (showStatus)                              // NEW
+          Text(label, style: Theme.of(context).textTheme.labelSmall),
       ],
     );
   }
