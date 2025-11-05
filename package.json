@@ -1,0 +1,28 @@
+{
+  "name": "hhhh",
+  "version": "1.0.0",
+  "description": "A new Flutter project.",
+  "main": "test-rules.js",
+  "directories": {
+    "lib": "lib",
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Unreemable/billwise_app.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Unreemable/billwise_app/issues"
+  },
+  "homepage": "https://github.com/Unreemable/billwise_app#readme",
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.0",
+    "firebase": "^12.4.0"
+  }
+}

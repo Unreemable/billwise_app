@@ -5,24 +5,36 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.9.0
+  sdk: '>=3.9.0 <4.0.0'
+  flutter: '>=3.24.0'
 
 dependencies:
   flutter:
     sdk: flutter
 
-
-
   # UI
   cupertino_icons: ^1.0.8
-  google_generative_ai: ^0.4.7
-  flutter_dotenv: ^5.2.1
+  cached_network_image: ^3.3.1
+
+  # HTTP & Utils
   http: ^1.2.2
+  intl: ^0.20.2
+  path_provider: ^2.1.5
+  path: ^1.9.1
+  crypto: ^3.0.3
+  shared_preferences: ^2.3.2
+
+  # Env & AI
+  flutter_dotenv: ^5.2.1
+  google_generative_ai: ^0.4.7
+
+  # Images / Media
   image: ^4.1.7
+  image_picker: ^1.2.0
+  camera: ^0.11.2
 
-
-
-
+  # OCR
+  google_mlkit_text_recognition: ^0.15.0
 
   # Firebase (متوافقة مع firebase_core 4.x)
   firebase_core: ^4.1.1
@@ -32,35 +44,21 @@ dependencies:
   firebase_messaging: ^16.0.2
   file_picker: ^8.0.3
 
-
-
-
-
   # إشعارات محلية + منطقة زمنية
   flutter_local_notifications: ^19.4.2
   timezone: ^0.10.1
 
-  # حفظ بسيط محلي (للـ backfill اليومي)
-  shared_preferences: ^2.3.2
-
-  # OCR / وسائط
-  google_mlkit_text_recognition: ^0.15.0
-  image_picker: ^1.2.0
-  camera: ^0.11.2
-  cached_network_image: ^3.3.1
-
-  # Utilities
-  intl: ^0.20.2
-  path_provider: ^2.1.5
-  path: ^1.9.1
-  crypto: ^3.0.3
-
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  integration_test:
+    sdk: flutter
+  mockito: ^5.4.4
+  fake_cloud_firestore: ^4.0.0
   flutter_lints: ^6.0.0
 
 flutter:
   uses-material-design: true
   assets:
     - .env
+    - assets/BillWise_logo.png

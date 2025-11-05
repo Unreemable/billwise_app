@@ -1,0 +1,29 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthed() {
+      return request.auth != null;
+    }
+
+    // الملكية أثناء الإنشاء: البيانات تجي من request.resource
+    function isOwnerOnCreate() {
+      return isAuthed() && request.resource.data.user_id == request.auth.uid;
+    }
+
+    // الملكية بعد الإنشاء/للقراءة والتعديل والحذف: البيانات موجودة في resource
+    function isOwnerExisting() {
+      return isAuthed() && resource.data.user_id == request.auth.uid;
+    }
+
+    match /Bills/{billId} {
+      allow create: if isOwnerOnCreate();
+      allow read, update, delete: if isOwnerExisting();
+    }
+
+    match /Warranties/{warrantyId} {
+      allow create: if isOwnerOnCreate();
+      allow read, update, delete: if isOwnerExisting();
+    }
+  }
+}
