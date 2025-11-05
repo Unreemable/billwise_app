@@ -421,23 +421,45 @@ class _AddBillPageState extends State<AddBillPage> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('A warranty already exists for this bill.')));
       return;
     }
+
+    // ===== فرع تعديل فاتورة موجودة =====
     if (widget.billId != null) {
       await _updateBill();
       if (!mounted) return;
+
       final baseStart = _ocrWarrantyStart ?? _purchaseDate ?? DateTime.now();
-      final baseEnd = _ocrWarrantyEnd ?? baseStart.add(const Duration(days: 365));
+      final baseEnd   = _ocrWarrantyEnd   ?? baseStart.add(const Duration(days: 365));
+
       await Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => AddWarrantyPage(billId: widget.billId!, defaultStartDate: baseStart, defaultEndDate: baseEnd),
+        builder: (_) => AddWarrantyPage(
+          billId: widget.billId!,
+          defaultStartDate: baseStart,
+          defaultEndDate: baseEnd,
+          // === NEW: مرّر اسم المتجر والصورة ===
+          initialProvider: _shopCtrl.text.trim(),
+          prefillAttachmentPath: _receiptImagePath,
+        ),
       ));
       if (mounted) Navigator.of(context).pop();
       return;
     }
+
+    // ===== فرع إنشاء فاتورة جديدة =====
     final newId = await _saveNewBill();
     if (newId == null || !mounted) return;
+
     final baseStart = _ocrWarrantyStart ?? _purchaseDate ?? DateTime.now();
-    final baseEnd = _ocrWarrantyEnd ?? baseStart.add(const Duration(days: 365));
+    final baseEnd   = _ocrWarrantyEnd   ?? baseStart.add(const Duration(days: 365));
+
     await Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => AddWarrantyPage(billId: newId, defaultStartDate: baseStart, defaultEndDate: baseEnd),
+      builder: (_) => AddWarrantyPage(
+        billId: newId,
+        defaultStartDate: baseStart,
+        defaultEndDate: baseEnd,
+        // === NEW: مرّر اسم المتجر والصورة ===
+        initialProvider: _shopCtrl.text.trim(),
+        prefillAttachmentPath: _receiptImagePath,
+      ),
     ));
     if (mounted) Navigator.of(context).pop();
   }
@@ -573,12 +595,12 @@ class _AddBillPageState extends State<AddBillPage> {
                           ),
                           onPressed: _pickReceipt,
                           icon: const Icon(Icons.attach_file),
-                          label: const Text('Attach receipt'),
+                          label: const Text('Attach image'),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
-                            _receiptImagePath == null ? 'No file' : _receiptImagePath!.split('/').last,
+                            _receiptImagePath == null ? 'No image' : _receiptImagePath!.split('/').last,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(color: _textDim),

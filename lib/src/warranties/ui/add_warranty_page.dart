@@ -30,8 +30,9 @@ class AddWarrantyPage extends StatefulWidget {
     this.billId,
     this.defaultStartDate,
     this.defaultEndDate,
-    this.warrantyId, // != null يعني تعديل
-    this.initialProvider,
+    this.warrantyId,            // != null يعني تعديل
+    this.initialProvider,       // اسم المتجر القادم من AddBill
+    this.prefillAttachmentPath, // NEW: مسار صورة الفاتورة لنسخها كمرفق للضمان
   });
 
   static const route = '/add-warranty';
@@ -41,6 +42,7 @@ class AddWarrantyPage extends StatefulWidget {
   final DateTime? defaultEndDate;
   final String? warrantyId;
   final String? initialProvider;
+  final String? prefillAttachmentPath; // NEW
 
   @override
   State<AddWarrantyPage> createState() => _AddWarrantyPageState();
@@ -71,6 +73,7 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
   void initState() {
     super.initState();
 
+    // تعبئة اسم المتجر
     _providerCtrl.text = (widget.initialProvider ?? '').trim();
 
     // تهيئة آمنة للتواريخ
@@ -78,6 +81,13 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
     _end   = widget.defaultEndDate   ?? _start.add(const Duration(days: 365));
     if (_end.isBefore(_start)) {
       _end = _start.add(const Duration(days: 1));
+    }
+
+    // NEW: لو وصلنا بمسار صورة من صفحة الفاتورة، عيّنه مباشرة كمرفق
+    final prefillPath = (widget.prefillAttachmentPath ?? '').trim();
+    if (prefillPath.isNotEmpty) {
+      _attachmentLocalPath = prefillPath;
+      _attachmentName = prefillPath.split(Platform.pathSeparator).last;
     }
 
     // حمّل بيانات الضمان عند التعديل
@@ -115,12 +125,14 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
       if (_end.isBefore(_start)) _end = _start.add(const Duration(days: 1));
 
       // المرفق المحلي المخزّن في الوثيقة
-      _attachmentLocalPath = (data['attachment_local_path'] ?? '') is String
-          ? (data['attachment_local_path'] as String)
-          : null;
-      _attachmentName = (data['attachment_name'] ?? '') is String
-          ? (data['attachment_name'] as String)
-          : null;
+      final existingLocal = (data['attachment_local_path'] ?? '') as String? ?? '';
+      final existingName  = (data['attachment_name'] ?? '') as String? ?? '';
+      if (existingLocal.isNotEmpty) {
+        _attachmentLocalPath = existingLocal;
+        _attachmentName = (existingName.isNotEmpty)
+            ? existingName
+            : existingLocal.split(Platform.pathSeparator).last;
+      }
 
       setState(() {});
     } catch (_) {
@@ -342,7 +354,7 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
   @override
   Widget build(BuildContext context) {
     final shownName = (_attachmentLocalPath == null || _attachmentLocalPath!.isEmpty)
-        ? 'No file'
+        ? 'No image'
         : (_attachmentName ?? _attachmentLocalPath!.split(Platform.pathSeparator).last);
 
     return Directionality(
@@ -445,7 +457,7 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
                 child: Row(
                   children: [
                     _TinyGradButton(
-                      text: 'Attach file',
+                      text: 'Attach image',
                       icon: Icons.attach_file,
                       onPressed: _pickAttachment,
                     ),

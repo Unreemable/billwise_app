@@ -8,18 +8,21 @@ class WarrantyService {
 
   Timestamp _ts(DateTime d) => Timestamp.fromDate(d);
 
-  /// إنشاء ضمان (ممكن مرتبط بفاتورة، وممكن بدون فاتورة)
+  /// إنشاء ضمان (يرتبط بفاتورة إن توفّر billId)
   Future<String> createWarranty({
-    String? billId,                 // ← صارت اختيارية
+    String? billId,                 // اختياري
     required DateTime startDate,
     required DateTime endDate,
-    required String userId,         // لا يزال إلزامي
+    required String userId,         // إلزامي
     String provider = 'Unknown',
     String? status,                 // اختياري
+    String? serialNumber,           // NEW
+    String? attachmentLocalPath,    // NEW (محلي فقط)
+    String? attachmentName,         // NEW (اسم للعرض)
   }) async {
     final ref = _db.collection('Warranties').doc();
-    await ref.set({
-      if (billId != null) 'bill_id': billId, // يُحفظ فقط إذا كان موجود
+    final data = <String, dynamic>{
+      if (billId != null) 'bill_id': billId,
       'provider': provider,
       'start_date': _ts(startDate),
       'end_date': _ts(endDate),
@@ -27,18 +30,34 @@ class WarrantyService {
       'user_id': userId,
       'created_at': FieldValue.serverTimestamp(),
       'updated_at': FieldValue.serverTimestamp(),
-    });
+      if (serialNumber != null && serialNumber.trim().isNotEmpty)
+        'serial_number': serialNumber.trim(),
+      if (attachmentLocalPath != null && attachmentLocalPath.trim().isNotEmpty)
+        'attachment_local_path': attachmentLocalPath.trim(),
+      if (attachmentName != null && attachmentName.trim().isNotEmpty)
+        'attachment_name': attachmentName.trim(),
+    };
+    await ref.set(data);
     return ref.id;
   }
 
   /// تحديث ضمان (Patch)
+  ///
+  /// ملاحظات:
+  /// - لو تبي تمسح السيريال/المرفق حط clearSerial/clearAttachment = true
+  /// - السلاسل الفارغة يتم تجاهلها، استخدم clear* للحذف الصريح
   Future<void> updateWarranty({
     required String id,
     String? provider,
     String? status,
     DateTime? startDate,
     DateTime? endDate,
-    String? billId, // ممكن تغييره (اختياري)
+    String? billId,                 // ممكن تغييره
+    String? serialNumber,           // NEW
+    bool clearSerial = false,       // NEW
+    String? attachmentLocalPath,    // NEW
+    String? attachmentName,         // NEW
+    bool clearAttachment = false,   // NEW
   }) async {
     final patch = <String, dynamic>{
       if (provider != null)  'provider': provider,
@@ -46,11 +65,28 @@ class WarrantyService {
       if (startDate != null) 'start_date': _ts(startDate),
       if (endDate != null)   'end_date': _ts(endDate),
       if (billId != null)    'bill_id': billId,
+      // serial_number
+      if (clearSerial) 'serial_number': FieldValue.delete()
+      else if (serialNumber != null && serialNumber.trim().isNotEmpty)
+        'serial_number': serialNumber.trim(),
+      // attachment fields
+      if (clearAttachment) ...{
+        'attachment_local_path': FieldValue.delete(),
+        'attachment_name': FieldValue.delete(),
+      } else ...{
+        if (attachmentLocalPath != null && attachmentLocalPath.trim().isNotEmpty)
+          'attachment_local_path': attachmentLocalPath.trim(),
+        if (attachmentName != null && attachmentName.trim().isNotEmpty)
+          'attachment_name': attachmentName.trim(),
+      },
       'updated_at': FieldValue.serverTimestamp(),
     };
-    if (patch.isNotEmpty) {
-      await _db.collection('Warranties').doc(id).update(patch);
-    }
+
+    // لو ما فيه أي تغيير، لا تنادي Firestore
+    final hasRealChange = patch.keys.any((k) => k != 'updated_at');
+    if (!hasRealChange) return;
+
+    await _db.collection('Warranties').doc(id).update(patch);
   }
 
   /// حذف ضمان
@@ -70,9 +106,30 @@ class WarrantyService {
     return _db.collection('Warranties').doc(id).get();
   }
 
+  /// هل يوجد ضمان مرتبط بهذه الفاتورة؟
+  Future<bool> hasWarrantyForBill(String billId) async {
+    final q = await _db
+        .collection('Warranties')
+        .where('bill_id', isEqualTo: billId)
+        .limit(1)
+        .get();
+    return q.docs.isNotEmpty;
+  }
+
+  /// أول ضمان مرتبط بفاتورة (أو null)
+  Future<Map<String, dynamic>?> getFirstWarrantyForBill(String billId) async {
+    final q = await _db
+        .collection('Warranties')
+        .where('bill_id', isEqualTo: billId)
+        .limit(1)
+        .get();
+    if (q.docs.isEmpty) return null;
+    final d = q.docs.first;
+    return {'id': d.id, ...d.data()};
+  }
+
   /// ستريم ضمانات المستخدم
-  /// where(user_id) + orderBy(end_date) قد يحتاج Composite Index:
-  /// user_id ASC + end_date DESC (أو ASC حسب ترتيبك)
+  /// ملاحظة: قد تحتاج Composite Index: user_id ASC + end_date DESC
   Stream<QuerySnapshot<Map<String, dynamic>>> streamWarrantiesSnapshot({
     required String userId,
     bool descending = true,
@@ -97,5 +154,14 @@ class WarrantyService {
       descending: descending,
       limit: limit,
     ).map((snap) => snap.docs.map((d) => {'id': d.id, ...d.data()}).toList());
+  }
+
+  /// ستريم ضمانات فاتورة محددة (اختياري)
+  Stream<List<Map<String, dynamic>>> streamWarrantiesForBill(String billId) {
+    return _db
+        .collection('Warranties')
+        .where('bill_id', isEqualTo: billId)
+        .snapshots()
+        .map((snap) => snap.docs.map((d) => {'id': d.id, ...d.data()}).toList());
   }
 }
