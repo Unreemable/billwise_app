@@ -1,4 +1,4 @@
-// ================== Home Screen (Search + Column Tiles + Tall OCR + GradientBottomBar) ==================
+// ================== Home Screen (Tight Header + Row Tiles + Wide QuickAdd + Live Results) ==================
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -19,8 +19,10 @@ import '../warranties/ui/warranty_list_page.dart';
 import '../notifications/notifications_page.dart';
 import '../profile/profile_page.dart';
 
-// === شريط الانتهاء الصغير ===
 import '../common/widgets/expiry_progress.dart';
+
+import 'dart:math' as math;
+
 
 // ===== ألوان عامة =====
 const Color _kBgDark   = Color(0xFF0E0722);
@@ -38,16 +40,15 @@ const LinearGradient kHeaderGradient = LinearGradient(
 );
 
 // === إعدادات ===
-const double _kHeaderHeight = 360;
+const double _kHeaderHeight = 240;
+const double _kTilesGap     = 12;
+const double _kColGap       = 12;
+const double _kTilesYOffset = -6;
 
-// أحجام البلاطات
-const double _kMiniSide         = 128;
-const double _kTilesGap         = 12;
-const double _kColGap           = 12;
-const double _kTilesYOffset     = -8;
-const double _kTilesBlockHeight = _kMiniSide * 2 + _kTilesGap;
+// تحكم سريع بالمقاسات:
+const double kRowTileAspect   = 0.66; // ارتفاع مربعات Bill/Warranty = itemW * هذا الرقم
+const double kQuickTileAspect = 0.68; // ارتفاع Quick Add            = itemW * هذا الرقم
 
-/// واجهة المحتوى
 class HomeContent extends StatefulWidget {
   const HomeContent({super.key});
   @override
@@ -55,12 +56,14 @@ class HomeContent extends StatefulWidget {
 }
 
 class _HomeContentState extends State<HomeContent> {
-  final _searchCtrl = TextEditingController();
+  final _searchCtrl  = TextEditingController();
+  final _searchFocus = FocusNode();
   int _selectedTab = 0; // 0 = Warranties, 1 = Bills
 
   @override
   void dispose() {
     _searchCtrl.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -72,152 +75,179 @@ class _HomeContentState extends State<HomeContent> {
     return 'there';
   }
 
+  bool get _showResults => _searchCtrl.text.trim().isNotEmpty;
+
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
 
-    return Directionality(
-      textDirection: ui.TextDirection.ltr,
-      child: Scaffold(
-        backgroundColor: _kBgDark,
+    // === حسابات المقاسات مرة واحدة عشان ما يصير اختلاف ===
+    final screenW   = MediaQuery.of(context).size.width;
+    final usableW   = screenW - 32; // padding 16 يمين + 16 يسار
+    final itemW     = (usableW - _kColGap) / 2;
+    final itemH     = itemW * kRowTileAspect;
+    final quickH    = itemW * kQuickTileAspect;
+    final tilesTop  = _kHeaderHeight - 70 + _kTilesYOffset;
+    final tilesH    = itemH + _kTilesGap + quickH;
+    final contentTop= tilesTop + tilesH + 12;
 
-        // === شريط سفلي متدرّج (بدون overflow) ===
-        bottomNavigationBar: GradientBottomBar(
-          selectedIndex: _selectedTab,
-          onTap: (i) {
-            setState(() => _selectedTab = i);
-            if (i == 0) {
-              Navigator.of(context, rootNavigator: true).pushNamed(WarrantyListPage.route);
-            } else if (i == 1) {
-              Navigator.of(context, rootNavigator: true).pushNamed(BillListPage.route);
-            }
-          },
-          startColor: _kGrad1,
-          endColor: _kGrad3,
-        ),
+    return WillPopScope(
+      onWillPop: () async {
+        if (_showResults) {
+          _searchCtrl.clear();
+          _searchFocus.unfocus();
+          setState(() {});
+          return false;
+        }
+        return true;
+      },
+      child: Directionality(
+        textDirection: ui.TextDirection.ltr,
+        child: Scaffold(
+          backgroundColor: _kBgDark,
+          resizeToAvoidBottomInset: true,
 
-        body: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            // 1) الهيدر
-            Positioned.fill(
-              top: 0,
-              bottom: null,
-              child: _Header(
-                name: _greetName(user),
-                searchCtrl: _searchCtrl,
-                onSearchChanged: (_) => setState(() {}),
-                onSearchSubmitted: (_) => setState(() {}),
-                onLogout: () async {
-                  await FirebaseAuth.instance.signOut();
-                  if (!context.mounted) return;
-                  Navigator.pushNamedAndRemoveUntil(
-                    context, LoginScreen.route, (_) => false,
-                  );
-                },
-                onNotifications: () => Navigator.of(context, rootNavigator: true)
-                    .pushNamed(NotificationsPage.route),
-                onProfile: () => Navigator.of(context, rootNavigator: true)
-                    .pushNamed(ProfilePage.route),
+          bottomNavigationBar: GradientBottomBar(
+            selectedIndex: _selectedTab,
+            onTap: (i) {
+              setState(() => _selectedTab = i);
+              if (i == 0) {
+                Navigator.of(context, rootNavigator: true).pushNamed(WarrantyListPage.route);
+              } else if (i == 1) {
+                Navigator.of(context, rootNavigator: true).pushNamed(BillListPage.route);
+              }
+            },
+            startColor: _kGrad1,
+            endColor: _kGrad3,
+          ),
+
+          body: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              // 1) الهيدر
+              Positioned.fill(
+                top: 0,
+                bottom: null,
+                child: _Header(
+                  name: _greetName(user),
+                  searchCtrl: _searchCtrl,
+                  searchFocus: _searchFocus,
+                  onSearchChanged: (_) => setState(() {}),
+                  onSearchSubmitted: (_) => setState(() {}),
+                  onLogout: () async {
+                    await FirebaseAuth.instance.signOut();
+                    if (!context.mounted) return;
+                    Navigator.pushNamedAndRemoveUntil(
+                      context, LoginScreen.route, (_) => false,
+                    );
+                  },
+                  onNotifications: () => Navigator.of(context, rootNavigator: true)
+                      .pushNamed(NotificationsPage.route),
+                  onProfile: () => Navigator.of(context, rootNavigator: true)
+                      .pushNamed(ProfilePage.route),
+                ),
               ),
-            ),
 
-            // 2) البلاطات: عمود يسار + مستطيل OCR يمين
-            Positioned(
-              top: _kHeaderHeight - (_kTilesBlockHeight / 2) + _kTilesYOffset,
-              left: 16,
-              right: 16,
-              child: LayoutBuilder(
-                builder: (context, c) {
-                  final double leftColWidth = _kMiniSide;
-                  final double rightWidth   = c.maxWidth - leftColWidth - _kColGap;
-
-                  return SizedBox(
-                    height: _kTilesBlockHeight,
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // يسار: بلاطتان
-                        SizedBox(
-                          width: leftColWidth,
-                          child: Column(
-                            children: [
-                              SizedBox(
-                                width: _kMiniSide, height: _kMiniSide,
-                                child: _ActionMiniTile(
-                                  title: 'Bill',
-                                  subtitle: 'Add Bill',
-                                  icon: Icons.receipt_long_rounded,
-                                  gradient: const [_kGrad3, _kGrad1],
-                                  onTap: () => Navigator.of(context, rootNavigator: true)
-                                      .push(MaterialPageRoute(builder: (_) => const AddBillPage())),
-                                ),
-                              ),
-                              const SizedBox(height: _kTilesGap),
-                              SizedBox(
-                                width: _kMiniSide, height: _kMiniSide,
-                                child: _ActionMiniTile(
-                                  title: 'Warranty',
-                                  subtitle: 'Add Warranty',
-                                  icon: Icons.verified_user_rounded,
-                                  gradient: const [Color(0xFFFD6C8E), _kGrad2],
-                                  onTap: () => Navigator.of(context, rootNavigator: true).push(
-                                    MaterialPageRoute(builder: (_) => const AddWarrantyPage(
-                                      billId: null, defaultStartDate: null, defaultEndDate: null,
-                                    )),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: _kColGap),
-
-                        // يمين: بطاقة OCR طويلة
-                        SizedBox(
-                          width: rightWidth,
-                          height: _kTilesBlockHeight,
-                          child: _ActionRectTall(
-                            title: 'Quick Add',
-                            subtitle: 'OCR',
-                            icon: Icons.document_scanner_outlined,
-                            gradient: const [_kGrad1, _kGrad2],
-                            onTap: () => Navigator.of(context, rootNavigator: true)
-                                .push(MaterialPageRoute(builder: (_) => const ScanReceiptPage())),
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ),
-
-            // 3) المحتوى تحت
-            Positioned.fill(
-              top: _kHeaderHeight + (_kTilesBlockHeight / 2) + _kTilesYOffset + 12,
-              child: SafeArea(
-                top: false,
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
+              // 2) البلاطات (Bill/Warranty) فوق + Quick Add تحتهم
+              Positioned(
+                top: tilesTop,
+                left: 16,
+                right: 16,
+                child: SizedBox(
+                  height: tilesH,
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _ExpiringMixed3(userId: user?.uid, query: _searchCtrl.text),
-                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          SizedBox(
+                            width: itemW, height: itemH,
+                            child: _ActionMiniTile(
+                              title: 'Bill',
+                              subtitle: 'Add Bill',
+                              icon: Icons.receipt_long_rounded,
+                              gradient: const [_kGrad3, _kGrad1],
+                              onTap: () => Navigator.of(context, rootNavigator: true)
+                                  .push(MaterialPageRoute(builder: (_) => const AddBillPage())),
+                            ),
+                          ),
+                          const SizedBox(width: _kColGap),
+                          SizedBox(
+                            width: itemW, height: itemH,
+                            child: _ActionMiniTile(
+                              title: 'Warranty',
+                              subtitle: 'Add Warranty',
+                              icon: Icons.verified_user_rounded,
+                              gradient: const [Color(0xFFFD6C8E), _kGrad2],
+                              onTap: () => Navigator.of(context, rootNavigator: true).push(
+                                MaterialPageRoute(builder: (_) => const AddWarrantyPage(
+                                  billId: null, defaultStartDate: null, defaultEndDate: null,
+                                )),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: _kTilesGap),
+                      SizedBox(
+                        width: usableW,
+                        height: quickH,
+                        child: _ActionRectWide(
+                          title: 'Quick Add',
+                          subtitle: 'OCR',
+                          icon: Icons.document_scanner_outlined,
+                          gradient: const [_kGrad1, _kGrad2],
+                          onTap: () => Navigator.of(context, rootNavigator: true)
+                              .push(MaterialPageRoute(builder: (_) => const ScanReceiptPage())),
+                        ),
+                      ),
                     ],
                   ),
                 ),
               ),
-            ),
-          ],
+
+              // 3) المحتوى — يبدأ دائماً بعد البلاطات المحسوبة (لا تداخل)
+              Positioned.fill(
+                top: contentTop,
+                child: SafeArea(
+                  top: false,
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _ExpiringMixed3(
+                          userId: FirebaseAuth.instance.currentUser?.uid,
+                          query: _searchCtrl.text,
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+              // 4) نتائج البحث — تبدأ من تحت الهيدر مباشرة لتغطي البلاطات
+              if (_showResults)
+                Positioned.fill(
+                  top: _kHeaderHeight + 8,
+                  child: _SearchResultsPanel(
+                    query: _searchCtrl.text,
+                    userId: FirebaseAuth.instance.currentUser?.uid,
+                    onClose: () {
+                      _searchCtrl.clear();
+                      _searchFocus.unfocus();
+                      setState(() {});
+                    },
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-/// للتوافق مع Route قديمة
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
   static const route = '/home';
@@ -229,6 +259,7 @@ class HomeScreen extends StatelessWidget {
 class _Header extends StatelessWidget {
   final String name;
   final TextEditingController searchCtrl;
+  final FocusNode searchFocus;
   final VoidCallback onLogout;
   final VoidCallback onNotifications;
   final VoidCallback onProfile;
@@ -238,6 +269,7 @@ class _Header extends StatelessWidget {
   const _Header({
     required this.name,
     required this.searchCtrl,
+    required this.searchFocus,
     required this.onLogout,
     required this.onNotifications,
     required this.onProfile,
@@ -253,7 +285,7 @@ class _Header extends StatelessWidget {
       child: SafeArea(
         bottom: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -294,14 +326,14 @@ class _Header extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 18),
+              const SizedBox(height: 14),
               _SearchBar(
                 controller: searchCtrl,
+                focusNode: searchFocus,
                 hint: 'Search bills or warranties...',
                 onChanged: onSearchChanged,
                 onSubmitted: onSearchSubmitted,
               ),
-              const Spacer(),
             ],
           ),
         ),
@@ -313,12 +345,14 @@ class _Header extends StatelessWidget {
 // =============== Search Bar (TextField) ===============
 class _SearchBar extends StatelessWidget {
   final TextEditingController controller;
+  final FocusNode? focusNode;
   final String hint;
   final ValueChanged<String>? onChanged;
   final ValueChanged<String>? onSubmitted;
 
   const _SearchBar({
     required this.controller,
+    this.focusNode,
     required this.hint,
     this.onChanged,
     this.onSubmitted,
@@ -346,10 +380,13 @@ class _SearchBar extends StatelessWidget {
           Expanded(
             child: TextField(
               controller: controller,
+              focusNode: focusNode,
               onChanged: onChanged,
               onSubmitted: onSubmitted,
+              onTapOutside: (_) => focusNode?.unfocus(),
               style: const TextStyle(color: Colors.white, fontSize: 16),
               cursorColor: Colors.white,
+              textInputAction: TextInputAction.search,
               decoration: const InputDecoration(
                 hintText: 'Search bills or warranties...',
                 hintStyle: TextStyle(color: Colors.white70),
@@ -364,7 +401,7 @@ class _SearchBar extends StatelessWidget {
               tooltip: 'Clear',
               onPressed: () {
                 controller.clear();
-                if (onChanged != null) onChanged!('');
+                onChanged?.call('');
               },
               icon: const Icon(Icons.close_rounded, color: Colors.white),
             ),
@@ -435,14 +472,15 @@ class _ActionMiniTile extends StatelessWidget {
   }
 }
 
-class _ActionRectTall extends StatelessWidget {
+// مستطيل عريض لــ Quick Add
+class _ActionRectWide extends StatelessWidget {
   final String title;
   final String subtitle;
   final IconData icon;
   final List<Color> gradient;
   final VoidCallback onTap;
 
-  const _ActionRectTall({
+  const _ActionRectWide({
     required this.title,
     required this.subtitle,
     required this.icon,
@@ -473,51 +511,39 @@ class _ActionRectTall extends StatelessWidget {
           ),
           child: InkWell(
             onTap: onTap,
-            child: LayoutBuilder(
-              builder: (context, c) {
-                final shortest = c.maxWidth < c.maxHeight ? c.maxWidth : c.maxHeight;
-                final double iconBg  = (shortest * 0.32).clamp(64, 96);
-                final double iconSz  = (iconBg * 0.60).clamp(36, 56);
-                const double pad = 16;
-
-                return Stack(
-                  children: [
-                    Positioned(
-                      top: pad,
-                      left: pad,
-                      child: Container(
-                        width: iconBg,
-                        height: iconBg,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(.20),
-                          borderRadius: BorderRadius.circular(18),
-                        ),
-                        alignment: Alignment.center,
-                        child: Icon(icon, size: iconSz, color: Colors.white),
-                      ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Container(
+                    width: 56, height: 56,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(.20),
+                      borderRadius: BorderRadius.circular(16),
                     ),
-                    Positioned(
-                      left: pad,
-                      right: pad,
-                      bottom: pad,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: const [
-                          Text('Quick Add',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700)),
-                          SizedBox(height: 4),
-                          Text('OCR',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(color: Colors.white70, fontSize: 13)),
-                        ],
-                      ),
+                    alignment: Alignment.center,
+                    child: Icon(icon, color: Colors.white, size: 36),
+                  ),
+                  const SizedBox(width: 14),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text('Quick Add',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700)),
+                        SizedBox(height: 4),
+                        Text('OCR',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(color: Colors.white70, fontSize: 13)),
+                      ],
                     ),
-                  ],
-                );
-              },
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -618,7 +644,6 @@ class _ExpiringMixed3 extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // helpers لقراءة الحقول مهما اختلف اسمها
     Timestamp? _ts(Map<String, dynamic> d, List<String> keys) {
       for (final k in keys) {
         final v = d[k];
@@ -644,16 +669,7 @@ class _ExpiringMixed3 extends StatelessWidget {
     final warrBase  = uid != null ? warrCol.where('user_id', isEqualTo: uid) : warrCol;
 
     final billsStream = billsBase.orderBy('created_at', descending: true).limit(200).snapshots();
-
-    // ⛔ بدون orderBy('created_at') عشان وثائق قديمة بدون الحقل ما تختفي
     final warrStream  = warrBase.limit(300).snapshots();
-
-    Color sColor(DateTime todayOnly, DateTime e) {
-      final diff = e.difference(todayOnly).inDays;
-      if (diff < 0) return Colors.red;
-      if (diff == 0 || diff <= 7) return Colors.orange;
-      return Colors.green;
-    }
 
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: billsStream,
@@ -672,7 +688,6 @@ class _ExpiringMixed3 extends StatelessWidget {
 
             final items = <Map<String, dynamic>>[];
 
-            // ===== Bills =====
             for (final doc in bSnap.data!.docs) {
               final d = doc.data();
               final title = (d['title'] ?? '—').toString();
@@ -701,30 +716,26 @@ class _ExpiringMixed3 extends StatelessWidget {
               }
             }
 
-            // ===== Warranties (مرن بالأسماء) =====
             for (final doc in wSnap.data!.docs) {
               final d = doc.data();
+              final provider = _str(d, ['provider','brand','vendor'], fallback: 'Warranty');
+              final wTitle   = _str(d, ['title','product','item_name'], fallback: provider);
 
-              final provider = _str(d, ['provider', 'brand', 'vendor'], fallback: 'Warranty');
-              final wTitle   = _str(d, ['title', 'product', 'item_name'], fallback: provider);
+              final startTs  = _ts(d, ['start_date','warranty_start','start']);
+              final endTs    = _ts(d, ['end_date','warranty_end_date','expiry','expires_at']);
 
-              final startTs  = _ts(d, ['start_date', 'warranty_start', 'start']);
-              final endTs    = _ts(d, ['end_date', 'warranty_end_date', 'expiry', 'expires_at']);
-
-              final end   = endTs?.toDate().toLocal();
+              final end = endTs?.toDate().toLocal();
               if (end == null) continue;
 
-              // لو ما عندنا start، نفترض سنة قبل الانتهاء كافتراضي للتقدّم
               final start = (startTs?.toDate().toLocal()) ?? end.subtract(const Duration(days: 365));
 
               items.add({
                 'type': 'warranty','id': doc.id,
                 'title': provider,'subtitle': wTitle,
-                'start': start,'end': _only(end),'expiry': _only(end),
+                'start': start,'end': end,'expiry': _only(end),
               });
             }
 
-            // فلترة البحث
             final q = query.trim().toLowerCase();
             if (q.isNotEmpty) {
               items.retainWhere((e) {
@@ -751,9 +762,8 @@ class _ExpiringMixed3 extends StatelessWidget {
               );
             }
 
-            final upcoming = items..retainWhere((e) => !(e['expiry'] as DateTime).isBefore(todayOnly));
-            upcoming.sort((a, b) => (a['expiry'] as DateTime).compareTo(b['expiry'] as DateTime));
-
+            final upcoming = items.where((e) => !(e['expiry'] as DateTime).isBefore(todayOnly)).toList()
+              ..sort((a, b) => (a['expiry'] as DateTime).compareTo(b['expiry'] as DateTime));
             final past = items.where((e) => (e['expiry'] as DateTime).isBefore(todayOnly)).toList()
               ..sort((a, b) => (b['expiry'] as DateTime).compareTo(a['expiry'] as DateTime));
 
@@ -781,7 +791,6 @@ class _ExpiringMixed3 extends StatelessWidget {
                     leadingIcon = Icons.verified_user; kindLabel = 'Warranty';
                   }
 
-                  // احسب start لاستخدامه في شريط التقدم
                   final startForBar = (e['start'] as DateTime?) ??
                       (e['purchase'] as DateTime?) ??
                       DateTime.now();
@@ -789,80 +798,103 @@ class _ExpiringMixed3 extends StatelessWidget {
                   return Container(
                     margin: const EdgeInsets.only(bottom: 10),
                     decoration: BoxDecoration(color: _kCardDark, borderRadius: BorderRadius.circular(12)),
-                    child: ListTile(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      isThreeLine: true,
-                      minVerticalPadding: 6,
-                      leading: Icon(leadingIcon, color: Colors.white70),
-                      title: Row(
-                        children: [
-                          Expanded(child: Text(e['title'] as String,
-                              maxLines: 1, overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(color: Colors.white))),
-                          if (kindLabel.isNotEmpty)
-                            Container(
-                              margin: const EdgeInsets.only(left: 8),
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.08),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Text(kindLabel, style: const TextStyle(fontSize: 11, color: Colors.white70)),
-                            ),
-                        ],
+                    child: MediaQuery( // حد أقصى للتكبير داخل البلاطة كاملة
+                      data: MediaQuery.of(context).copyWith(
+                        textScaleFactor: MediaQuery.textScaleFactorOf(context).clamp(1.0, 1.25),
                       ),
-                      subtitle: Text(
-                        (e['subtitle'] as String?)?.isEmpty == true ? '—' : (e['subtitle'] as String? ?? '—'),
-                        maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70),
-                      ),
-                      // ===== يمين: التاريخ + شريط التقدّم =====
-                      trailing: SizedBox(
-                        width: 172,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.end,
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        isThreeLine: true,
+                        minVerticalPadding: 6,
+                        leading: Icon(leadingIcon, color: Colors.white70),
+                        title: Row(
                           children: [
-                            Text(_fmt(expiry), style: const TextStyle(color: Colors.white70)),
-                            const SizedBox(height: 6),
-                            // شريط التقدم
-                            ExpiryProgress(
-                              startDate: startForBar,
-                              endDate:   expiry,
-                              title:     '',         // بدون عنوان فوق الشريط
-                              dense:     true,
-                              showInMonths: (type == 'warranty'), // ✅ الضمان بالأشهر
-                            ),
+                            Expanded(child: Text(e['title'] as String,
+                                maxLines: 1, overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(color: Colors.white))),
+                            if (kindLabel.isNotEmpty)
+                              Container(
+                                margin: const EdgeInsets.only(left: 8),
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.08),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(kindLabel, style: const TextStyle(fontSize: 11, color: Colors.white70)),
+                              ),
                           ],
                         ),
+                        subtitle: Text(
+                          (e['subtitle'] as String?)?.isEmpty == true ? '—' : (e['subtitle'] as String? ?? '—'),
+                          maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70),
+                        ),
+                        // ===== يمين: التاريخ + شريط التقدّم (مرن بدون Overflow) =====
+                        trailing: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            // مهم: صفر عشان ما يصير min > max على الشاشات الصغيرة
+                            minWidth: 0,
+                            // ناخذ أكبر قيمة بين 120 و النسبة من عرض الشاشة
+                            maxWidth: math.max(
+                              120.0,
+                              (MediaQuery.of(context).size.width - 32) * 0.36, // 32 = padding أفقي
+                            ),
+                          ),
+                          child: MediaQuery(
+                            data: MediaQuery.of(context).copyWith(
+                              textScaleFactor: MediaQuery.textScaleFactorOf(context).clamp(1.0, 1.2),
+                            ),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(
+                                  _fmt(expiry),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(color: Colors.white70),
+                                ),
+                                const SizedBox(height: 6),
+                                ExpiryProgress(
+                                  startDate: startForBar,
+                                  endDate:   expiry,
+                                  title:     '',
+                                  dense:     true,
+                                  showInMonths: (type == 'warranty'),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+
+                        onTap: () {
+                          if (type == 'bill') {
+                            final details = BillDetails(
+                              id: e['id'] as String,
+                              title: e['title'] as String,
+                              product: (e['subtitle'] as String? ?? ''),
+                              amount: (e['amount'] as double?) ?? 0.0,
+                              purchaseDate: (e['purchase'] as DateTime?) ?? DateTime.now(),
+                              returnDeadline: subtype == 'return' ? expiry : null,
+                              warrantyExpiry: null,
+                            );
+                            Navigator.of(context, rootNavigator: true).push(
+                              MaterialPageRoute(builder: (_) => BillDetailPage(details: details)),
+                            );
+                          } else {
+                            final details = WarrantyDetails(
+                              id: e['id'] as String,
+                              product: e['title'] as String,
+                              title: e['subtitle'] as String? ?? '',
+                              warrantyStart: (e['start'] as DateTime?) ?? DateTime.now(),
+                              warrantyExpiry: expiry,
+                              returnDeadline: null,
+                            );
+                            Navigator.of(context, rootNavigator: true).push(
+                              MaterialPageRoute(builder: (_) => WarrantyDetailPage(details: details)),
+                            );
+                          }
+                        },
                       ),
-                      onTap: () {
-                        if (type == 'bill') {
-                          final details = BillDetails(
-                            id: e['id'] as String,
-                            title: e['title'] as String,
-                            product: (e['subtitle'] as String? ?? ''),
-                            amount: (e['amount'] as double?) ?? 0.0,
-                            purchaseDate: (e['purchase'] as DateTime?) ?? DateTime.now(),
-                            returnDeadline: subtype == 'return' ? expiry : null,
-                            warrantyExpiry: null,
-                          );
-                          Navigator.of(context, rootNavigator: true).push(
-                            MaterialPageRoute(builder: (_) => BillDetailPage(details: details)),
-                          );
-                        } else {
-                          final details = WarrantyDetails(
-                            id: e['id'] as String,
-                            product: e['title'] as String,
-                            title: e['subtitle'] as String? ?? '',
-                            warrantyStart: (e['start'] as DateTime?) ?? DateTime.now(),
-                            warrantyExpiry: expiry,
-                            returnDeadline: null,
-                          );
-                          Navigator.of(context, rootNavigator: true).push(
-                            MaterialPageRoute(builder: (_) => WarrantyDetailPage(details: details)),
-                          );
-                        }
-                      },
                     ),
                   );
                 }),
@@ -875,7 +907,204 @@ class _ExpiringMixed3 extends StatelessWidget {
   }
 }
 
-// =================== Bottom Gradient Bar (مرن بلا Overflow) ===================
+// =================== لوحة نتائج البحث الفورية ===================
+class _SearchResultsPanel extends StatelessWidget {
+  final String query;
+  final String? userId;
+  final VoidCallback onClose;
+
+  const _SearchResultsPanel({
+    required this.query,
+    required this.userId,
+    required this.onClose,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom; // ارتفاع الكيبورد
+    return Material(
+      color: _kBgDark.withOpacity(0.94),
+      child: SafeArea(
+        top: false,
+        bottom: false,
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  const Text('Results', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                  const Spacer(),
+                  IconButton(
+                    tooltip: 'Close',
+                    onPressed: onClose,
+                    icon: const Icon(Icons.close_rounded, color: Colors.white70),
+                  )
+                ],
+              ),
+              const SizedBox(height: 4),
+              Expanded(child: _LiveSearchList(query: query, userId: userId)),
+              SizedBox(height: bottomInset), // يحترم الكيبورد
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LiveSearchList extends StatelessWidget {
+  final String query;
+  final String? userId;
+  const _LiveSearchList({required this.query, required this.userId});
+
+  @override
+  Widget build(BuildContext context) {
+    final q = query.trim().toLowerCase();
+    final uid = userId;
+
+    final billsCol = FirebaseFirestore.instance.collection('Bills');
+    final warrCol  = FirebaseFirestore.instance.collection('Warranties');
+
+    final billsBase = uid != null ? billsCol.where('user_id', isEqualTo: uid) : billsCol;
+    final warrBase  = uid != null ? warrCol.where('user_id', isEqualTo: uid) : warrCol;
+
+    final billsStream = billsBase.orderBy('created_at', descending: true).limit(200).snapshots();
+    final warrStream  = warrBase.limit(300).snapshots();
+
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: billsStream,
+      builder: (context, bSnap) {
+        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: warrStream,
+          builder: (context, wSnap) {
+            if (!bSnap.hasData || !wSnap.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            final List<_SearchItem> out = [];
+
+            for (final d in bSnap.data!.docs) {
+              final m = d.data();
+              final title = (m['title'] ?? '').toString();
+              final shop  = (m['shop_name'] ?? '').toString();
+              if (q.isEmpty || title.toLowerCase().contains(q) || shop.toLowerCase().contains(q)) {
+                out.add(_SearchItem.bill(
+                  id: d.id,
+                  title: title.isEmpty ? 'Bill' : title,
+                  subtitle: shop.isEmpty ? '—' : shop,
+                  purchase: (m['purchase_date'] as Timestamp?)?.toDate(),
+                  amount: (m['total_amount'] as num?)?.toDouble() ?? 0.0,
+                ));
+              }
+            }
+
+            for (final d in wSnap.data!.docs) {
+              final m = d.data();
+              final provider = (m['provider'] ?? m['brand'] ?? '').toString();
+              final prod     = (m['title'] ?? m['product'] ?? '').toString();
+              final title    = provider.isEmpty ? 'Warranty' : provider;
+              final subtitle = prod.isEmpty ? '—' : prod;
+              if (q.isEmpty || title.toLowerCase().contains(q) || subtitle.toLowerCase().contains(q)) {
+                out.add(_SearchItem.warranty(
+                  id: d.id,
+                  title: title,
+                  subtitle: subtitle,
+                  start: (m['start_date'] as Timestamp?)?.toDate(),
+                  end:   (m['end_date']   as Timestamp?)?.toDate(),
+                ));
+              }
+            }
+
+            if (out.isEmpty) {
+              return const Center(
+                child: Text('No results', style: TextStyle(color: Colors.white70)),
+              );
+            }
+
+            out.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+
+            return ListView.separated(
+              itemCount: out.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              itemBuilder: (context, i) {
+                final it = out[i];
+                return Container(
+                  decoration: BoxDecoration(color: _kCardDark, borderRadius: BorderRadius.circular(12)),
+                  child: ListTile(
+                    leading: Icon(
+                      it.isBill ? Icons.receipt_long_rounded : Icons.verified_user_rounded,
+                      color: Colors.white70,
+                    ),
+                    title: Text(it.title, maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: Colors.white)),
+                    subtitle: Text(it.subtitle, maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: Colors.white70)),
+                    onTap: () {
+                      if (it.isBill) {
+                        Navigator.of(context, rootNavigator: true).push(
+                          MaterialPageRoute(builder: (_) => BillDetailPage(details: BillDetails(
+                            id: it.id,
+                            title: it.title,
+                            product: it.subtitle,
+                            amount: it.amount ?? 0.0,
+                            purchaseDate: it.purchase ?? DateTime.now(),
+                            returnDeadline: null,
+                            warrantyExpiry: null,
+                          ))),
+                        );
+                      } else {
+                        Navigator.of(context, rootNavigator: true).push(
+                          MaterialPageRoute(builder: (_) => WarrantyDetailPage(details: WarrantyDetails(
+                            id: it.id,
+                            product: it.title,
+                            title: it.subtitle,
+                            warrantyStart: it.start ?? DateTime.now(),
+                            warrantyExpiry: it.end ?? DateTime.now(),
+                            returnDeadline: null,
+                          ))),
+                        );
+                      }
+                    },
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _SearchItem {
+  final bool isBill;
+  final String id;
+  final String title;
+  final String subtitle;
+  final double? amount;
+  final DateTime? purchase;
+  final DateTime? start;
+  final DateTime? end;
+
+  _SearchItem.bill({
+    required this.id,
+    required this.title,
+    required this.subtitle,
+    this.amount,
+    this.purchase,
+  })  : isBill = true, start = null, end = null;
+
+  _SearchItem.warranty({
+    required this.id,
+    required this.title,
+    required this.subtitle,
+    this.start,
+    this.end,
+  })  : isBill = false, amount = null, purchase = null;
+}
+
+// =================== Bottom Gradient Bar ===================
 class GradientBottomBar extends StatelessWidget {
   final int selectedIndex;               // 0 = Warranties, 1 = Bills
   final ValueChanged<int> onTap;
@@ -962,8 +1191,6 @@ class _BottomItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final fg = selected ? Colors.white : Colors.white70;
     final selectedBg = Colors.white.withOpacity(.14);
-
-    // نحد من تكبير الخط داخل البار حتى ما يكسر السطر
     final tsf = MediaQuery.textScaleFactorOf(context).clamp(1.0, 1.2);
 
     return InkWell(

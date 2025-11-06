@@ -1,34 +1,36 @@
 // lib/src/gemini_service.dart
-// REST v1beta + retry + generationConfig + safetySettings + OCR text fallback
+// REST v1beta + retry + generationConfig + safetySettings + OCR-friendly models (no *-image)
+
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 
-/// موديلات متوافقة مع مفتاحك (v1beta)
-const List<String> _TEXT_MODELS = [
+/// Text-only models
+const List<String> _TEXT_MODELS = <String>[
   'gemini-2.5-flash',
   'gemini-pro-latest',
 ];
 
-const List<String> _VISION_MODELS = [
-  'gemini-2.5-flash-image', // رؤية
-  'gemini-2.5-flash',       // متعدد الوسائط (fallback)
+/// Vision (multimodal) models — no "-image"
+const List<String> _VISION_MODELS = <String>[
+  'gemini-2.5-flash',
+  'gemini-2.0-flash',
 ];
 
-/// إعدادات توليد (رفّعنا المخرجات لأن الفواتير طويلة)
-const Map<String, dynamic> _GEN_CFG = {
+/// Generation config
+const Map<String, dynamic> _GEN_CFG = <String, dynamic>{
   'maxOutputTokens': 1024,
   'temperature': 0.2,
 };
 
-/// إعدادات السلامة (أكثر تساهلاً لتقليل "Blocked")
-const List<Map<String, dynamic>> _SAFETY = [
-  {"category": "HARM_CATEGORY_HARASSMENT",        "threshold": "BLOCK_NONE"},
-  {"category": "HARM_CATEGORY_HATE_SPEECH",       "threshold": "BLOCK_NONE"},
-  {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-  {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+/// Safety settings
+const List<Map<String, dynamic>> _SAFETY = <Map<String, dynamic>>[
+  {'category': 'HARM_CATEGORY_HARASSMENT', 'threshold': 'BLOCK_NONE'},
+  {'category': 'HARM_CATEGORY_HATE_SPEECH', 'threshold': 'BLOCK_NONE'},
+  {'category': 'HARM_CATEGORY_SEXUALLY_EXPLICIT', 'threshold': 'BLOCK_NONE'},
+  {'category': 'HARM_CATEGORY_DANGEROUS_CONTENT', 'threshold': 'BLOCK_NONE'},
 ];
 
 Uri _endpoint(String model) => Uri.parse(
@@ -38,70 +40,81 @@ Uri _endpoint(String model) => Uri.parse(
 String _apiKeyOrThrow() {
   final key = dotenv.env['GEMINI_API_KEY']?.trim() ?? '';
   if (key.isEmpty) {
-    throw StateError('GEMINI_API_KEY مفقود. أضيفيه في .env وحمّليه في main.dart قبل runApp.');
+    throw StateError(
+      'GEMINI_API_KEY missing. Add it to .env and call dotenv.load() in main() before runApp.',
+    );
   }
   return key;
 }
 
-/// POST مع إعادة محاولات عند 429 (Rate limit) + احترام Retry-After
+bool _isRetriableStatus(int code) =>
+    code == 429 || code == 500 || code == 502 || code == 503;
+
+/// POST with retries + Retry-After handling
 Future<Map<String, dynamic>> _postJsonWithRetry(
     String model,
     Map<String, dynamic> body, {
       int maxRetries = 3,
+      Duration baseDelay = const Duration(milliseconds: 800),
     }) async {
   final key = _apiKeyOrThrow();
   final url = _endpoint(model).replace(queryParameters: {'key': key});
 
-  // دمج generationConfig + safetySettings
-  final mergedBody = {
+  final mergedBody = <String, dynamic>{
     ...body,
     'generationConfig': _GEN_CFG,
     'safetySettings': _SAFETY,
   };
 
-  Duration delay = const Duration(milliseconds: 800);
+  Duration delay = baseDelay;
   Object? lastErr;
 
   for (int attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      final resp = await http.post(
+      final resp = await http
+          .post(
         url,
-        headers: {'Content-Type': 'application/json'},
+        headers: const {'Content-Type': 'application/json'},
         body: jsonEncode(mergedBody),
-      );
+      )
+          .timeout(const Duration(seconds: 60));
 
       if (resp.statusCode == 200) {
         return jsonDecode(resp.body) as Map<String, dynamic>;
       }
 
-      // 429: احترم Retry-After أو اعمل backoff
-      if (resp.statusCode == 429) {
+      if (_isRetriableStatus(resp.statusCode) && attempt < maxRetries) {
         final ra = resp.headers['retry-after'];
         if (ra != null) {
           final secs = int.tryParse(ra);
           if (secs != null && secs >= 0) {
-            if (kDebugMode) debugPrint('429 Retry-After: ${secs}s ($model)');
+            if (kDebugMode) {
+              debugPrint('$model → ${resp.statusCode} Retry-After: ${secs}s');
+            }
             await Future.delayed(Duration(seconds: secs));
             continue;
           }
         }
-        if (kDebugMode) debugPrint('429 backoff ${delay.inMilliseconds}ms ($model)');
+        if (kDebugMode) {
+          debugPrint('$model → ${resp.statusCode} backoff ${delay.inMilliseconds}ms');
+        }
         await Future.delayed(delay);
         delay *= 2;
         continue;
       }
 
-      // أخطاء أخرى
       throw StateError('HTTP ${resp.statusCode}: ${resp.body}');
     } catch (e) {
       lastErr = e;
       if (attempt == maxRetries) break;
-      if (kDebugMode) debugPrint('POST failed (attempt ${attempt + 1}/$maxRetries): $e');
+      if (kDebugMode) {
+        debugPrint('POST failed (attempt ${attempt + 1}/$maxRetries, model=$model): $e');
+      }
       await Future.delayed(delay);
       delay *= 2;
     }
   }
-  throw StateError('فشل بعد محاولات متعددة: $lastErr');
+  throw StateError('Failed after multiple attempts: $lastErr');
 }
 
 String _extractText(Map<String, dynamic> json) {
@@ -109,22 +122,21 @@ String _extractText(Map<String, dynamic> json) {
   if (candidates is List && candidates.isNotEmpty) {
     final content = candidates.first['content'];
     final parts = content?['parts'];
-    if (parts is List) {
-      final sb = StringBuffer();
+    if (parts is List && parts.isNotEmpty) {
+      final buffer = StringBuffer();
       for (final p in parts) {
         final t = (p['text'] ?? '').toString();
-        if (t.isNotEmpty) sb.writeln(t);
+        if (t.isNotEmpty) buffer.writeln(t);
       }
-      return sb.toString().trim();
+      final out = buffer.toString().trim();
+      if (out.isNotEmpty) return out;
     }
   }
-  if (json['promptFeedback']?['blockReason'] != null) {
-    return 'Blocked: ${json['promptFeedback']['blockReason']}';
-  }
+  final blockReason = json['promptFeedback']?['blockReason'];
+  if (blockReason != null) return 'Blocked: $blockReason';
   return '';
 }
 
-/// يستدعي قائمة موديلات بالترتيب إلى أن ينجح
 Future<String> _callWithModelList({
   required List<String> models,
   required Map<String, dynamic> body,
@@ -134,42 +146,41 @@ Future<String> _callWithModelList({
     try {
       final json = await _postJsonWithRetry(m, body);
       if (kDebugMode) debugPrint('Gemini model used: $m (v1beta)');
-      return _extractText(json);
+      final text = _extractText(json);
+      if (text.isNotEmpty) return text;
+      throw StateError('Empty text from $m');
     } catch (e) {
       lastErr = e;
       if (kDebugMode) debugPrint('Model $m failed: $e');
-      // جرّب التالي
     }
   }
-  throw StateError('فشلت جميع الموديلات. آخر خطأ: $lastErr');
+  throw StateError('All models failed. Last error: $lastErr');
 }
 
 class GeminiService {
   GeminiService._();
   static final GeminiService i = GeminiService._();
 
-  /// نص → نص
   Future<String> generateText(String prompt) async {
-    final body = {
+    final body = <String, dynamic>{
       'contents': [
         {
           'role': 'user',
           'parts': [
-            {'text': prompt}
-          ]
-        }
-      ]
+            {'text': prompt},
+          ],
+        },
+      ],
     };
     return _callWithModelList(models: _TEXT_MODELS, body: body);
   }
 
-  /// صورة(+نص) → نص
   Future<String> describeImage({
     required String prompt,
     required Uint8List imageBytes,
     String mimeType = 'image/jpeg',
   }) async {
-    final body = {
+    final body = <String, dynamic>{
       'contents': [
         {
           'role': 'user',
@@ -179,40 +190,39 @@ class GeminiService {
               'inlineData': {
                 'mimeType': mimeType,
                 'data': base64Encode(imageBytes),
-              }
-            }
-          ]
-        }
-      ]
+              },
+            },
+          ],
+        },
+      ],
     };
     return _callWithModelList(models: _VISION_MODELS, body: body);
   }
 
-  /// OCR منظَّم: صورة → JSON (ReceiptData)
   Future<ReceiptData?> extractReceipt(
       Uint8List imageBytes, {
         String mimeType = 'image/jpeg',
       }) async {
     const prompt = '''
-أنت مستخرج بيانات فواتير صارم. أعد فقط JSON خالص بدون أي نص آخر أو Markdown.
-المخرجات (JSON فقط):
+You are a strict receipt data extractor. Return ONLY a pure JSON object, no markdown or explanations.
+Schema:
 {
   "title": string|null,
   "shop_name": string|null,
-  "purchase_date": string|null,   // ISO YYYY-MM-DD
-  "total_amount": number|null,    // الإجمالي النهائي شامل الضرائب
-  "currency": string|null,        // مثل SAR أو USD
-  "return_deadline": string|null, // ISO أو null
-  "exchange_deadline": string|null, // ISO أو null
+  "purchase_date": string|null,    // ISO YYYY-MM-DD
+  "total_amount": number|null,
+  "currency": string|null,         // e.g., SAR or USD
+  "return_deadline": string|null,  // ISO or null
+  "exchange_deadline": string|null,// ISO or null
   "notes": string|null
 }
-قواعد:
-- طبّع التواريخ إلى ISO إن أمكن.
-- إذا ذُكر "X أيام للإرجاع/الاستبدال" حوّله إلى تاريخ مطلق انطلاقًا من purchase_date إن أمكن، وإلا اترك null واذكر ذلك في notes.
-IMPORTANT: Return ONLY the JSON object, nothing else.
+Rules:
+- Normalize dates to ISO when possible.
+- If only "X days for return/exchange" is found, convert from purchase_date if possible; else leave null and mention in notes.
+IMPORTANT: Return ONLY the JSON object.
 ''';
 
-    final body = {
+    final body = <String, dynamic>{
       'contents': [
         {
           'role': 'user',
@@ -222,18 +232,17 @@ IMPORTANT: Return ONLY the JSON object, nothing else.
               'inlineData': {
                 'mimeType': mimeType,
                 'data': base64Encode(imageBytes),
-              }
-            }
-          ]
-        }
-      ]
+              },
+            },
+          ],
+        },
+      ],
     };
 
-    final txt = (await _callWithModelList(models: _VISION_MODELS, body: body)).trim();
-    if (txt.isEmpty) return null;
+    final raw = (await _callWithModelList(models: _VISION_MODELS, body: body)).trim();
+    if (raw.isEmpty) return null;
 
-    // إزالة ```json ... ``` لو وُجدت + التقاط أول {...} إذا عاد نص إضافي
-    final stripped = txt.replaceAll(RegExp(r'^```(?:json)?|```$', multiLine: true), '').trim();
+    final stripped = raw.replaceAll(RegExp(r'^```(?:json)?|```$', multiLine: true), '').trim();
     String candidate = stripped;
     if (!candidate.trimLeft().startsWith('{')) {
       final m = RegExp(r'\{[\s\S]*\}').firstMatch(stripped);
@@ -242,7 +251,7 @@ IMPORTANT: Return ONLY the JSON object, nothing else.
 
     Map<String, dynamic>? obj;
     try {
-      obj = jsonDecode(candidate);
+      obj = jsonDecode(candidate) as Map<String, dynamic>?;
     } catch (_) {
       obj = null;
     }
@@ -250,19 +259,18 @@ IMPORTANT: Return ONLY the JSON object, nothing else.
     return ReceiptData.fromJson(obj);
   }
 
-  /// صورة → نص خام (OCR fallback)
   Future<String?> transcribeImage({
     required Uint8List imageBytes,
     String mimeType = 'image/jpeg',
   }) async {
     const prompt = '''
 You are an OCR engine. Extract PLAIN TEXT from this receipt image.
-- Language is primarily Arabic; keep Arabic digits if present.
-- Keep line breaks and table rows as you see them.
+- Primary language may be Arabic; preserve Arabic digits if present.
+- Keep line breaks and table rows.
 - Do NOT add explanations or JSON. TEXT ONLY.
 ''';
 
-    final body = {
+    final body = <String, dynamic>{
       'contents': [
         {
           'role': 'user',
@@ -272,22 +280,21 @@ You are an OCR engine. Extract PLAIN TEXT from this receipt image.
               'inlineData': {
                 'mimeType': mimeType,
                 'data': base64Encode(imageBytes),
-              }
-            }
-          ]
-        }
-      ]
+              },
+            },
+          ],
+        },
+      ],
     };
 
     final txt = (await _callWithModelList(models: _VISION_MODELS, body: body)).trim();
     if (txt.isEmpty) return null;
-
     final plain = txt.replaceAll(RegExp(r'^```(?:\\w+)?|```$', multiLine: true), '').trim();
     return plain.isEmpty ? null : plain;
   }
 }
 
-/// نموذج بيانات الفاتورة
+/// Receipt data model
 class ReceiptData {
   final String? title;
   final String? shopName;
@@ -309,7 +316,7 @@ class ReceiptData {
     this.notes,
   });
 
-  Map<String, dynamic> toPrefill() => {
+  Map<String, dynamic> toPrefill() => <String, dynamic>{
     if (title != null) 'title': title,
     if (shopName != null) 'shop_name': shopName,
     if (purchaseDate != null) 'purchase_date': purchaseDate,
@@ -323,10 +330,14 @@ class ReceiptData {
   static DateTime? _parseDate(dynamic v) {
     if (v == null) return null;
     if (v is int) {
-      try { return DateTime.fromMillisecondsSinceEpoch(v); } catch (_) {}
+      try {
+        return DateTime.fromMillisecondsSinceEpoch(v);
+      } catch (_) {}
     }
     if (v is String) {
-      try { return DateTime.parse(v); } catch (_) {}
+      try {
+        return DateTime.parse(v);
+      } catch (_) {}
     }
     return null;
   }
@@ -336,7 +347,9 @@ class ReceiptData {
     if (v is num) return v.toDouble();
     if (v is String) {
       final t = v.replaceAll(RegExp(r'[^\d\.,\-]'), '').replaceAll(',', '.');
-      try { return double.parse(t); } catch (_) {}
+      try {
+        return double.parse(t);
+      } catch (_) {}
     }
     return null;
   }
@@ -353,7 +366,7 @@ class ReceiptData {
   );
 }
 
-/// واجهة بسيطة للاستخدام من الـ UI
+/// Simple UI-facing wrapper
 class GeminiOcrService {
   GeminiOcrService._();
   static final GeminiOcrService I = GeminiOcrService._();
@@ -365,7 +378,6 @@ class GeminiOcrService {
     return GeminiService.i.extractReceipt(imageBytes, mimeType: mimeType);
   }
 
-  /// واجهة OCR نص خام (Fallback) — مطلوبة لو حبيتي تمرري النص لـ ReceiptParser
   Future<String?> ocrToText(
       Uint8List imageBytes, {
         String mimeType = 'image/jpeg',
@@ -373,4 +385,3 @@ class GeminiOcrService {
     return GeminiService.i.transcribeImage(imageBytes: imageBytes, mimeType: mimeType);
   }
 }
-
