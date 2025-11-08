@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'auth_service.dart';
+import '../../welcome/welcome_screen.dart'; // اختياري: ليس مطلوبًا للـ pop، لكن مفيد لو حبيتي تستخدمين pushReplacement
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -10,14 +11,13 @@ class LoginScreen extends StatefulWidget {
 }
 
 // ===== Palette & Style =====
-const Color _kBg      = Color(0xFF0E0B1F);   // خلفية عامة
-const Color _kCard    = Color(0xFF17122B);   // كرت أغمق قليلاً لراحة العين
-const Color _kField   = Color(0xFF221B3A);   // حقول
-const Color _kStroke  = Color(0x1AFFFFFF);   // حدود خفيفة جدًا
+const Color _kBg      = Color(0xFF0E0B1F);   // background
+const Color _kCard    = Color(0xFF17122B);   // card
+const Color _kField   = Color(0xFF221B3A);   // text fields
+const Color _kStroke  = Color(0x1AFFFFFF);   // subtle borders
 const Color _kText    = Colors.white;
 const Color _kTextSub = Color(0x99FFFFFF);
-const Color _kAccent  = Color(0xFF6A73FF);   // زر
-const Color _kAmber   = Color(0xFFFFD993);   // أصفر ناعم للعبارة
+const Color _kAccent  = Color(0xFF6A73FF);   // primary accent
 
 const double _kRadius = 20;
 
@@ -79,60 +79,36 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Directionality(
-      textDirection: TextDirection.rtl,
+      textDirection: TextDirection.ltr, // English layout
       child: Scaffold(
         backgroundColor: _kBg,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          leading: IconButton(
+            tooltip: 'Back',
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
+            onPressed: () {
+              // يكفي pop للرجوع للـ Welcome (بما أننا أتينا بـ pushNamed)
+              Navigator.pop(context);
+              // أو لو تبين فرض الرجوع للـ Welcome دومًا:
+              // Navigator.pushReplacementNamed(context, WelcomeScreen.route);
+            },
+          ),
+          title: const Text('Log in', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+          centerTitle: true,
+        ),
         body: SafeArea(
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 460),
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
                 child: SingleChildScrollView(
                   physics: const BouncingScrollPhysics(),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // ===== Logo (بدون حواف، مع وهج بسيط) =====
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(_kRadius),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFF6C3EFF).withOpacity(0.25),
-                              blurRadius: 28,
-                              spreadRadius: -6,
-                              offset: const Offset(0, 12),
-                            ),
-                          ],
-                        ),
-                        child: Image.asset(
-                          'assets/BillWise_logo.png',
-                          width: 120,
-                          height: 120,
-                          fit: BoxFit.contain,
-                          semanticLabel: 'BillWise Logo',
-                        ),
-                      ),
-
-                      const SizedBox(height: 14),
-
-                      // ===== عبارة وسطية (أصفر ناعم / وسط / بدون نقطة) =====
-                      const Text(
-                        'كل فواتيرك وضماناتك في مكان واحد',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: _kAmber,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          height: 1.3,
-                          letterSpacing: .2,
-                        ),
-                      ),
-
-                      const SizedBox(height: 20),
-
                       // ===== Form Card =====
                       Container(
                         width: double.infinity,
@@ -156,11 +132,10 @@ class _LoginScreenState extends State<LoginScreen> {
                           key: _formKey,
                           child: Column(
                             children: [
-                              // عنوان صغير داخل الكرت يوحّد التناسق
                               const Align(
-                                alignment: Alignment.centerRight,
+                                alignment: Alignment.centerLeft,
                                 child: Text(
-                                  'تسجيل الدخول',
+                                  'Welcome back',
                                   style: TextStyle(
                                     color: _kTextSub,
                                     fontSize: 13,
@@ -202,7 +177,6 @@ class _LoginScreenState extends State<LoginScreen> {
                                   (v == null || v.length < 6) ? 'At least 6 characters' : null,
                                 ),
                               ),
-
                               const SizedBox(height: 10),
 
                               if (_error != null)
@@ -228,7 +202,6 @@ class _LoginScreenState extends State<LoginScreen> {
                                     ],
                                   ),
                                 ),
-
                               const SizedBox(height: 14),
 
                               SizedBox(
@@ -248,10 +221,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                     width: 20, height: 20,
                                     child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                                   )
-                                      : const Text('Log in', style: TextStyle(fontSize: 16)),
+                                      : const Text('Log in', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
                                 ),
                               ),
-
                               const SizedBox(height: 8),
 
                               TextButton(

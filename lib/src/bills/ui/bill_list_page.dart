@@ -1,3 +1,4 @@
+// ================== Bills Page with Home GradientBottomBar ==================
 import 'dart:ui' as ui; // for TextDirection.ltr
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -9,6 +10,8 @@ import '../../common/widgets/expiry_progress.dart';
 import '../data/bill_service.dart';
 import 'add_bill_page.dart';
 import 'bill_detail_page.dart';
+// لو تبغى فتح تبويب الضمانات:
+import '../../warranties/ui/warranty_list_page.dart';
 
 // ===== نفس ألوان الهوم =====
 const Color _kBgDark   = Color(0xFF0E0722);
@@ -25,6 +28,152 @@ const LinearGradient _kSearchGradient = LinearGradient(
   end: Alignment.bottomRight,
 );
 
+// ============ Bottom Gradient Bar (منسوخة من الهوم) ============
+class GradientBottomBar extends StatelessWidget {
+  final int selectedIndex;               // 0 = Warranties, 1 = Bills
+  final ValueChanged<int> onTap;
+  final Color startColor;
+  final Color endColor;
+
+  const GradientBottomBar({
+    super.key,
+    required this.selectedIndex,
+    required this.onTap,
+    this.startColor = const Color(0xFF6C3EFF),
+    this.endColor   = const Color(0xFF3E8EFD),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+    return SafeArea(
+      top: false,
+      child: ClipRRect(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [startColor, endColor],
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.25),
+                  blurRadius: 16,
+                  offset: const Offset(0, -6),
+                ),
+              ],
+            ),
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(12, 8, 12, 8 + bottomInset),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _BottomItem(
+                    icon: Icons.verified_user_rounded,
+                    label: 'Warranties',
+                    selected: selectedIndex == 0,
+                    onTap: () => onTap(0),
+                  ),
+                  const SizedBox(width: 18),
+                  _FabDot(
+                    onTap: () {
+                      // يفتح صفحة الهوم
+                      Navigator.of(context, rootNavigator: true).pushNamed('/home');
+                    },
+                  ),
+                  const SizedBox(width: 18),
+                  _BottomItem(
+                    icon: Icons.receipt_long_rounded,
+                    label: 'Bills',
+                    selected: selectedIndex == 1,
+                    onTap: () => onTap(1),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BottomItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback? onTap;
+  const _BottomItem({required this.icon, required this.label, this.selected = false, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = selected ? Colors.white : Colors.white70;
+    final selectedBg = Colors.white.withOpacity(.16);
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? selectedBg : Colors.transparent,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: fg, size: 20),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.fade,
+              softWrap: false,
+              style: TextStyle(color: fg, fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FabDot extends StatelessWidget {
+  final VoidCallback? onTap;
+  const _FabDot({this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(27),
+      onTap: onTap,
+      child: Container(
+        width: 54, height: 54,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: const LinearGradient(
+            colors: [Color(0xFF6C3EFF), Color(0xFF3E8EFD)],
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF934DFE).withOpacity(.45),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
+            ),
+          ],
+          border: Border.all(color: Colors.white, width: 2),
+        ),
+        child: const Icon(Icons.home_filled, color: Colors.white),
+      ),
+    );
+  }
+}
+
+// ===============================================================
+
 class BillListPage extends StatefulWidget {
   const BillListPage({super.key});
   static const route = '/bills';
@@ -38,7 +187,6 @@ enum _BillSort { newest, oldest, nearExpiry }
 class _BillListPageState extends State<BillListPage> {
   final _searchCtrl = TextEditingController();
   final _money = NumberFormat.currency(locale: 'en', symbol: 'SAR ', decimalDigits: 2);
-
   _BillSort _sort = _BillSort.newest;
 
   @override
@@ -49,16 +197,19 @@ class _BillListPageState extends State<BillListPage> {
 
   // ================ Helpers ================
   DateTime _onlyDate(DateTime d) => DateTime(d.year, d.month, d.day);
+  int _monthsBetween(DateTime a, DateTime b) {
+    final aa = DateTime(a.year, a.month);
+    final bb = DateTime(b.year, b.month);
+    return (bb.year - aa.year) * 12 + (bb.month - aa.month);
+  }
 
   Color? _threeDayReturnColor(DateTime? startUtc, DateTime? endUtc) {
     if (startUtc == null || endUtc == null) return null;
     final s = _onlyDate(startUtc.toLocal());
     final e = _onlyDate(endUtc.toLocal());
     if (e.difference(s).inDays != 3) return null;
-
     final today = _onlyDate(DateTime.now());
     final diff = today.difference(s).inDays;
-
     if (diff < 0) return Colors.blueGrey;
     if (diff == 0) return Colors.green;
     if (diff == 1) return Colors.orange;
@@ -71,10 +222,8 @@ class _BillListPageState extends State<BillListPage> {
     final s = _onlyDate(startUtc.toLocal());
     final e = _onlyDate(endUtc.toLocal());
     if (e.difference(s).inDays != 3) return null;
-
     final today = _onlyDate(DateTime.now());
     final diff = today.difference(s).inDays;
-
     if (diff < 0) return 'Starts soon';
     if (diff == 0) return 'Day 1 of 3';
     if (diff == 1) return 'Day 2 of 3';
@@ -87,10 +236,8 @@ class _BillListPageState extends State<BillListPage> {
     final s = _onlyDate(startUtc.toLocal());
     final e = _onlyDate(endUtc.toLocal());
     if (e.difference(s).inDays != 7) return null;
-
     final today = _onlyDate(DateTime.now());
     final diff = today.difference(s).inDays + 1;
-
     if (diff <= 0) return Colors.blueGrey;
     if (diff >= 1 && diff <= 3) return Colors.green;
     if (diff >= 4 && diff <= 6) return Colors.orange;
@@ -103,10 +250,8 @@ class _BillListPageState extends State<BillListPage> {
     final s = _onlyDate(startUtc.toLocal());
     final e = _onlyDate(endUtc.toLocal());
     if (e.difference(s).inDays != 7) return null;
-
     final today = _onlyDate(DateTime.now());
     final diff = today.difference(s).inDays + 1;
-
     if (diff <= 0) return 'Starts soon';
     if (diff >= 1 && diff <= 3) return 'Days 1–3 of 7';
     if (diff >= 4 && diff <= 6) return 'Days 4–6 of 7';
@@ -114,25 +259,16 @@ class _BillListPageState extends State<BillListPage> {
     return 'Expired';
   }
 
-  int _monthsBetween(DateTime a, DateTime b) {
-    final aa = DateTime(a.year, a.month);
-    final bb = DateTime(b.year, b.month);
-    return (bb.year - aa.year) * 12 + (bb.month - aa.month);
-  }
-
   Color? _warrantyColor(DateTime? startUtc, DateTime? endUtc) {
     if (startUtc == null || endUtc == null) return null;
-
     final s = _onlyDate(startUtc.toLocal());
     final e = _onlyDate(endUtc.toLocal());
     final today = _onlyDate(DateTime.now());
-
     if (today.isBefore(s)) return Colors.blueGrey;
     if (!today.isBefore(e)) return Colors.grey;
 
     final totalMonths = _monthsBetween(s, e);
     final elapsedMonths = _monthsBetween(s, today);
-
     if (totalMonths >= 23 && totalMonths <= 25) {
       if (elapsedMonths < 12) return Colors.green;
       if (elapsedMonths < 18) return Colors.orange;
@@ -142,10 +278,8 @@ class _BillListPageState extends State<BillListPage> {
     final totalDays = e.difference(s).inDays;
     final elapsedDays = today.difference(s).inDays;
     if (totalDays <= 0) return Colors.grey;
-
     final t1 = (totalDays / 3).ceil();
     final t2 = (2 * totalDays / 3).ceil();
-
     if (elapsedDays < t1) return Colors.green;
     if (elapsedDays < t2) return Colors.orange;
     return Colors.red;
@@ -153,17 +287,14 @@ class _BillListPageState extends State<BillListPage> {
 
   String? _warrantyLabel(DateTime? startUtc, DateTime? endUtc) {
     if (startUtc == null || endUtc == null) return null;
-
     final s = _onlyDate(startUtc.toLocal());
     final e = _onlyDate(endUtc.toLocal());
     final today = _onlyDate(DateTime.now());
-
     if (today.isBefore(s)) return 'Starts soon';
     if (!today.isBefore(e)) return 'Expired';
 
     final totalMonths = _monthsBetween(s, e);
     final elapsedMonths = _monthsBetween(s, today);
-
     if (totalMonths >= 23 && totalMonths <= 25) {
       if (elapsedMonths < 12) return 'Year 1 of 2';
       if (elapsedMonths < 18) return 'Year 2 (first 6 months)';
@@ -173,10 +304,8 @@ class _BillListPageState extends State<BillListPage> {
     final totalDays = e.difference(s).inDays;
     final elapsedDays = today.difference(s).inDays;
     if (totalDays <= 0) return 'Expired';
-
     final t1 = (totalDays / 3).ceil();
     final t2 = (2 * totalDays / 3).ceil();
-
     if (elapsedDays < t1) return 'First third';
     if (elapsedDays < t2) return 'Second third';
     return 'Final third';
@@ -184,7 +313,6 @@ class _BillListPageState extends State<BillListPage> {
 
   Chip _statusChip(DateTime? startUtc, DateTime? endUtc, {Color? overrideColor}) {
     if (startUtc == null || endUtc == null) return const Chip(label: Text('—'));
-
     final s = _onlyDate(startUtc.toLocal());
     final e = _onlyDate(endUtc.toLocal());
     final today = _onlyDate(DateTime.now());
@@ -194,17 +322,11 @@ class _BillListPageState extends State<BillListPage> {
     late IconData icon;
 
     if (today.isBefore(s)) {
-      text = 'upcoming';
-      color = Colors.blueGrey;
-      icon = Icons.schedule;
+      text = 'upcoming'; color = Colors.blueGrey; icon = Icons.schedule;
     } else if (today.isAfter(e) || today.isAtSameMomentAs(e)) {
-      text = 'expired';
-      color = Colors.red;
-      icon = Icons.close_rounded;
+      text = 'expired';  color = Colors.red;      icon = Icons.close_rounded;
     } else {
-      text = 'active';
-      color = overrideColor ?? Colors.green;
-      icon = Icons.check_circle_rounded;
+      text = 'active';   color = overrideColor ?? Colors.green; icon = Icons.check_circle_rounded;
     }
 
     return Chip(
@@ -216,11 +338,7 @@ class _BillListPageState extends State<BillListPage> {
     );
   }
 
-  Widget _policyBlock({
-    required String title,
-    required DateTime? start,
-    required DateTime? end,
-  }) {
+  Widget _policyBlock({required String title, required DateTime? start, required DateTime? end}) {
     if (start == null || end == null) return const SizedBox.shrink();
 
     final kind = title.toLowerCase();
@@ -243,36 +361,32 @@ class _BillListPageState extends State<BillListPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (threeDayColor != null) ...[
-          Row(
-            children: [
-              Container(width: 10, height: 10, decoration: BoxDecoration(color: threeDayColor, shape: BoxShape.circle)),
-              const SizedBox(width: 8),
-              Text(threeDayLabel ?? 'Return (3-day window)', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500)),
-            ],
-          ),
+          Row(children: [
+            Container(width: 10, height: 10, decoration: BoxDecoration(color: threeDayColor, shape: BoxShape.circle)),
+            const SizedBox(width: 8),
+            Text(threeDayLabel ?? 'Return (3-day window)',
+                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500)),
+          ]),
           const SizedBox(height: 6),
         ],
         if (sevenDayColor != null) ...[
-          Row(
-            children: [
-              Container(width: 10, height: 10, decoration: BoxDecoration(color: sevenDayColor, shape: BoxShape.circle)),
-              const SizedBox(width: 8),
-              Text(sevenDayLabel ?? 'Exchange (7-day window)', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500)),
-            ],
-          ),
+          Row(children: [
+            Container(width: 10, height: 10, decoration: BoxDecoration(color: sevenDayColor, shape: BoxShape.circle)),
+            const SizedBox(width: 8),
+            Text(sevenDayLabel ?? 'Exchange (7-day window)',
+                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500)),
+          ]),
           const SizedBox(height: 6),
         ],
         if (warrantyColor != null) ...[
-          Row(
-            children: [
-              Container(width: 10, height: 10, decoration: BoxDecoration(color: warrantyColor, shape: BoxShape.circle)),
-              const SizedBox(width: 8),
-              Text(warrantyLabel ?? 'Warranty (3 segments)', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500)),
-            ],
-          ),
+          Row(children: [
+            Container(width: 10, height: 10, decoration: BoxDecoration(color: warrantyColor, shape: BoxShape.circle)),
+            const SizedBox(width: 8),
+            Text(warrantyLabel ?? 'Warranty (3 segments)',
+                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500)),
+          ]),
           const SizedBox(height: 6),
         ],
-
         ExpiryProgress(
           title: title,
           startDate: start,
@@ -282,24 +396,18 @@ class _BillListPageState extends State<BillListPage> {
           barColor: barColor,
         ),
         const SizedBox(height: 6),
-
-        Align(
-          alignment: Alignment.centerLeft,
-          child: _statusChip(start, end, overrideColor: barColor),
-        ),
+        Align(alignment: Alignment.centerLeft, child: _statusChip(start, end, overrideColor: barColor)),
       ],
     );
   }
 
   DateTime? _nearestExpiry(Map<String, dynamic> d) {
     DateTime? parseTs(dynamic v) => (v is Timestamp) ? v.toDate().toLocal() : null;
-
     DateTime? minDate(DateTime? a, DateTime? b) {
       if (a == null) return b;
       if (b == null) return a;
       return a.isBefore(b) ? a : b;
     }
-
     final ret = parseTs(d['return_deadline']);
     final ex  = parseTs(d['exchange_deadline']);
     final w   = parseTs(d['warranty_end_date']);
@@ -315,15 +423,28 @@ class _BillListPageState extends State<BillListPage> {
       textDirection: ui.TextDirection.ltr,
       child: Scaffold(
         backgroundColor: _kBgDark,
+
+        // ===== AppBar بدون سهم =====
         appBar: AppBar(
-          automaticallyImplyLeading: false, // نتحكم يدويًا
-          leading: const BackButton(color: Colors.white), // ✅ سهم رجوع ثابت
+          automaticallyImplyLeading: false, // لا تظهر أسهم تلقائيًا
           backgroundColor: Colors.transparent,
           elevation: 0,
           title: const Text('Bills', style: TextStyle(color: Colors.white)),
-          actions: const [_LogoStub()],
           flexibleSpace: Container(decoration: const BoxDecoration(gradient: _kHeaderGradient)),
         ),
+
+        // ===== Bottom Bar حق الهوم =====
+        bottomNavigationBar: GradientBottomBar(
+          selectedIndex: 1, // Bills
+          onTap: (i) {
+            if (i == 0) {
+              Navigator.of(context, rootNavigator: true).pushNamed(WarrantyListPage.route);
+            } else if (i == 1) {
+              // أنت بالفعل في Bills — لا شيء
+            }
+          },
+        ),
+
         floatingActionButton: FloatingActionButton(
           onPressed: () async {
             await Navigator.of(context, rootNavigator: true)
@@ -332,11 +453,12 @@ class _BillListPageState extends State<BillListPage> {
           },
           child: const Icon(Icons.add),
         ),
+
         body: uid == null
             ? const Center(child: Text('Please sign in to view your bills.', style: TextStyle(color: Colors.white)))
             : Column(
           children: [
-            // ====== شريط بحث بنفس ستايل الهوم ======
+            // ====== شريط البحث بنفس ستايل الهوم ======
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
               child: Container(
@@ -345,7 +467,11 @@ class _BillListPageState extends State<BillListPage> {
                   borderRadius: BorderRadius.circular(16),
                   gradient: _kSearchGradient,
                   boxShadow: [
-                    BoxShadow(color: const Color(0xFF934DFE).withOpacity(.45), blurRadius: 16, offset: const Offset(0, 6)),
+                    BoxShadow(
+                      color: const Color(0xFF934DFE).withOpacity(.45),
+                      blurRadius: 16,
+                      offset: const Offset(0, 6),
+                    ),
                   ],
                 ),
                 child: Row(
@@ -461,7 +587,7 @@ class _BillListPageState extends State<BillListPage> {
                   }
 
                   return ListView.separated(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
                     separatorBuilder: (_, __) => const SizedBox(height: 8),
                     itemCount: docs.length,
                     itemBuilder: (_, i) {
@@ -478,8 +604,6 @@ class _BillListPageState extends State<BillListPage> {
 
                       final hasWarranty = (d['warranty_coverage'] as bool?) ?? false;
                       final wEnd        = (d['warranty_end_date'] as Timestamp?)?.toDate().toLocal();
-
-                      final hasReceipt = (d['receipt_image_path'] as String?)?.trim().isNotEmpty == true;
 
                       return Container(
                         decoration: BoxDecoration(
@@ -503,22 +627,12 @@ class _BillListPageState extends State<BillListPage> {
                                 style: const TextStyle(color: Colors.white70, fontSize: 12),
                               ),
                               const SizedBox(height: 10),
-
                               _policyBlock(title: 'Return',   start: purchase, end: ret),
                               const SizedBox(height: 10),
                               _policyBlock(title: 'Exchange', start: purchase, end: ex),
                               const SizedBox(height: 10),
-
                               if (hasWarranty && wEnd != null)
                                 _policyBlock(title: 'Warranty', start: purchase, end: wEnd),
-                            ],
-                          ),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: const [
-                              // ملاحظة: ممكن تبدّل للأيقونة حسب hasReceipt لو تبغين
-                              // لكن على خلفية داكنة نخليه بسيط
-                              Icon(Icons.chevron_right, color: Colors.white),
                             ],
                           ),
                           onTap: () {
@@ -546,25 +660,6 @@ class _BillListPageState extends State<BillListPage> {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-// =============== Small bits ===============
-class _LogoStub extends StatelessWidget {
-  const _LogoStub();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 12),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text('B', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Colors.white)),
-          Text('ill Wise', style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.white70)),
-        ],
       ),
     );
   }

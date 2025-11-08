@@ -51,6 +51,9 @@ import 'src/common/soft_pastel_background.dart';
 // App Shell
 import 'src/shell/app_shell.dart';
 
+// Welcome
+import 'welcome/welcome_screen.dart';
+
 /// معالج FCM في الخلفية (top-level)
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
@@ -108,13 +111,10 @@ class App extends StatelessWidget {
         scaffoldBackgroundColor: Colors.transparent,
         canvasColor: Colors.transparent,
         cardColor: const Color(0x1AFFFFFF),
-
-        // لا نحدد BottomAppBarTheme / NavigationBarTheme هنا لتفادي اختلاف الأنواع
-        // نضبط ألوان السطح عبر الـ ColorScheme
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF6C3EFF),
           brightness: Brightness.dark,
-          surface: bg,        // بديل background (المحذوف)
+          surface: bg,
           onSurface: Colors.white,
           primary: const Color(0xFF6C3EFF),
           onPrimary: Colors.white,
@@ -129,13 +129,21 @@ class App extends StatelessWidget {
       home: const _RootGate(),
 
       routes: {
-        LoginScreen.route: (_) => const LoginScreen(),
-        RegisterScreen.route: (_) => const RegisterScreen(),
-        HomeScreen.route: (_) => const HomeScreen(), // للتوافق
+        // Welcome + Auth
+        WelcomeScreen.route: (_) => const WelcomeScreen(),
+        LoginScreen.route:   (_) => const LoginScreen(),
+        RegisterScreen.route:(_) => const RegisterScreen(),
+
+        // للتوافق
+        HomeScreen.route: (_) => const HomeScreen(),
+
+        // Bills / Warranties
         BillListPage.route: (_) => const BillListPage(),
         WarrantyListPage.route: (_) => const WarrantyListPage(),
         ScanReceiptPage.route: (_) => const ScanReceiptPage(),
         AddBillPage.route: (_) => const AddBillPage(),
+
+        // Profile / Notifs
         EditProfilePage.route: (_) => const EditProfilePage(),
         NotificationsPage.route: (_) => const NotificationsPage(),
         ProfilePage.route: (_) => const ProfilePage(),
@@ -306,7 +314,8 @@ class _RootGateState extends State<_RootGate> {
           // ملاحظة: AppShell لازم يستخدم Scaffold(extendBody: true, backgroundColor: Colors.transparent)
           return const AppShell();
         }
-        return const LoginScreen();
+        // ← غيرنا الشاشة الافتراضية لغير المسجلين إلى شاشة الترحيب
+        return const WelcomeScreen();
       },
     );
   }
