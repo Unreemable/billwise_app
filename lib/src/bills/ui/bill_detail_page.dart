@@ -499,18 +499,14 @@ Widget _section({
   required DateTime end,
   required bool months,
 }) {
-  return Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      Text(title, style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.white)),
-      const SizedBox(height: 6),
-      ExpiryProgress(
-        title: title,
-        startDate: start,
-        endDate: end,
-        showInMonths: months,
-        dense: true,
-      ),
-    ],
+  // نعتمد على ExpiryProgress ليسحب اللون/المرحلة ويعرضهم بنفس المنطق الموحّد
+  return ExpiryProgress(
+    title: title,
+    startDate: start,
+    endDate: end,
+    showInMonths: months,
+    dense: true,
+    showTitle: true,
+    showStatus: true,
   );
 }
