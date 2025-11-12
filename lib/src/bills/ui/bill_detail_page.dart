@@ -12,6 +12,13 @@ const List<String> _kMonthNames = [
   'July','August','September','October','November','December'
 ];
 
+// ===== الحالة العامة للفاتورة =====
+enum _BillOverallStatus {
+  active,        // رجوع + استبدال شغّالة أو على الأقل الاسترجاع شغّال
+  exchangeOnly,  // الاسترجاع انتهى، الاستبدال فقط شغّال
+  expired,       // لا استرجاع ولا استبدال
+}
+
 class BillDetailPage extends StatefulWidget {
   const BillDetailPage({super.key, required this.details});
   static const route = '/bill-detail';
@@ -39,6 +46,75 @@ class _BillDetailPageState extends State<BillDetailPage> {
     super.initState();
     _d = widget.details;
     _loadReceiptPath();
+  }
+
+  // ===== منطق الحالة العامة للفاتورة =====
+
+  bool _isSameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  _BillOverallStatus get _overallStatus {
+    final today = DateTime.now();
+    final DateTime? ret = _d.returnDeadline;
+    final DateTime? exc = _d.exchangeDeadline;
+
+    // لو ما فيه لا استرجاع ولا استبدال نعتبرها منتهية (من ناحية حقوق استرجاع/استبدال)
+    if (ret == null && exc == null) {
+      return _BillOverallStatus.expired;
+    }
+
+    // 1) الاسترجاع شغّال → أخضر
+    if (ret != null &&
+        (today.isBefore(ret) || _isSameDay(today, ret))) {
+      return _BillOverallStatus.active;
+    }
+
+    // 2) الاسترجاع انتهى، لكن الاستبدال باقي → برتقالي
+    if (exc != null &&
+        (today.isBefore(exc) || _isSameDay(today, exc))) {
+      return _BillOverallStatus.exchangeOnly;
+    }
+
+    // 3) لا استرجاع ولا استبدال متاح الآن → أحمر
+    return _BillOverallStatus.expired;
+  }
+
+  Widget _buildOverallStatusPill() {
+    final status = _overallStatus;
+
+    late Color color;
+    late String label;
+
+    switch (status) {
+      case _BillOverallStatus.active:
+        color = Colors.green;
+        label = 'active';
+        break;
+      case _BillOverallStatus.exchangeOnly:
+        color = Colors.orange;
+        label = 'exchange only';
+        break;
+      case _BillOverallStatus.expired:
+        color = Colors.red;
+        label = 'expired';
+        break;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
   }
 
   Future<void> _loadReceiptPath() async {
@@ -269,17 +345,6 @@ class _BillDetailPageState extends State<BillDetailPage> {
     amountCtrl.dispose();
   }
 
-  // ===== UI helpers =====
-
-  Widget _pill(String text) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-    decoration: BoxDecoration(
-      color: Colors.deepPurple.withOpacity(.08),
-      borderRadius: BorderRadius.circular(12),
-    ),
-    child: Text(text, style: Theme.of(context).textTheme.labelMedium),
-  );
-
   Widget _receiptSection() {
     if (_loadingReceipt) {
       return const Padding(
@@ -392,21 +457,39 @@ class _BillDetailPageState extends State<BillDetailPage> {
                             maxLines: 1,
                           ),
                         ),
-                        if (_primaryEnd != null) _pill('Expires ${_pretty(_primaryEnd!)}'),
+                        if (_primaryEnd != null) ...[
+                          const SizedBox(width: 8),
+                          _buildOverallStatusPill(), // 👈 badge واحدة عامة للفاتورة
+                        ],
                       ],
                     ),
 
                     const SizedBox(height: 14),
 
                     if (_d.returnDeadline != null)
-                      _section(title: 'Return', start: _d.purchaseDate, end: _d.returnDeadline!, months: false),
+                      _section(
+                        title: 'Return',
+                        start: _d.purchaseDate,
+                        end: _d.returnDeadline!,
+                        months: false,
+                      ),
                     if (_d.exchangeDeadline != null) ...[
                       const SizedBox(height: 8),
-                      _section(title: 'Exchange', start: _d.purchaseDate, end: _d.exchangeDeadline!, months: false),
+                      _section(
+                        title: 'Exchange',
+                        start: _d.purchaseDate,
+                        end: _d.exchangeDeadline!,
+                        months: false,
+                      ),
                     ],
                     if (_d.warrantyExpiry != null) ...[
                       const SizedBox(height: 8),
-                      _section(title: 'Warranty', start: _d.purchaseDate, end: _d.warrantyExpiry!, months: true),
+                      _section(
+                        title: 'Warranty',
+                        start: _d.purchaseDate,
+                        end: _d.warrantyExpiry!,
+                        months: true,
+                      ),
                     ],
 
                     const SizedBox(height: 6),
@@ -499,7 +582,7 @@ Widget _section({
   required DateTime end,
   required bool months,
 }) {
-  // نعتمد على ExpiryProgress ليسحب اللون/المرحلة ويعرضهم بنفس المنطق الموحّد
+  // نحافظ على نفس الـ ExpiryProgress لكن بدون عرض حالة إضافية
   return ExpiryProgress(
     title: title,
     startDate: start,
@@ -507,6 +590,6 @@ Widget _section({
     showInMonths: months,
     dense: true,
     showTitle: true,
-    showStatus: true,
+    showStatus: false, // 👈 منع تكرار badges "active" لكل قسم
   );
 }

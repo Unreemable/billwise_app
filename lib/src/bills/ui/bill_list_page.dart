@@ -184,6 +184,13 @@ class BillListPage extends StatefulWidget {
 
 enum _BillSort { newest, oldest, nearExpiry }
 
+// ✅ حالة الفاتورة الواحدة (مربع واحد في الليست)
+enum _BillOverallStatus {
+  active,        // 🟢 الاسترجاع شغّال
+  exchangeOnly,  // 🟠 الاسترجاع منتهي، الاستبدال شغّال
+  expired,       // 🔴 الاثنين منتهين
+}
+
 class _BillListPageState extends State<BillListPage> {
   final _searchCtrl = TextEditingController();
   final _money = NumberFormat.currency(locale: 'en', symbol: 'SAR ', decimalDigits: 2);
@@ -201,6 +208,61 @@ class _BillListPageState extends State<BillListPage> {
     final aa = DateTime(a.year, a.month);
     final bb = DateTime(b.year, b.month);
     return (bb.year - aa.year) * 12 + (bb.month - aa.month);
+  }
+
+  // ==== منطق المربع الوحيد لكل فاتورة ====
+  _BillOverallStatus _overallStatusForBill(DateTime? returnUtc, DateTime? exchangeUtc) {
+    final today = _onlyDate(DateTime.now());
+    final ret = returnUtc == null ? null : _onlyDate(returnUtc.toLocal());
+    final ex  = exchangeUtc == null ? null : _onlyDate(exchangeUtc.toLocal());
+
+    // 🟢 الاسترجاع ما زال في مدّته (اليوم أقل من تاريخ النهاية فقط)
+    if (ret != null && today.isBefore(ret)) {
+      return _BillOverallStatus.active;
+    }
+
+    // 🟠 الاسترجاع انتهى (اليوم >= تاريخ النهاية) لكن الاستبدال ما زال متاح
+    if (ex != null && (today.isBefore(ex) || today.isAtSameMomentAs(ex))) {
+      return _BillOverallStatus.exchangeOnly;
+    }
+
+    // 🔴 انتهى الاسترجاع والاستبدال (أو لا يوجد كلاهما)
+    return _BillOverallStatus.expired;
+  }
+
+  Widget _billStatusChip(DateTime? returnUtc, DateTime? exchangeUtc) {
+    final status = _overallStatusForBill(returnUtc, exchangeUtc);
+
+    late Color color;
+    late String text;
+    IconData icon = Icons.check_circle_rounded;
+
+    switch (status) {
+      case _BillOverallStatus.active:       // 🟢
+        color = Colors.green;
+        text = 'active';
+        break;
+      case _BillOverallStatus.exchangeOnly: // 🟠
+        color = Colors.orange;
+        text = 'active';
+        break;
+      case _BillOverallStatus.expired:      // 🔴
+        color = Colors.red;
+        text = 'expired';
+        icon = Icons.close_rounded;
+        break;
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(top: 4),
+      child: Chip(
+        avatar: Icon(icon, size: 16, color: Colors.white),
+        label: Text(text, style: const TextStyle(color: Colors.white)),
+        backgroundColor: color,
+        visualDensity: VisualDensity.compact,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+      ),
+    );
   }
 
   Color? _threeDayReturnColor(DateTime? startUtc, DateTime? endUtc) {
@@ -311,33 +373,6 @@ class _BillListPageState extends State<BillListPage> {
     return 'Final third';
   }
 
-  Chip _statusChip(DateTime? startUtc, DateTime? endUtc, {Color? overrideColor}) {
-    if (startUtc == null || endUtc == null) return const Chip(label: Text('—'));
-    final s = _onlyDate(startUtc.toLocal());
-    final e = _onlyDate(endUtc.toLocal());
-    final today = _onlyDate(DateTime.now());
-
-    late String text;
-    late Color color;
-    late IconData icon;
-
-    if (today.isBefore(s)) {
-      text = 'upcoming'; color = Colors.blueGrey; icon = Icons.schedule;
-    } else if (today.isAfter(e) || today.isAtSameMomentAs(e)) {
-      text = 'expired';  color = Colors.red;      icon = Icons.close_rounded;
-    } else {
-      text = 'active';   color = overrideColor ?? Colors.green; icon = Icons.check_circle_rounded;
-    }
-
-    return Chip(
-      avatar: Icon(icon, size: 16, color: Colors.white),
-      label: Text(text, style: const TextStyle(color: Colors.white)),
-      backgroundColor: color,
-      visualDensity: VisualDensity.compact,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-    );
-  }
-
   Widget _policyBlock({required String title, required DateTime? start, required DateTime? end}) {
     if (start == null || end == null) return const SizedBox.shrink();
 
@@ -396,7 +431,7 @@ class _BillListPageState extends State<BillListPage> {
           barColor: barColor,
         ),
         const SizedBox(height: 6),
-        Align(alignment: Alignment.centerLeft, child: _statusChip(start, end, overrideColor: barColor)),
+        // ❌ ما في statusChip هنا، المربع صار واحد عام تحت Return فوق Exchange
       ],
     );
   }
@@ -627,14 +662,25 @@ class _BillListPageState extends State<BillListPage> {
                                 style: const TextStyle(color: Colors.white70, fontSize: 12),
                               ),
                               const SizedBox(height: 10),
+
+                              // ===== Return & Exchange & Warranty =====
                               _policyBlock(title: 'Return',   start: purchase, end: ret),
                               const SizedBox(height: 10),
+
                               _policyBlock(title: 'Exchange', start: purchase, end: ex),
                               const SizedBox(height: 10),
-                              if (hasWarranty && wEnd != null)
+
+                              if (hasWarranty && wEnd != null) ...[
                                 _policyBlock(title: 'Warranty', start: purchase, end: wEnd),
+                                const SizedBox(height: 10),
+                              ],
+
+                              // ===== المربع الوحيد تحت آخر مربع في الكرت =====
+                              _billStatusChip(ret, ex),
                             ],
                           ),
+
+                          // ❌ ما في trailing chip، كله تحت Return
                           onTap: () {
                             final details = BillDetails(
                               id: doc.id,
