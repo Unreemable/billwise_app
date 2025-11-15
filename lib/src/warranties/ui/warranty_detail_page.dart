@@ -1,6 +1,6 @@
-import 'dart:ui' as ui;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'dart:ui' as ui;
 
 import '../../common/models.dart';
 import '../../common/widgets/expiry_progress.dart';
@@ -37,10 +37,40 @@ class WarrantyDetailPage extends StatefulWidget {
 class _WarrantyDetailPageState extends State<WarrantyDetailPage> {
   late WarrantyDetails _d;
 
+  String? _productName;
+  String? _serialNumber;
+  String? _attachmentName;
+  bool _loadingExtra = false;
+
   @override
   void initState() {
     super.initState();
     _d = widget.details;
+    _loadExtraFields();
+  }
+
+  Future<void> _loadExtraFields() async {
+    if (_d.id == null || _d.id!.isEmpty) return;
+    setState(() => _loadingExtra = true);
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('Warranties')
+          .doc(_d.id)
+          .get();
+      if (!mounted || !snap.exists) return;
+      final data = snap.data()!;
+      final pn = (data['product_name'] ?? '').toString().trim();
+      final sn = (data['serial_number'] ?? '').toString().trim();
+      final attName = (data['attachment_name'] ?? '').toString().trim();
+
+      setState(() {
+        _productName   = pn.isEmpty ? null : pn;
+        _serialNumber  = sn.isEmpty ? null : sn;
+        _attachmentName = attName.isEmpty ? null : attName;
+      });
+    } finally {
+      if (mounted) setState(() => _loadingExtra = false);
+    }
   }
 
   String _fmtPretty(DateTime d) =>
@@ -88,8 +118,11 @@ class _WarrantyDetailPageState extends State<WarrantyDetailPage> {
       return;
     }
 
-    final titleCtrl   = TextEditingController(text: _d.title);
-    final productCtrl = TextEditingController(text: _d.product);
+    final titleCtrl    = TextEditingController(text: _d.title);
+    final providerCtrl = TextEditingController(text: _d.product);         // المتجر/المزوّد
+    final productCtrl  = TextEditingController(text: _productName ?? ''); // اسم المنتج
+    final serialCtrl   = TextEditingController(text: _serialNumber ?? '');
+
     DateTime start = DateTime(_d.warrantyStart.year, _d.warrantyStart.month, _d.warrantyStart.day);
     DateTime end   = DateTime(_d.warrantyExpiry.year, _d.warrantyExpiry.month, _d.warrantyExpiry.day);
 
@@ -129,15 +162,29 @@ class _WarrantyDetailPageState extends State<WarrantyDetailPage> {
 
                     _GlassField(
                       controller: titleCtrl,
-                      label: 'Title',
+                      label: 'Warranty title',
                       icon: Icons.text_fields,
                     ),
                     const SizedBox(height: 8),
 
                     _GlassField(
+                      controller: providerCtrl,
+                      label: 'Provider / Store',
+                      icon: Icons.store_outlined,
+                    ),
+                    const SizedBox(height: 8),
+
+                    _GlassField(
                       controller: productCtrl,
-                      label: 'Product / Provider',
-                      icon: Icons.verified_user_outlined,
+                      label: 'Product name (optional)',
+                      icon: Icons.shopping_bag_outlined,
+                    ),
+                    const SizedBox(height: 8),
+
+                    _GlassField(
+                      controller: serialCtrl,
+                      label: 'Serial number (optional)',
+                      icon: Icons.confirmation_number_outlined,
                     ),
                     const SizedBox(height: 12),
 
@@ -167,29 +214,43 @@ class _WarrantyDetailPageState extends State<WarrantyDetailPage> {
     );
 
     if (saved == true) {
-      final title   = titleCtrl.text.trim().isEmpty ? '—' : titleCtrl.text.trim();
-      final product = productCtrl.text.trim().isEmpty ? 'Warranty' : productCtrl.text.trim();
+      final title       = titleCtrl.text.trim().isEmpty ? '—' : titleCtrl.text.trim();
+      final provider    = providerCtrl.text.trim().isEmpty ? 'Warranty' : providerCtrl.text.trim();
+      final productName = productCtrl.text.trim();
+      final serial      = serialCtrl.text.trim();
 
       final payload = <String, dynamic>{
         'title'      : title,
-        'provider'   : product,
+        'provider'   : provider,
         'start_date' : Timestamp.fromDate(start),
         'end_date'   : Timestamp.fromDate(end),
       };
 
       try {
-        await FirebaseFirestore.instance.collection('Warranties').doc(_d.id).update(payload);
+        final docRef = FirebaseFirestore.instance.collection('Warranties').doc(_d.id);
+        await docRef.update(payload);
+
+        // product_name + serial_number
+        await docRef.set(
+          {
+            if (productName.isNotEmpty) 'product_name': productName else 'product_name': FieldValue.delete(),
+            if (serial.isNotEmpty)      'serial_number': serial else 'serial_number': FieldValue.delete(),
+          },
+          SetOptions(merge: true),
+        );
 
         setState(() {
           _d = WarrantyDetails(
             id: _d.id,
             title: title,
-            product: product,
+            product: provider,
             warrantyStart: start,
             warrantyExpiry: end,
             returnDeadline: _d.returnDeadline,
             reminderDate: _d.reminderDate,
           );
+          _productName  = productName.isEmpty ? null : productName;
+          _serialNumber = serial.isEmpty ? null : serial;
         });
 
         _toast('Saved successfully');
@@ -199,7 +260,9 @@ class _WarrantyDetailPageState extends State<WarrantyDetailPage> {
     }
 
     titleCtrl.dispose();
+    providerCtrl.dispose();
     productCtrl.dispose();
+    serialCtrl.dispose();
   }
 
   // ===== UI =====
@@ -218,7 +281,6 @@ class _WarrantyDetailPageState extends State<WarrantyDetailPage> {
           actions: const [_LogoStub()],
         ),
 
-        // شريط أزرار عائم متناسق
         bottomNavigationBar: SafeArea(
           top: false,
           child: Padding(
@@ -260,7 +322,6 @@ class _WarrantyDetailPageState extends State<WarrantyDetailPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // العنوان والشارة
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
@@ -299,7 +360,6 @@ class _WarrantyDetailPageState extends State<WarrantyDetailPage> {
 
                     const SizedBox(height: 14),
 
-                    // Progress (months)
                     ExpiryProgress(
                       title: 'Warranty status',
                       startDate: _d.warrantyStart,
@@ -309,11 +369,21 @@ class _WarrantyDetailPageState extends State<WarrantyDetailPage> {
 
                     const SizedBox(height: 18),
 
-                    _kv('Product', _d.product),
+                    _kv('Provider / Store', _d.product),
+                    _kv('Product name', _productName ?? '—'),
+                    _kv('Serial number', _serialNumber ?? '—'),
                     _kv('Warranty start date', _ymd(_d.warrantyStart)),
                     _kv('Warranty expiry date', _ymd(_d.warrantyExpiry)),
                     if (_d.returnDeadline != null)
                       _kv('Return deadline', _ymd(_d.returnDeadline)),
+                    if (_attachmentName != null)
+                      _kv('Attachment', _attachmentName!),
+
+                    if (_loadingExtra)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 8.0),
+                        child: LinearProgressIndicator(minHeight: 2),
+                      ),
                   ],
                 ),
               ),
@@ -325,7 +395,7 @@ class _WarrantyDetailPageState extends State<WarrantyDetailPage> {
   }
 }
 
-// ===== عناصر واجهة صغيرة متناسقة مع الهوم =====
+// ===== عناصر واجهة صغيرة =====
 Widget _kv(String k, String v) => Padding(
   padding: const EdgeInsets.only(bottom: 10),
   child: Row(
@@ -358,7 +428,6 @@ class _LogoStub extends StatelessWidget {
   }
 }
 
-// ===== حقول زجاجية وأزرار متدرجة للشيت =====
 class _GlassField extends StatelessWidget {
   final TextEditingController controller;
   final String label;

@@ -1,4 +1,3 @@
-// ================== Warranties List (Home-like styling + BottomBar) ==================
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -6,7 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../common/models.dart';
 import '../../common/widgets/expiry_progress.dart';
-import '../../bills/ui/bill_list_page.dart';            // ← للتنقل إلى Bills
+import '../../bills/ui/bill_list_page.dart';
 import 'warranty_detail_page.dart';
 
 // ===== نفس ألوان الهوم =====
@@ -23,7 +22,7 @@ const LinearGradient _kHeaderGrad = LinearGradient(
   end: Alignment.bottomRight,
 );
 
-// ============ Bottom Gradient Bar (منسوخة من الهوم) ============
+// ============ Bottom Gradient Bar ============
 class GradientBottomBar extends StatelessWidget {
   final int selectedIndex;               // 0 = Warranties, 1 = Bills
   final ValueChanged<int> onTap;
@@ -76,7 +75,6 @@ class GradientBottomBar extends StatelessWidget {
                   const SizedBox(width: 18),
                   _FabDot(
                     onTap: () {
-                      // يفتح صفحة الهوم
                       Navigator.of(context, rootNavigator: true).pushNamed('/home');
                     },
                   ),
@@ -227,7 +225,7 @@ class _WarrantyListPageState extends State<WarrantyListPage> {
       case _WarrantiesSort.oldest:
         q = q.orderBy('created_at', descending: false); break;
       case _WarrantiesSort.nearExpiry:
-        q = q.orderBy('end_date', descending: false); break; // يتطلب فهرس مركّب
+        q = q.orderBy('end_date', descending: false); break;
     }
     return q.snapshots();
   }
@@ -241,7 +239,6 @@ class _WarrantyListPageState extends State<WarrantyListPage> {
       child: Scaffold(
         backgroundColor: _kBgDark,
 
-        // ===== AppBar بدون سهم =====
         appBar: AppBar(
           automaticallyImplyLeading: false,
           elevation: 0,
@@ -251,12 +248,11 @@ class _WarrantyListPageState extends State<WarrantyListPage> {
           flexibleSpace: Container(decoration: const BoxDecoration(gradient: _kHeaderGrad)),
         ),
 
-        // ===== Bottom Bar حق الهوم =====
         bottomNavigationBar: GradientBottomBar(
-          selectedIndex: 0, // Warranties
+          selectedIndex: 0,
           onTap: (i) {
             if (i == 0) {
-              // أنت هنا بالفعل
+              // أنت هنا
             } else if (i == 1) {
               Navigator.of(context, rootNavigator: true).pushNamed(BillListPage.route);
             }
@@ -269,17 +265,15 @@ class _WarrantyListPageState extends State<WarrantyListPage> {
         )
             : Column(
           children: [
-            // ===== Search (نفس شريط بحث الهوم) =====
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
               child: _SearchBar(
                 controller: _searchCtrl,
-                hint: 'Search by provider or title',
+                hint: 'Search by provider or product',
                 onChanged: (_) => setState(() {}),
               ),
             ),
 
-            // ===== Sort chips =====
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Wrap(
@@ -306,7 +300,6 @@ class _WarrantyListPageState extends State<WarrantyListPage> {
             ),
             const SizedBox(height: 8),
 
-            // ===== List =====
             Expanded(
               child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                 stream: _buildStream(uid),
@@ -322,14 +315,14 @@ class _WarrantyListPageState extends State<WarrantyListPage> {
 
                   var docs = snap.data!.docs;
 
-                  // Filter by search text
                   final q = _searchCtrl.text.trim().toLowerCase();
                   if (q.isNotEmpty) {
                     docs = docs.where((e) {
                       final d = e.data();
                       final provider = (d['provider'] ?? '').toString().toLowerCase();
-                      final title = (d['title'] ?? '').toString().toLowerCase();
-                      return provider.contains(q) || title.contains(q);
+                      final title    = (d['title'] ?? '').toString().toLowerCase();
+                      final product  = (d['product_name'] ?? '').toString().toLowerCase();
+                      return provider.contains(q) || title.contains(q) || product.contains(q);
                     }).toList();
                   }
 
@@ -350,6 +343,8 @@ class _WarrantyListPageState extends State<WarrantyListPage> {
                       final start = (d['start_date'] as Timestamp?)?.toDate().toLocal();
                       final end   = (d['end_date'] as Timestamp?)?.toDate().toLocal();
                       final provider = (d['provider'] ?? 'Warranty').toString();
+                      final productName = (d['product_name'] ?? '').toString();
+                      final title = (d['title'] ?? provider).toString();
 
                       return Container(
                         decoration: BoxDecoration(
@@ -367,7 +362,16 @@ class _WarrantyListPageState extends State<WarrantyListPage> {
                           subtitle: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const SizedBox(height: 2),
+                              if (productName.isNotEmpty) ...[
+                                const SizedBox(height: 2),
+                                Text(
+                                  productName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(color: Colors.white, fontSize: 12),
+                                ),
+                              ],
+                              const SizedBox(height: 4),
                               Text(
                                 'Start: ${_fmt(start)} • End: ${_fmt(end)}',
                                 style: const TextStyle(color: _kTextDim),
@@ -385,12 +389,10 @@ class _WarrantyListPageState extends State<WarrantyListPage> {
                               _statusChip(start, end),
                             ],
                           ),
-                          // حذفت السهم ▼
-                          // trailing: const Icon(Icons.chevron_right, color: Colors.white70),
                           onTap: () {
                             final details = WarrantyDetails(
                               id: doc.id,
-                              title: provider,
+                              title: title,
                               product: provider,
                               warrantyStart: start ?? DateTime.now(),
                               warrantyExpiry: end ?? DateTime.now(),
@@ -417,7 +419,7 @@ class _WarrantyListPageState extends State<WarrantyListPage> {
   }
 }
 
-// ================= Search Bar (بنفس الهوم) =================
+// ================= Search Bar =================
 class _SearchBar extends StatelessWidget {
   final TextEditingController controller;
   final String hint;
@@ -482,7 +484,7 @@ class _SearchBar extends StatelessWidget {
   }
 }
 
-// ============== Sort chip بنفس لغة التصميم ==============
+// ============== Sort chip ==============
 class _SortChip extends StatelessWidget {
   final String label;
   final bool selected;

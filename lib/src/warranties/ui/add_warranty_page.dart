@@ -32,7 +32,7 @@ class AddWarrantyPage extends StatefulWidget {
     this.defaultEndDate,
     this.warrantyId,            // != null يعني تعديل
     this.initialProvider,       // اسم المتجر القادم من AddBill
-    this.prefillAttachmentPath, // NEW: مسار صورة الفاتورة لنسخها كمرفق للضمان
+    this.prefillAttachmentPath, // مسار صورة الفاتورة لنسخها كمرفق للضمان
   });
 
   static const route = '/add-warranty';
@@ -42,7 +42,7 @@ class AddWarrantyPage extends StatefulWidget {
   final DateTime? defaultEndDate;
   final String? warrantyId;
   final String? initialProvider;
-  final String? prefillAttachmentPath; // NEW
+  final String? prefillAttachmentPath;
 
   @override
   State<AddWarrantyPage> createState() => _AddWarrantyPageState();
@@ -50,8 +50,9 @@ class AddWarrantyPage extends StatefulWidget {
 
 class _AddWarrantyPageState extends State<AddWarrantyPage> {
   // Controllers
-  final _providerCtrl = TextEditingController();
-  final _serialCtrl = TextEditingController();
+  final _providerCtrl    = TextEditingController();
+  final _productNameCtrl = TextEditingController(); // NEW: اسم المنتج
+  final _serialCtrl      = TextEditingController();
 
   // Dates
   late DateTime _start;
@@ -83,7 +84,7 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
       _end = _start.add(const Duration(days: 1));
     }
 
-    // NEW: لو وصلنا بمسار صورة من صفحة الفاتورة، عيّنه مباشرة كمرفق
+    // لو وصلنا بمسار صورة من صفحة الفاتورة، عيّنه مباشرة كمرفق
     final prefillPath = (widget.prefillAttachmentPath ?? '').trim();
     if (prefillPath.isNotEmpty) {
       _attachmentLocalPath = prefillPath;
@@ -116,6 +117,12 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
         _providerCtrl.text = providerFromDb;
       }
 
+      // NEW: اسم المنتج من الداتا
+      final productNameFromDb = (data['product_name'] ?? '').toString();
+      if (productNameFromDb.isNotEmpty) {
+        _productNameCtrl.text = productNameFromDb;
+      }
+
       _serialCtrl.text = (data['serial_number'] ?? '').toString();
 
       final startTs = data['start_date'];
@@ -143,13 +150,13 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
   @override
   void dispose() {
     _providerCtrl.dispose();
+    _productNameCtrl.dispose();
     _serialCtrl.dispose();
     super.dispose();
   }
 
   // ================= المرفقات (محلي فقط) =================
   Future<void> _pickAttachment() async {
-    // اختيار الكاميرا أو المعرض
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
       showDragHandle: true,
@@ -192,7 +199,6 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
   }
 
   Future<void> _removeAttachment() async {
-    // مسح الحقول من الحالة و Firestore (لا يوجد Storage)
     if (isEdit &&
         (_attachmentLocalPath != null || (_attachmentName?.isNotEmpty ?? false))) {
       try {
@@ -203,9 +209,7 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
           'attachment_local_path': FieldValue.delete(),
           'attachment_name': FieldValue.delete(),
         }, SetOptions(merge: true));
-      } catch (_) {
-        // تجاهل أي خطأ بسيط
-      }
+      } catch (_) {}
     }
     setState(() {
       _attachmentLocalPath = null;
@@ -245,12 +249,14 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
       final provider = _providerCtrl.text.trim().isEmpty
           ? 'Unknown'
           : _providerCtrl.text.trim();
-      final serial = _serialCtrl.text.trim();
+      final productName = _productNameCtrl.text.trim();
+      final serial      = _serialCtrl.text.trim();
 
       late final String warrantyId;
 
       if (isEdit) {
         warrantyId = widget.warrantyId!;
+
         await WarrantyService.instance.updateWarranty(
           id: warrantyId,
           provider: provider,
@@ -266,6 +272,14 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
           serial.isEmpty
               ? {'serial_number': FieldValue.delete()}
               : {'serial_number': serial},
+          SetOptions(merge: true),
+        );
+
+        // product_name
+        await docRef.set(
+          productName.isEmpty
+              ? {'product_name': FieldValue.delete()}
+              : {'product_name': productName},
           SetOptions(merge: true),
         );
 
@@ -295,6 +309,9 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
 
         if (serial.isNotEmpty) {
           await docRef.set({'serial_number': serial}, SetOptions(merge: true));
+        }
+        if (productName.isNotEmpty) {
+          await docRef.set({'product_name': productName}, SetOptions(merge: true));
         }
 
         if (_attachmentLocalPath != null && _attachmentLocalPath!.isNotEmpty) {
@@ -338,7 +355,6 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
   Future<void> _delete() async {
     try {
       await WarrantyService.instance.deleteWarranty(widget.warrantyId!);
-      // لا يوجد حذف من Storage
       if (!mounted) return;
       _snack('Warranty deleted');
       Navigator.of(context).pop();
@@ -392,7 +408,6 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
           ],
         ),
 
-        // زرّ حفظ/تحديث بالأسفل
         bottomNavigationBar: SafeArea(
           top: false,
           child: Padding(
@@ -438,6 +453,14 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
               ),
               const SizedBox(height: 12),
 
+              // Product name
+              _GlassField(
+                controller: _productNameCtrl,
+                label: 'Product name (optional)',
+                icon: Icons.shopping_bag_outlined,
+              ),
+              const SizedBox(height: 12),
+
               // Serial
               _GlassField(
                 controller: _serialCtrl,
@@ -446,7 +469,7 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
               ),
               const SizedBox(height: 12),
 
-              // Attachment row (محلي)
+              // Attachment row
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 decoration: BoxDecoration(
@@ -516,7 +539,7 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
   }
 }
 
-// ===== Widgets ستايل موحّد =====
+// ===== Widgets =====
 class _GlassField extends StatelessWidget {
   final TextEditingController controller;
   final String label;
