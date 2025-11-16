@@ -330,7 +330,7 @@ class _Header extends StatelessWidget {
               _SearchBar(
                 controller: searchCtrl,
                 focusNode: searchFocus,
-                hint: 'Search bills or warranties...',
+                hint: 'Search by store name ...',
                 onChanged: onSearchChanged,
                 onSubmitted: onSearchSubmitted,
               ),

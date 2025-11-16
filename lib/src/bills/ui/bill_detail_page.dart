@@ -184,7 +184,7 @@ class _BillDetailPageState extends State<BillDetailPage> {
     DateTime purchase = _d.purchaseDate;
     DateTime? ret = _d.returnDeadline;
     DateTime? exc = _d.exchangeDeadline;
-    DateTime? wEnd = _d.warrantyExpiry;
+    // لا نحرر/نعدل الوارنتي من شاشة التعديل
 
     Future<void> pickDate(BuildContext ctx, DateTime? initial, void Function(DateTime?) assign) async {
       final now = DateTime.now();
@@ -272,6 +272,7 @@ class _BillDetailPageState extends State<BillDetailPage> {
                       ],
                     ),
                     const SizedBox(height: 4),
+
                     dateRow('Return deadline', ret, () async {
                       await pickDate(ctx, ret, (v) => setLocal(() => ret = v));
                     }, onClear: () => setLocal(() => ret = null)),
@@ -279,10 +280,6 @@ class _BillDetailPageState extends State<BillDetailPage> {
                     dateRow('Exchange deadline', exc, () async {
                       await pickDate(ctx, exc, (v) => setLocal(() => exc = v));
                     }, onClear: () => setLocal(() => exc = null)),
-
-                    dateRow('Warranty expiry', wEnd, () async {
-                      await pickDate(ctx, wEnd, (v) => setLocal(() => wEnd = v));
-                    }, onClear: () => setLocal(() => wEnd = null)),
 
                     const SizedBox(height: 16),
                     FilledButton.icon(
@@ -311,7 +308,7 @@ class _BillDetailPageState extends State<BillDetailPage> {
         'purchase_date': Timestamp.fromDate(purchase),
         'return_deadline': ret == null ? null : Timestamp.fromDate(ret!),
         'exchange_deadline': exc == null ? null : Timestamp.fromDate(exc!),
-        'warranty_end_date': wEnd == null ? null : Timestamp.fromDate(wEnd!),
+        // لا نرسل warranty_end_date عشان تبقى كما هي في الداتابيس
       };
 
       try {
@@ -327,7 +324,7 @@ class _BillDetailPageState extends State<BillDetailPage> {
             returnDeadline: ret,
             exchangeDeadline: exc,
             hasWarranty: _d.hasWarranty,
-            warrantyExpiry: wEnd,
+            warrantyExpiry: _d.warrantyExpiry, // تبقى بدون تغيير
           );
         });
 

@@ -399,8 +399,10 @@ class _BillListPageState extends State<BillListPage> {
           Row(children: [
             Container(width: 10, height: 10, decoration: BoxDecoration(color: threeDayColor, shape: BoxShape.circle)),
             const SizedBox(width: 8),
-            Text(threeDayLabel ?? 'Return (3-day window)',
-                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500)),
+            Text(
+              threeDayLabel ?? 'Return (3-day window)',
+              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500),
+            ),
           ]),
           const SizedBox(height: 6),
         ],
@@ -408,8 +410,10 @@ class _BillListPageState extends State<BillListPage> {
           Row(children: [
             Container(width: 10, height: 10, decoration: BoxDecoration(color: sevenDayColor, shape: BoxShape.circle)),
             const SizedBox(width: 8),
-            Text(sevenDayLabel ?? 'Exchange (7-day window)',
-                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500)),
+            Text(
+              sevenDayLabel ?? 'Exchange (7-day window)',
+              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500),
+            ),
           ]),
           const SizedBox(height: 6),
         ],
@@ -417,8 +421,10 @@ class _BillListPageState extends State<BillListPage> {
           Row(children: [
             Container(width: 10, height: 10, decoration: BoxDecoration(color: warrantyColor, shape: BoxShape.circle)),
             const SizedBox(width: 8),
-            Text(warrantyLabel ?? 'Warranty (3 segments)',
-                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500)),
+            Text(
+              warrantyLabel ?? 'Warranty (3 segments)',
+              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500),
+            ),
           ]),
           const SizedBox(height: 6),
         ],
@@ -431,7 +437,6 @@ class _BillListPageState extends State<BillListPage> {
           barColor: barColor,
         ),
         const SizedBox(height: 6),
-        // ❌ ما في statusChip هنا، المربع صار واحد عام تحت Return فوق Exchange
       ],
     );
   }
@@ -443,6 +448,7 @@ class _BillListPageState extends State<BillListPage> {
       if (b == null) return a;
       return a.isBefore(b) ? a : b;
     }
+
     final ret = parseTs(d['return_deadline']);
     final ex  = parseTs(d['exchange_deadline']);
     final w   = parseTs(d['warranty_end_date']);
@@ -461,7 +467,7 @@ class _BillListPageState extends State<BillListPage> {
 
         // ===== AppBar بدون سهم =====
         appBar: AppBar(
-          automaticallyImplyLeading: false, // لا تظهر أسهم تلقائيًا
+          automaticallyImplyLeading: false,
           backgroundColor: Colors.transparent,
           elevation: 0,
           title: const Text('Bills', style: TextStyle(color: Colors.white)),
@@ -490,10 +496,12 @@ class _BillListPageState extends State<BillListPage> {
         ),
 
         body: uid == null
-            ? const Center(child: Text('Please sign in to view your bills.', style: TextStyle(color: Colors.white)))
+            ? const Center(
+          child: Text('Please sign in to view your bills.', style: TextStyle(color: Colors.white)),
+        )
             : Column(
           children: [
-            // ====== شريط البحث بنفس ستايل الهوم ======
+            // ====== شريط البحث ======
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
               child: Container(
@@ -553,7 +561,9 @@ class _BillListPageState extends State<BillListPage> {
                     label: const Text('Newest'),
                     selected: _sort == _BillSort.newest,
                     onSelected: (_) => setState(() => _sort = _BillSort.newest),
-                    labelStyle: TextStyle(color: _sort == _BillSort.newest ? Colors.white : _kTextDim),
+                    labelStyle: TextStyle(
+                      color: _sort == _BillSort.newest ? Colors.white : _kTextDim,
+                    ),
                     selectedColor: Colors.white.withOpacity(.14),
                     backgroundColor: Colors.white.withOpacity(.06),
                   ),
@@ -561,7 +571,9 @@ class _BillListPageState extends State<BillListPage> {
                     label: const Text('Oldest'),
                     selected: _sort == _BillSort.oldest,
                     onSelected: (_) => setState(() => _sort = _BillSort.oldest),
-                    labelStyle: TextStyle(color: _sort == _BillSort.oldest ? Colors.white : _kTextDim),
+                    labelStyle: TextStyle(
+                      color: _sort == _BillSort.oldest ? Colors.white : _kTextDim,
+                    ),
                     selectedColor: Colors.white.withOpacity(.14),
                     backgroundColor: Colors.white.withOpacity(.06),
                   ),
@@ -569,7 +581,9 @@ class _BillListPageState extends State<BillListPage> {
                     label: const Text('Near expiry'),
                     selected: _sort == _BillSort.nearExpiry,
                     onSelected: (_) => setState(() => _sort = _BillSort.nearExpiry),
-                    labelStyle: TextStyle(color: _sort == _BillSort.nearExpiry ? Colors.white : _kTextDim),
+                    labelStyle: TextStyle(
+                      color: _sort == _BillSort.nearExpiry ? Colors.white : _kTextDim,
+                    ),
                     selectedColor: Colors.white.withOpacity(.14),
                     backgroundColor: Colors.white.withOpacity(.06),
                   ),
@@ -588,7 +602,9 @@ class _BillListPageState extends State<BillListPage> {
                 ),
                 builder: (context, s) {
                   if (s.hasError) {
-                    return Center(child: Text('Error: ${s.error}', style: const TextStyle(color: Colors.white)));
+                    return Center(
+                      child: Text('Error: ${s.error}', style: const TextStyle(color: Colors.white)),
+                    );
                   }
                   if (!s.hasData) {
                     return const Center(child: CircularProgressIndicator());
@@ -607,7 +623,9 @@ class _BillListPageState extends State<BillListPage> {
                   }
 
                   if (docs.isEmpty) {
-                    return const Center(child: Text('No bills found.', style: TextStyle(color: Colors.white)));
+                    return const Center(
+                      child: Text('No bills found.', style: TextStyle(color: Colors.white)),
+                    );
                   }
 
                   if (_sort == _BillSort.nearExpiry) {
@@ -646,12 +664,16 @@ class _BillListPageState extends State<BillListPage> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: ListTile(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          contentPadding:
+                          const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                           title: Text(
                             shop,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                           subtitle: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -659,28 +681,32 @@ class _BillListPageState extends State<BillListPage> {
                               const SizedBox(height: 2),
                               Text(
                                 '${title == shop ? '' : '$title • '}${amount == null ? '-' : _money.format(amount)}',
-                                style: const TextStyle(color: Colors.white70, fontSize: 12),
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 12,
+                                ),
                               ),
                               const SizedBox(height: 10),
 
-                              // ===== Return & Exchange & Warranty =====
-                              _policyBlock(title: 'Return',   start: purchase, end: ret),
+                              // ===== Return & Exchange فقط =====
+                              _policyBlock(
+                                title: 'Return',
+                                start: purchase,
+                                end: ret,
+                              ),
                               const SizedBox(height: 10),
 
-                              _policyBlock(title: 'Exchange', start: purchase, end: ex),
+                              _policyBlock(
+                                title: 'Exchange',
+                                start: purchase,
+                                end: ex,
+                              ),
                               const SizedBox(height: 10),
 
-                              if (hasWarranty && wEnd != null) ...[
-                                _policyBlock(title: 'Warranty', start: purchase, end: wEnd),
-                                const SizedBox(height: 10),
-                              ],
-
-                              // ===== المربع الوحيد تحت آخر مربع في الكرت =====
+                              // 🔻 ما فيه Warranty هنا في الليست
                               _billStatusChip(ret, ex),
                             ],
                           ),
-
-                          // ❌ ما في trailing chip، كله تحت Return
                           onTap: () {
                             final details = BillDetails(
                               id: doc.id,
@@ -694,7 +720,9 @@ class _BillListPageState extends State<BillListPage> {
                               warrantyExpiry: wEnd,
                             );
                             Navigator.of(context, rootNavigator: true).push(
-                              MaterialPageRoute(builder: (_) => BillDetailPage(details: details)),
+                              MaterialPageRoute(
+                                builder: (_) => BillDetailPage(details: details),
+                              ),
                             );
                           },
                         ),
