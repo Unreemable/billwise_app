@@ -4,37 +4,49 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
-/// إشعارات محلية مع دعم الجدولة الدقيقة على أندرويد + تشخيص
+/// خدمة الإشعارات المحلية (داخل الجهاز) مع:
+/// - ضبط المنطقة الزمنية على الرياض
+/// - إنشاء قناة خاصة للتطبيق
+/// - جدولة إشعارات الفواتير والضمانات بدقة
+/// - دوال تشخيص (diagnostics) لمعرفة حالة الإشعارات
 class NotificationsService {
   NotificationsService._();
   static final NotificationsService I = NotificationsService._();
 
+  // الكائن الرئيسي لمكتبة flutter_local_notifications
   final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
 
-  bool _inited = false;
-  bool _channelReady = false;
-  bool _tzReady = false;
+  bool _inited = false;       // هل تم عمل initialize للمكتبة؟
+  bool _channelReady = false; // هل تم إنشاء قناة الإشعارات على أندرويد؟
+  bool _tzReady = false;      // هل تم تهيئة المنطقة الزمنية tz ؟
 
   // ================== Init & Permissions ==================
+
+  /// نداء عام من أي مكان: يضمن أن الخدمة مهيّأة
   Future<void> init() async => _ensureInitialized();
 
+  /// تهيئة مكتبة الإشعارات + إعداد المنطقة الزمنية
   Future<void> _ensureInitialized() async {
     if (_inited) return;
 
+    // إعدادات التهيئة للأندرويد (الأيقونة الافتراضية)
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
     const init = InitializationSettings(android: androidInit);
 
+    // initialize للمكتبة مع كولباك عند الضغط على الإشعار
     await _plugin.initialize(
       init,
       onDidReceiveNotificationResponse: (resp) {
-        // بإمكانك هنا التعامل مع payload لو حبيت.
+        // تقدر هنا تقرأ resp.payload وتوجّه المستخدم لصفحة معيّنة لو حبيتي
       },
     );
 
+    // تهيئة مكتبة timezone وضبطها على الرياض
     await _ensureTZ();
     _inited = true;
   }
 
+  /// طلب أذونات الإشعارات (مهم لأندرويد 13+)
   Future<void> requestPermissions([BuildContext? _]) async {
     await _ensureInitialized();
     if (!Platform.isAndroid) return;
@@ -42,19 +54,20 @@ class NotificationsService {
     final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
     if (android == null) return;
 
-    // Android 13+
+    // أندرويد 13 وما فوق تحتاج طلب إذن notifications
     try {
       await (android as dynamic).requestPermission();
     } catch (_) {
       try {
         await (android as dynamic).requestNotificationsPermission();
-      } catch (_) {/* تجاهل */}
+      } catch (_) {/* تجاهل أي خطأ */}
     }
   }
 
+  /// التحقق: هل الإشعارات مفعّلة للتطبيق أم لا؟
   Future<bool> areNotificationsEnabled() async {
     final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
-    if (android == null) return true; // اعتبرها مسموحة على منصات أخرى
+    if (android == null) return true; // على منصات غير أندرويد نفترض أنها شغالة
     try {
       final enabled = await (android as dynamic).areNotificationsEnabled();
       return (enabled is bool) ? enabled : true;
@@ -63,24 +76,25 @@ class NotificationsService {
     }
   }
 
-  /// هل مسموح للبرنامج بجدولة exact alarms؟
+  /// التحقق: هل النظام يسمح لنا بجدولة exact alarms (دقة عالية جدًا)؟
   Future<bool> canScheduleExactAlarms() async {
     final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
     if (android == null) return true;
     try {
       final ok = await (android as dynamic).canScheduleExactNotifications();
-      // بعض الإصدارات تستخدم اسم مختلف:
+      // بعض الأجهزة/الإصدارات ترجع نوع ثاني، لذلك نتحقق أنه bool
       if (ok is bool) return ok;
     } catch (_) {
-      // جرّب اسم API آخر شائع
+      // في حال فشل الاسم الأول، نجرب اسم API آخر
       try {
         final ok2 = await (android as dynamic).areAlarmsAndRemindersEnabled();
         if (ok2 is bool) return ok2;
       } catch (_) {}
     }
-    return true; // إن ما قدرنا نستعلم، لا نوقف الجدولة
+    return true; // لو فشل الاستعلام، ما نوقف الجدولة
   }
 
+  /// فتح إعدادات exact alarms من النظام (لو المستخدم محتاج يفعّلها)
   Future<void> openExactAlarmsSettings() async {
     final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
     if (android == null) return;
@@ -89,10 +103,11 @@ class NotificationsService {
     } catch (_) {/* تجاهل */}
   }
 
+  /// تهيئة مكتبة المناطق الزمنية واختيار Asia/Riyadh كمنطقة محلية
   Future<void> _ensureTZ() async {
     if (_tzReady) return;
     tzdata.initializeTimeZones();
-    // ثبّت الرياض، ولو فشل خذ UTC
+    // نحاول نضبط الرياض، لو صار خطأ نرجع لـ UTC
     try {
       tz.setLocalLocation(tz.getLocation('Asia/Riyadh'));
     } catch (_) {
@@ -101,6 +116,7 @@ class NotificationsService {
     _tzReady = true;
   }
 
+  /// إنشاء قناة الإشعارات للأندرويد (مطلوبة من Android 8+)
   Future<void> _ensureChannel() async {
     if (_channelReady) return;
     if (!Platform.isAndroid) {
@@ -110,16 +126,17 @@ class NotificationsService {
     final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
     if (android != null) {
       const ch = AndroidNotificationChannel(
-        'billwise_reminders',
-        'BillWise Reminders',
+        'billwise_reminders',                      // id القناة
+        'BillWise Reminders',                      // اسم القناة في إعدادات النظام
         description: 'Reminders for return/exchange deadlines and warranty expiry',
-        importance: Importance.max,
+        importance: Importance.max,                // أعلى أولوية
       );
       await android.createNotificationChannel(ch);
       _channelReady = true;
     }
   }
 
+  /// إعدادات التفاصيل الافتراضية للإشعار (صوت/اهتزاز... إلخ)
   NotificationDetails _details() {
     const android = AndroidNotificationDetails(
       'billwise_reminders',
@@ -135,14 +152,24 @@ class NotificationsService {
   }
 
   // ================== Helpers ==================
+
+  /// hash آمن (نستخدمه لتوليد IDs) مع تقليل احتمال التضارب
   int _safeHash(String s) => s.hashCode & 0x7fffffff;
 
-  int _billReminderId(String billId, String tag) => (_safeHash('$billId::$tag') % 500000) + 1000000;
-  int _warrantyId(String warrantyId) => (_safeHash(warrantyId) % 500000) + 2000000;
+  /// توليد ID فريد لإشعارات الفاتورة بناءً على billId + tag
+  int _billReminderId(String billId, String tag) =>
+      (_safeHash('$billId::$tag') % 500000) + 1000000;
 
+  /// توليد ID فريد لإشعار الضمان بناءً على warrantyId
+  int _warrantyId(String warrantyId) =>
+      (_safeHash(warrantyId) % 500000) + 2000000;
+
+  /// تحويل DateTime عادي إلى TZDateTime باستخدام tz.local
   tz.TZDateTime _toTZ(DateTime local) => tz.TZDateTime.from(local, tz.local);
 
-  /// جدولة مع fallback تلقائي: نحاول exact، وإذا رفض النظام نسقط إلى inexact
+  /// دالة داخلية لجدولة إشعار:
+  /// - تحاول أولاً exactAllowWhileIdle
+  /// - لو رفض النظام، ترجع لـ inexactAllowWhileIdle
   Future<void> _zonedSchedule({
     required int id,
     required String title,
@@ -152,14 +179,15 @@ class NotificationsService {
     bool exact = true,
   }) async {
     final when = _toTZ(whenLocal);
-    // أحيانًا يكون الفرق أجزاء من الثانية → نزود 2 ثواني أمان
+
+    // أحيانًا يكون الفرق أجزاء من الثانية، فنزود ثانيتين احتياط
     final now = tz.TZDateTime.now(tz.local).add(const Duration(seconds: 2));
-    if (!when.isAfter(now)) return;
+    if (!when.isAfter(now)) return; // لو الموعد في الماضي/قريب جدًا، نتجاهل
 
     await _ensureInitialized();
     await _ensureChannel();
 
-    // أولًا: حاول exact
+    // المحاولة الأولى: exact
     if (exact) {
       try {
         await _plugin.zonedSchedule(
@@ -170,21 +198,21 @@ class NotificationsService {
           _details(),
           androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
           payload: payload,
-          // منذ 18.x أزيل uiLocalNotificationDateInterpretation والمطابقة: لا نمررها
-          // matchDateTimeComponents: null,  ← الافتراضي null
+          // في الإصدارات الجديدة ما نحتاج نمرر uiLocalNotificationDateInterpretation
         );
-        return;
+        return; // نجحت، نرجع
       } catch (e) {
         final msg = e.toString();
-        // لو رفض النظام exact alarms، نسقط إلى inexact
+        // لو الرسالة ما تتعلق بكلمة exact، ممكن يكون نوع خطأ آخر،
+        // عموماً بعدها نسقط إلى inexact.
         if (!msg.contains('exact') && !msg.contains('EXACT')) {
-          // أخطاء أخرى: سنعيد المحاولة بأسلوب inexact عمومًا
+          // أخطاء أخرى: بنسوي inexact برضو
         }
-        // Fallthrough إلى inexact
+        // نكمل تحت لـ inexact
       }
     }
 
-    // ثانيًا: inexact
+    // المحاولة الثانية: inexact (أقل دقة لكن أمان أكثر)
     await _plugin.zonedSchedule(
       id,
       title,
@@ -196,7 +224,7 @@ class NotificationsService {
     );
   }
 
-  // للاستخدام اليدوي من صفحة NotificationsPage
+  /// جدولة إشعار عام في وقت معيّن (للاستخدام اليدوي من أي صفحة)
   Future<int> scheduleAt({
     required DateTime whenLocal,
     required String title,
@@ -206,7 +234,10 @@ class NotificationsService {
   }) async {
     await _ensureInitialized();
     await _ensureChannel();
+
+    // توليد ID فريد بناءً على الوقت + العنوان
     final id = _safeHash('${whenLocal.toIso8601String()}::$title') % 900000 + 3000000;
+
     await _zonedSchedule(
       id: id,
       title: title,
@@ -219,6 +250,10 @@ class NotificationsService {
   }
 
   // ================== Bills ==================
+
+  /// إعادة جدولة كل إشعارات "فاتورة" معيّنة:
+  /// - يلغي أي إشعارات قديمة لهذه الفاتورة
+  /// - يعيد إنشاء تذكيرات الاسترجاع والاستبدال بناءً على التواريخ
   Future<void> rescheduleBillReminders({
     required String billId,
     required String title,
@@ -230,12 +265,17 @@ class NotificationsService {
     await _ensureInitialized();
     await _ensureChannel();
 
+    // أولاً: نلغي أي إشعارات قديمة مرتبطة بنفس الفاتورة
     await cancelBillReminders(billId);
 
     const bool exact = true;
 
+    // ===== إشعارات الاسترجاع =====
     if (returnDeadline != null) {
+      // نثبت الساعة 10 صباحًا في يوم الاسترجاع
       final d = DateTime(returnDeadline.year, returnDeadline.month, returnDeadline.day, 10);
+
+      // إشعار قبل يوم من نهاية فترة الاسترجاع
       await _zonedSchedule(
         id: _billReminderId(billId, 'ret_minus1'),
         title: 'Return reminder',
@@ -244,6 +284,8 @@ class NotificationsService {
         payload: 'bill:$billId:return:minus1',
         exact: exact,
       );
+
+      // إشعار في نفس يوم الاسترجاع
       await _zonedSchedule(
         id: _billReminderId(billId, 'ret_last'),
         title: 'Return deadline',
@@ -254,8 +296,12 @@ class NotificationsService {
       );
     }
 
+    // ===== إشعارات الاستبدال =====
     if (exchangeDeadline != null) {
+      // نثبت الساعة 10 صباحًا في يوم الاستبدال
       final d = DateTime(exchangeDeadline.year, exchangeDeadline.month, exchangeDeadline.day, 10);
+
+      // إشعار قبل يومين من نهاية فترة الاستبدال
       await _zonedSchedule(
         id: _billReminderId(billId, 'ex_minus2'),
         title: 'Exchange reminder',
@@ -264,6 +310,8 @@ class NotificationsService {
         payload: 'bill:$billId:exchange:minus2',
         exact: exact,
       );
+
+      // إشعار قبل يوم واحد من نهاية فترة الاستبدال
       await _zonedSchedule(
         id: _billReminderId(billId, 'ex_minus1'),
         title: 'Exchange reminder',
@@ -272,6 +320,8 @@ class NotificationsService {
         payload: 'bill:$billId:exchange:minus1',
         exact: exact,
       );
+
+      // إشعار في نفس يوم انتهاء الاستبدال
       await _zonedSchedule(
         id: _billReminderId(billId, 'ex_last'),
         title: 'Exchange deadline',
@@ -283,6 +333,7 @@ class NotificationsService {
     }
   }
 
+  /// إلغاء كل إشعارات فاتورة معيّنة باستخدام billId
   Future<void> cancelBillReminders(String billId) async {
     await _ensureInitialized();
     for (final tag in const ['ret_minus1', 'ret_last', 'ex_minus2', 'ex_minus1', 'ex_last']) {
@@ -291,6 +342,9 @@ class NotificationsService {
   }
 
   // ================== Warranties ==================
+
+  /// إعادة جدولة إشعار "ضمان" معيّن:
+  /// - حاليًا: إشعار واحد في يوم انتهاء الضمان الساعة 10 صباحًا
   Future<void> rescheduleWarrantyReminder({
     required String warrantyId,
     required String provider,
@@ -300,8 +354,10 @@ class NotificationsService {
     await _ensureInitialized();
     await _ensureChannel();
 
+    // إلغاء أي إشعار سابق لنفس الضمان
     await cancelWarrantyReminder(warrantyId);
 
+    // ساعة إرسال الإشعار في يوم انتهاء الضمان
     final d = DateTime(end.year, end.month, end.day, 10);
     await _zonedSchedule(
       id: _warrantyId(warrantyId),
@@ -313,12 +369,15 @@ class NotificationsService {
     );
   }
 
+  /// إلغاء إشعار الضمان الوحيد لهذا الضمان
   Future<void> cancelWarrantyReminder(String warrantyId) async {
     await _ensureInitialized();
     await _plugin.cancel(_warrantyId(warrantyId));
   }
 
   // ================== Utilities ==================
+
+  /// إظهار إشعار فوري الآن (مفيد للاختبار السريع من داخل التطبيق)
   Future<void> showNow({
     String title = 'Test notification',
     String body = 'Hello from BillWise',
@@ -333,12 +392,17 @@ class NotificationsService {
     );
   }
 
+  /// إلغاء كل الإشعارات المجدولة/المعروضة لهذا التطبيق
   Future<void> cancelAll() async {
     await _ensureInitialized();
     await _plugin.cancelAll();
   }
 
-  /// تشخيص سريع: يُظهر حالة الإذن/القناة/exact/pending
+  /// نافذة حوار (Dialog) تشخيصية:
+  /// - تعرض حالة الإذن
+  /// - قدرة exact alarms
+  /// - عدد الإشعارات المعلّقة
+  /// - أول 10 إشعارات معلّقة (IDs + عناوين + payload)
   Future<void> showDiagnosticsDialog(BuildContext context) async {
     await _ensureInitialized();
     await _ensureChannel();
@@ -346,6 +410,7 @@ class NotificationsService {
     final enabled = await areNotificationsEnabled();
     final exactOk = await canScheduleExactAlarms();
     final pending = await _plugin.pendingNotificationRequests();
+
     final buf = StringBuffer()
       ..writeln('🔧 Notifications diagnostics')
       ..writeln('• areNotificationsEnabled: $enabled')
@@ -353,7 +418,7 @@ class NotificationsService {
       ..writeln('• pending count:          ${pending.length}')
       ..writeln('• tz.local:               ${tz.local.name}');
 
-    // أعرض IDs مختصرة
+    // نطبع أول 10 إشعارات معلّقة بالتفاصيل
     for (final p in pending.take(10)) {
       buf.writeln('   - [${p.id}] ${p.title ?? ''} (${p.payload ?? ''})');
     }
@@ -372,6 +437,7 @@ class NotificationsService {
           TextButton(
             onPressed: () {
               Navigator.pop(context);
+              // يفتح إعدادات exact alarms في النظام
               openExactAlarmsSettings();
             },
             child: const Text('Open exact-alarms settings'),

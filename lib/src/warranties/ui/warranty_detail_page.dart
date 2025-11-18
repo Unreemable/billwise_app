@@ -5,7 +5,7 @@ import 'dart:ui' as ui;
 import '../../common/models.dart';
 import '../../common/widgets/expiry_progress.dart';
 
-// ===== نفس ألوان وستايل الهوم =====
+// ===== ثيم الألوان (نفس ألوان صفحة الهوم/التفاصيل) =====
 const Color _kBgDark  = Color(0xFF0E0722);
 const Color _kGrad1   = Color(0xFF6C3EFF);
 const Color _kGrad2   = Color(0xFF934DFE);
@@ -13,12 +13,14 @@ const Color _kGrad3   = Color(0xFF3E8EFD);
 const Color _kCard    = Color(0x1AFFFFFF);
 const Color _kTextDim = Colors.white70;
 
+// تدرّج الهيدر العلوي
 const LinearGradient _kHeaderGrad = LinearGradient(
   colors: [Color(0xFF1A0B3A), Color(0xFF0E0722)],
   begin: Alignment.topLeft,
   end: Alignment.bottomRight,
 );
 
+// أسماء الأشهر للعرض بشكل جميل
 const List<String> _kMonthNames = [
   'January','February','March','April','May','June',
   'July','August','September','October','November','December'
@@ -28,6 +30,7 @@ class WarrantyDetailPage extends StatefulWidget {
   const WarrantyDetailPage({super.key, required this.details});
   static const route = '/warranty-detail';
 
+  // كائن يحتوي تفاصيل الضمان (العنوان، التواريخ، إلخ)
   final WarrantyDetails details;
 
   @override
@@ -35,20 +38,23 @@ class WarrantyDetailPage extends StatefulWidget {
 }
 
 class _WarrantyDetailPageState extends State<WarrantyDetailPage> {
-  late WarrantyDetails _d;
+  late WarrantyDetails _d; // نسخة محلية من تفاصيل الضمان
 
+  // حقول إضافية يتم تحميلها من الوثيقة نفسها
   String? _productName;
   String? _serialNumber;
   String? _attachmentName;
-  bool _loadingExtra = false;
+  bool _loadingExtra = false; // فلاج لعرض شريط تحميل صغير
 
   @override
   void initState() {
     super.initState();
     _d = widget.details;
+    // تحميل الحقول الإضافية (اسم المنتج، السيريال، المرفق)
     _loadExtraFields();
   }
 
+  // ===== تحميل الحقول الإضافية من Firestore =====
   Future<void> _loadExtraFields() async {
     if (_d.id == null || _d.id!.isEmpty) return;
     setState(() => _loadingExtra = true);
@@ -64,8 +70,8 @@ class _WarrantyDetailPageState extends State<WarrantyDetailPage> {
       final attName = (data['attachment_name'] ?? '').toString().trim();
 
       setState(() {
-        _productName   = pn.isEmpty ? null : pn;
-        _serialNumber  = sn.isEmpty ? null : sn;
+        _productName    = pn.isEmpty ? null : pn;
+        _serialNumber   = sn.isEmpty ? null : sn;
         _attachmentName = attName.isEmpty ? null : attName;
       });
     } finally {
@@ -73,23 +79,28 @@ class _WarrantyDetailPageState extends State<WarrantyDetailPage> {
     }
   }
 
+  // تنسيق التاريخ بشكل: 05 March 2025
   String _fmtPretty(DateTime d) =>
       '${d.day.toString().padLeft(2, '0')} ${_kMonthNames[d.month - 1]} ${d.year}';
 
+  // تنسيق التاريخ بشكل: yyyy-MM-dd
   String _ymd(DateTime? d) =>
       d == null ? '—' : '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
+  // عرض رسالة سريعة (SnackBar)
   void _toast(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
-  // ===== Delete =====
+  // ===== حذف الضمان =====
   Future<void> _deleteWarranty() async {
     if (_d.id == null || _d.id!.isEmpty) {
       _toast('Missing document id.');
       return;
     }
+
+    // حوار تأكيد قبل الحذف
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -105,27 +116,30 @@ class _WarrantyDetailPageState extends State<WarrantyDetailPage> {
 
     try {
       await FirebaseFirestore.instance.collection('Warranties').doc(_d.id).delete();
-      if (mounted) Navigator.pop(context);
+      if (mounted) Navigator.pop(context); // رجوع لصفحة القائمة بعد الحذف
     } catch (e) {
       _toast('Delete failed: $e');
     }
   }
 
-  // ===== Edit =====
+  // ===== فتح شاشة التعديل (BottomSheet) =====
   Future<void> _openEditSheet() async {
     if (_d.id == null || _d.id!.isEmpty) {
       _toast('Missing document id.');
       return;
     }
 
+    // متحكمات النصوص للقيم الحالية
     final titleCtrl    = TextEditingController(text: _d.title);
     final providerCtrl = TextEditingController(text: _d.product);         // المتجر/المزوّد
     final productCtrl  = TextEditingController(text: _productName ?? ''); // اسم المنتج
     final serialCtrl   = TextEditingController(text: _serialNumber ?? '');
 
+    // نسخ تواريخ البداية والنهاية (بدون وقت)
     DateTime start = DateTime(_d.warrantyStart.year, _d.warrantyStart.month, _d.warrantyStart.day);
     DateTime end   = DateTime(_d.warrantyExpiry.year, _d.warrantyExpiry.month, _d.warrantyExpiry.day);
 
+    // دالة مساعدة لاختيار التاريخ
     Future<void> pickDate(BuildContext ctx, DateTime initial, void Function(DateTime) assign) async {
       final picked = await showDatePicker(
         context: ctx,
@@ -136,6 +150,7 @@ class _WarrantyDetailPageState extends State<WarrantyDetailPage> {
       if (picked != null) assign(DateTime(picked.year, picked.month, picked.day));
     }
 
+    // نفتح BottomSheet للتعديل
     final saved = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -151,15 +166,19 @@ class _WarrantyDetailPageState extends State<WarrantyDetailPage> {
             bottom: 16 + MediaQuery.of(ctx).viewInsets.bottom,
           ),
           child: StatefulBuilder(
+            // StatefulBuilder عشان نقدر نحدّث start/end داخل الـ bottom sheet
             builder: (ctx, setLocal) {
               return SingleChildScrollView(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text('Edit warranty',
-                        style: Theme.of(ctx).textTheme.titleLarge?.copyWith(color: Colors.white)),
+                    Text(
+                      'Edit warranty',
+                      style: Theme.of(ctx).textTheme.titleLarge?.copyWith(color: Colors.white),
+                    ),
                     const SizedBox(height: 12),
 
+                    // عنوان الضمان
                     _GlassField(
                       controller: titleCtrl,
                       label: 'Warranty title',
@@ -167,6 +186,7 @@ class _WarrantyDetailPageState extends State<WarrantyDetailPage> {
                     ),
                     const SizedBox(height: 8),
 
+                    // اسم المتجر/المزوّد
                     _GlassField(
                       controller: providerCtrl,
                       label: 'Provider / Store',
@@ -174,6 +194,7 @@ class _WarrantyDetailPageState extends State<WarrantyDetailPage> {
                     ),
                     const SizedBox(height: 8),
 
+                    // اسم المنتج (اختياري)
                     _GlassField(
                       controller: productCtrl,
                       label: 'Product name (optional)',
@@ -181,6 +202,7 @@ class _WarrantyDetailPageState extends State<WarrantyDetailPage> {
                     ),
                     const SizedBox(height: 8),
 
+                    // الرقم التسلسلي (اختياري)
                     _GlassField(
                       controller: serialCtrl,
                       label: 'Serial number (optional)',
@@ -188,17 +210,22 @@ class _WarrantyDetailPageState extends State<WarrantyDetailPage> {
                     ),
                     const SizedBox(height: 12),
 
+                    // اختيار تاريخ البداية
                     _GlassRow(
                       left: 'Start date:  ${_ymd(start)}',
                       onPick: () async => await pickDate(ctx, start, (v) => setLocal(() => start = v)),
                     ),
                     const SizedBox(height: 8),
+
+                    // اختيار تاريخ الانتهاء
                     _GlassRow(
                       left: 'Expiry date:  ${_ymd(end)}',
                       onPick: () async => await pickDate(ctx, end, (v) => setLocal(() => end = v)),
                     ),
 
                     const SizedBox(height: 16),
+
+                    // زر حفظ التعديلات
                     _GradButton(
                       text: 'Save changes',
                       icon: Icons.save,
@@ -213,12 +240,14 @@ class _WarrantyDetailPageState extends State<WarrantyDetailPage> {
       },
     );
 
+    // لو المستخدم ضغط "Save changes"
     if (saved == true) {
       final title       = titleCtrl.text.trim().isEmpty ? '—' : titleCtrl.text.trim();
       final provider    = providerCtrl.text.trim().isEmpty ? 'Warranty' : providerCtrl.text.trim();
       final productName = productCtrl.text.trim();
       final serial      = serialCtrl.text.trim();
 
+      // البيانات الأساسية التي نحدّثها دائماً
       final payload = <String, dynamic>{
         'title'      : title,
         'provider'   : provider,
@@ -230,7 +259,7 @@ class _WarrantyDetailPageState extends State<WarrantyDetailPage> {
         final docRef = FirebaseFirestore.instance.collection('Warranties').doc(_d.id);
         await docRef.update(payload);
 
-        // product_name + serial_number
+        // تحديث الحقول الاختيارية: product_name + serial_number
         await docRef.set(
           {
             if (productName.isNotEmpty) 'product_name': productName else 'product_name': FieldValue.delete(),
@@ -239,6 +268,7 @@ class _WarrantyDetailPageState extends State<WarrantyDetailPage> {
           SetOptions(merge: true),
         );
 
+        // تحديث نسخة الـ UI من الكائن + القيم الإضافية
         setState(() {
           _d = WarrantyDetails(
             id: _d.id,
@@ -259,13 +289,14 @@ class _WarrantyDetailPageState extends State<WarrantyDetailPage> {
       }
     }
 
+    // تنظيف الكنترولرز
     titleCtrl.dispose();
     providerCtrl.dispose();
     productCtrl.dispose();
     serialCtrl.dispose();
   }
 
-  // ===== UI =====
+  // ===== واجهة المستخدم الرئيسية =====
   @override
   Widget build(BuildContext context) {
     return Directionality(
@@ -278,9 +309,10 @@ class _WarrantyDetailPageState extends State<WarrantyDetailPage> {
           foregroundColor: Colors.white,
           title: const Text('Warranty'),
           flexibleSpace: Container(decoration: const BoxDecoration(gradient: _kHeaderGrad)),
-          actions: const [_LogoStub()],
+          actions: const [_LogoStub()], // شعار صغير على اليمين
         ),
 
+        // أزرار أسفل الشاشة: تعديل + حذف
         bottomNavigationBar: SafeArea(
           top: false,
           child: Padding(
@@ -309,6 +341,7 @@ class _WarrantyDetailPageState extends State<WarrantyDetailPage> {
           ),
         ),
 
+        // جسم الصفحة: كرت يعرض تفاصيل الضمان
         body: ListView(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
           children: [
@@ -322,6 +355,7 @@ class _WarrantyDetailPageState extends State<WarrantyDetailPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    // العنوان والسطر العلوي
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
@@ -360,6 +394,7 @@ class _WarrantyDetailPageState extends State<WarrantyDetailPage> {
 
                     const SizedBox(height: 14),
 
+                    // شريط يوضّح حالة الضمان (كم بقى، بالأشهر)
                     ExpiryProgress(
                       title: 'Warranty status',
                       startDate: _d.warrantyStart,
@@ -369,6 +404,7 @@ class _WarrantyDetailPageState extends State<WarrantyDetailPage> {
 
                     const SizedBox(height: 18),
 
+                    // تفاصيل نصية منفصلة على شكل (label + value)
                     _kv('Provider / Store', _d.product),
                     _kv('Product name', _productName ?? '—'),
                     _kv('Serial number', _serialNumber ?? '—'),
@@ -379,6 +415,7 @@ class _WarrantyDetailPageState extends State<WarrantyDetailPage> {
                     if (_attachmentName != null)
                       _kv('Attachment', _attachmentName!),
 
+                    // شريط تحميل بسيط أثناء جلب الحقول الإضافية
                     if (_loadingExtra)
                       const Padding(
                         padding: EdgeInsets.only(top: 8.0),
@@ -395,7 +432,7 @@ class _WarrantyDetailPageState extends State<WarrantyDetailPage> {
   }
 }
 
-// ===== عناصر واجهة صغيرة =====
+// ===== عنصر مساعد لعرض (اسم الحقل + القيمة) =====
 Widget _kv(String k, String v) => Padding(
   padding: const EdgeInsets.only(bottom: 10),
   child: Row(
@@ -410,6 +447,7 @@ Widget _kv(String k, String v) => Padding(
   ),
 );
 
+// ===== شعار بسيط للتطبيق في الـ AppBar =====
 class _LogoStub extends StatelessWidget {
   const _LogoStub();
 
@@ -428,6 +466,7 @@ class _LogoStub extends StatelessWidget {
   }
 }
 
+// ===== حقل نصّي بتصميم زجاجي موحّد =====
 class _GlassField extends StatelessWidget {
   final TextEditingController controller;
   final String label;
@@ -457,9 +496,10 @@ class _GlassField extends StatelessWidget {
   }
 }
 
+// ===== صف لاختيار التاريخ داخل BottomSheet =====
 class _GlassRow extends StatelessWidget {
-  final String left;
-  final VoidCallback onPick;
+  final String left;       // النص الظاهر (التاريخ بصيغة string)
+  final VoidCallback onPick; // دالة تُستدعى لاختيار التاريخ
   const _GlassRow({required this.left, required this.onPick});
 
   @override
@@ -486,6 +526,7 @@ class _GlassRow extends StatelessWidget {
   }
 }
 
+// ===== زر متدرّج اللون يستخدم في أسفل الصفحة وداخل BottomSheet =====
 class _GradButton extends StatelessWidget {
   final String text;
   final IconData icon;

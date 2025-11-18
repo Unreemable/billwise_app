@@ -1,5 +1,5 @@
-// ================== Bills Page with Home GradientBottomBar ==================
-import 'dart:ui' as ui; // for TextDirection.ltr
+// ================== صفحة الفواتير مع شريط Home GradientBottomBar ==================
+import 'dart:ui' as ui; // لاستخدام TextDirection.ltr
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
@@ -10,10 +10,10 @@ import '../../common/widgets/expiry_progress.dart';
 import '../data/bill_service.dart';
 import 'add_bill_page.dart';
 import 'bill_detail_page.dart';
-// لو تبغى فتح تبويب الضمانات:
+// لو حابة تفتحي تبويب الضمانات:
 import '../../warranties/ui/warranty_list_page.dart';
 
-// ===== نفس ألوان الهوم =====
+/// ===== نفس ألوان صفحة الهوم (ثيم داكن + تدرجات) =====
 const Color _kBgDark   = Color(0xFF0E0722);
 const Color _kCardDark = Color(0x1AFFFFFF);
 const Color _kTextDim  = Colors.white70;
@@ -28,9 +28,14 @@ const LinearGradient _kSearchGradient = LinearGradient(
   end: Alignment.bottomRight,
 );
 
-// ============ Bottom Gradient Bar (منسوخة من الهوم) ============
+/// ============ الشريط السفلي المتدرّج (مُعاد استخدامه من الهوم) ============
+/// تنقّل سفلي مشترك بين:
+/// - تبويب الضمانات
+/// - تبويب الفواتير
+/// - نقطة الوسط (الزر الدائري) → الهوم
 class GradientBottomBar extends StatelessWidget {
-  final int selectedIndex;               // 0 = Warranties, 1 = Bills
+  /// 0 = Warranties, 1 = Bills
+  final int selectedIndex;
   final ValueChanged<int> onTap;
   final Color startColor;
   final Color endColor;
@@ -81,8 +86,9 @@ class GradientBottomBar extends StatelessWidget {
                   const SizedBox(width: 18),
                   _FabDot(
                     onTap: () {
-                      // يفتح صفحة الهوم
-                      Navigator.of(context, rootNavigator: true).pushNamed('/home');
+                      // رجوع لصفحة الهوم (root navigator)
+                      Navigator.of(context, rootNavigator: true)
+                          .pushNamed('/home');
                     },
                   ),
                   const SizedBox(width: 18),
@@ -102,12 +108,19 @@ class GradientBottomBar extends StatelessWidget {
   }
 }
 
+/// عنصر واحد في الشريط السفلي (أيقونة + نص)
 class _BottomItem extends StatelessWidget {
   final IconData icon;
   final String label;
   final bool selected;
   final VoidCallback? onTap;
-  const _BottomItem({required this.icon, required this.label, this.selected = false, this.onTap});
+
+  const _BottomItem({
+    required this.icon,
+    required this.label,
+    this.selected = false,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -141,6 +154,7 @@ class _BottomItem extends StatelessWidget {
   }
 }
 
+/// الزر الدائري في النص المستخدم للرجوع للهوم
 class _FabDot extends StatelessWidget {
   final VoidCallback? onTap;
   const _FabDot({this.onTap});
@@ -151,7 +165,8 @@ class _FabDot extends StatelessWidget {
       borderRadius: BorderRadius.circular(27),
       onTap: onTap,
       child: Container(
-        width: 54, height: 54,
+        width: 54,
+        height: 54,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           gradient: const LinearGradient(
@@ -174,6 +189,10 @@ class _FabDot extends StatelessWidget {
 
 // ===============================================================
 
+/// صفحة قائمة الفواتير:
+/// - تعرض كل الفواتير للمستخدم الحالي
+/// - تدعم البحث، والفرز، واستعراض حالة الاسترجاع/الاستبدال بسرعة
+/// - تستخدم نفس الشريط السفلي المتدرج مع الهوم/الضمانات
 class BillListPage extends StatefulWidget {
   const BillListPage({super.key});
   static const route = '/bills';
@@ -182,18 +201,29 @@ class BillListPage extends StatefulWidget {
   State<BillListPage> createState() => _BillListPageState();
 }
 
+/// خيارات الفرز:
+/// - newest:   الأحدث أولاً (حسب created_at)
+/// - oldest:   الأقدم أولاً
+/// - nearExpiry: حسب أقرب تاريخ انتهاء (استرجاع/استبدال/ضمان)
 enum _BillSort { newest, oldest, nearExpiry }
 
-// ✅ حالة الفاتورة الواحدة (مربع واحد في الليست)
+/// ✅ الحالة العامة لكل فاتورة (تُعرض في التايل):
+/// - active:       الاسترجاع ما زال متاح
+/// - exchangeOnly: الاسترجاع منتهي، الاستبدال ما زال متاح
+/// - expired:      كل شيء منتهي
 enum _BillOverallStatus {
-  active,        // 🟢 الاسترجاع شغّال
-  exchangeOnly,  // 🟠 الاسترجاع منتهي، الاستبدال شغّال
-  expired,       // 🔴 الاثنين منتهين
+  active,        // 🟢 الاسترجاع ما زال صالح
+  exchangeOnly,  // 🟠 الاسترجاع منتهي، الاستبدال متاح
+  expired,       // 🔴 الاسترجاع والاستبدال منتهية (أو غير موجودة)
 }
 
 class _BillListPageState extends State<BillListPage> {
   final _searchCtrl = TextEditingController();
-  final _money = NumberFormat.currency(locale: 'en', symbol: 'SAR ', decimalDigits: 2);
+  final _money = NumberFormat.currency(
+    locale: 'en',
+    symbol: 'SAR ',
+    decimalDigits: 2,
+  );
   _BillSort _sort = _BillSort.newest;
 
   @override
@@ -202,34 +232,51 @@ class _BillListPageState extends State<BillListPage> {
     super.dispose();
   }
 
-  // ================ Helpers ================
+  // ================ توابع مساعدة ================
+
+  /// إزالة جزء الوقت من التاريخ: نهتم فقط بالسنة/الشهر/اليوم.
   DateTime _onlyDate(DateTime d) => DateTime(d.year, d.month, d.day);
+
+  /// عدد الأشهر بين تاريخين (سنة + شهر فقط).
   int _monthsBetween(DateTime a, DateTime b) {
     final aa = DateTime(a.year, a.month);
     final bb = DateTime(b.year, b.month);
     return (bb.year - aa.year) * 12 + (bb.month - aa.month);
   }
 
-  // ==== منطق المربع الوحيد لكل فاتورة ====
-  _BillOverallStatus _overallStatusForBill(DateTime? returnUtc, DateTime? exchangeUtc) {
+  // ==== منطق الحالة العامة لكل فاتورة (الكرت) ====
+
+  /// حساب الحالة العامة للفاتورة بناءً على تواريخ الاسترجاع والاستبدال:
+  /// - active:       الاسترجاع ما زال صالح (today < return_end)
+  /// - exchangeOnly: الاسترجاع منتهي، الاستبدال ما زال صالح
+  /// - expired:      الكل منتهي أو غير مضاف
+  _BillOverallStatus _overallStatusForBill(
+      DateTime? returnUtc,
+      DateTime? exchangeUtc,
+      ) {
     final today = _onlyDate(DateTime.now());
     final ret = returnUtc == null ? null : _onlyDate(returnUtc.toLocal());
     final ex  = exchangeUtc == null ? null : _onlyDate(exchangeUtc.toLocal());
 
-    // 🟢 الاسترجاع ما زال في مدّته (اليوم أقل من تاريخ النهاية فقط)
+    // 🟢 الاسترجاع ما زال داخل الفترة (قبل تاريخ النهاية)
     if (ret != null && today.isBefore(ret)) {
       return _BillOverallStatus.active;
     }
 
-    // 🟠 الاسترجاع انتهى (اليوم >= تاريخ النهاية) لكن الاستبدال ما زال متاح
-    if (ex != null && (today.isBefore(ex) || today.isAtSameMomentAs(ex))) {
+    // 🟠 الاسترجاع انتهى (today >= ret) لكن الاستبدال ما زال متاح
+    if (ex != null &&
+        (today.isBefore(ex) || today.isAtSameMomentAs(ex))) {
       return _BillOverallStatus.exchangeOnly;
     }
 
-    // 🔴 انتهى الاسترجاع والاستبدال (أو لا يوجد كلاهما)
+    // 🔴 لا استرجاع ولا استبدال متاحين (أو غير معرّفين)
     return _BillOverallStatus.expired;
   }
 
+  /// بناء شِب صغير (Chip) للحالة أسفل كل عنصر فاتورة:
+  /// - active       → شارة خضراء
+  /// - exchangeOnly → شارة برتقالية لكن النص يبقى "active" (استبدال فقط)
+  /// - expired      → شارة حمراء مع أيقونة إغلاق
   Widget _billStatusChip(DateTime? returnUtc, DateTime? exchangeUtc) {
     final status = _overallStatusForBill(returnUtc, exchangeUtc);
 
@@ -257,7 +304,10 @@ class _BillListPageState extends State<BillListPage> {
       margin: const EdgeInsets.only(top: 4),
       child: Chip(
         avatar: Icon(icon, size: 16, color: Colors.white),
-        label: Text(text, style: const TextStyle(color: Colors.white)),
+        label: Text(
+          text,
+          style: const TextStyle(color: Colors.white),
+        ),
         backgroundColor: color,
         visualDensity: VisualDensity.compact,
         padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -265,27 +315,34 @@ class _BillListPageState extends State<BillListPage> {
     );
   }
 
+  /// منطق الألوان لسياسة استرجاع 3 أيام (تقدّم خلال 3 أيام).
+  /// يطبّق فقط إذا (end - start) == 3 أيام.
   Color? _threeDayReturnColor(DateTime? startUtc, DateTime? endUtc) {
     if (startUtc == null || endUtc == null) return null;
     final s = _onlyDate(startUtc.toLocal());
     final e = _onlyDate(endUtc.toLocal());
     if (e.difference(s).inDays != 3) return null;
+
     final today = _onlyDate(DateTime.now());
     final diff = today.difference(s).inDays;
-    if (diff < 0) return Colors.blueGrey;
-    if (diff == 0) return Colors.green;
-    if (diff == 1) return Colors.orange;
-    if (diff == 2) return Colors.red;
-    return Colors.grey;
+
+    if (diff < 0) return Colors.blueGrey; // قبل بداية الفترة
+    if (diff == 0) return Colors.green;   // اليوم الأول
+    if (diff == 1) return Colors.orange;  // اليوم الثاني
+    if (diff == 2) return Colors.red;     // اليوم الثالث (الأخير)
+    return Colors.grey;                   // بعد 3 أيام
   }
 
+  /// تسمية نصية لسياسة استرجاع 3 أيام.
   String? _threeDayReturnLabel(DateTime? startUtc, DateTime? endUtc) {
     if (startUtc == null || endUtc == null) return null;
     final s = _onlyDate(startUtc.toLocal());
     final e = _onlyDate(endUtc.toLocal());
     if (e.difference(s).inDays != 3) return null;
+
     final today = _onlyDate(DateTime.now());
     final diff = today.difference(s).inDays;
+
     if (diff < 0) return 'Starts soon';
     if (diff == 0) return 'Day 1 of 3';
     if (diff == 1) return 'Day 2 of 3';
@@ -293,27 +350,33 @@ class _BillListPageState extends State<BillListPage> {
     return 'Expired';
   }
 
+  /// منطق الألوان لسياسة استبدال 7 أيام.
   Color? _sevenDayExchangeColor(DateTime? startUtc, DateTime? endUtc) {
     if (startUtc == null || endUtc == null) return null;
     final s = _onlyDate(startUtc.toLocal());
     final e = _onlyDate(endUtc.toLocal());
     if (e.difference(s).inDays != 7) return null;
+
     final today = _onlyDate(DateTime.now());
-    final diff = today.difference(s).inDays + 1;
-    if (diff <= 0) return Colors.blueGrey;
-    if (diff >= 1 && diff <= 3) return Colors.green;
-    if (diff >= 4 && diff <= 6) return Colors.orange;
-    if (diff == 7) return Colors.red;
-    return Colors.grey;
+    final diff = today.difference(s).inDays + 1; // اليوم رقم [1..7]
+
+    if (diff <= 0) return Colors.blueGrey;               // لم تبدأ الفترة بعد
+    if (diff >= 1 && diff <= 3) return Colors.green;     // بداية الفترة
+    if (diff >= 4 && diff <= 6) return Colors.orange;    // منتصف الفترة
+    if (diff == 7) return Colors.red;                    // اليوم الأخير
+    return Colors.grey;                                  // بعد 7 أيام
   }
 
+  /// تسمية نصية لسياسة استبدال 7 أيام.
   String? _sevenDayExchangeLabel(DateTime? startUtc, DateTime? endUtc) {
     if (startUtc == null || endUtc == null) return null;
     final s = _onlyDate(startUtc.toLocal());
     final e = _onlyDate(endUtc.toLocal());
     if (e.difference(s).inDays != 7) return null;
+
     final today = _onlyDate(DateTime.now());
-    final diff = today.difference(s).inDays + 1;
+    final diff = today.difference(s).inDays + 1; // اليوم رقم [1..7]
+
     if (diff <= 0) return 'Starts soon';
     if (diff >= 1 && diff <= 3) return 'Days 1–3 of 7';
     if (diff >= 4 && diff <= 6) return 'Days 4–6 of 7';
@@ -321,40 +384,50 @@ class _BillListPageState extends State<BillListPage> {
     return 'Expired';
   }
 
+  /// منطق ألوان الضمان (شهور + تقسيم لثلاث مراحل).
   Color? _warrantyColor(DateTime? startUtc, DateTime? endUtc) {
     if (startUtc == null || endUtc == null) return null;
     final s = _onlyDate(startUtc.toLocal());
     final e = _onlyDate(endUtc.toLocal());
     final today = _onlyDate(DateTime.now());
+
+    // قبل بداية الضمان
     if (today.isBefore(s)) return Colors.blueGrey;
+    // عند أو بعد تاريخ الانتهاء → منتهي
     if (!today.isBefore(e)) return Colors.grey;
 
+    // حالة خاصة: ضمان سنتين تقريباً (24 شهر)
     final totalMonths = _monthsBetween(s, e);
     final elapsedMonths = _monthsBetween(s, today);
     if (totalMonths >= 23 && totalMonths <= 25) {
-      if (elapsedMonths < 12) return Colors.green;
-      if (elapsedMonths < 18) return Colors.orange;
-      return Colors.red;
+      if (elapsedMonths < 12) return Colors.green;   // السنة الأولى
+      if (elapsedMonths < 18) return Colors.orange;  // السنة الثانية (أول 6 شهور)
+      return Colors.red;                             // السنة الثانية (آخر 6 شهور)
     }
 
+    // الحالة العامة: تقسيم الضمان لثلاثة أثلاث حسب الأيام
     final totalDays = e.difference(s).inDays;
     final elapsedDays = today.difference(s).inDays;
     if (totalDays <= 0) return Colors.grey;
     final t1 = (totalDays / 3).ceil();
     final t2 = (2 * totalDays / 3).ceil();
-    if (elapsedDays < t1) return Colors.green;
-    if (elapsedDays < t2) return Colors.orange;
-    return Colors.red;
+
+    if (elapsedDays < t1) return Colors.green;   // الثلث الأول
+    if (elapsedDays < t2) return Colors.orange;  // الثلث الثاني
+    return Colors.red;                           // الثلث الأخير
   }
 
+  /// تسمية نصية لمرحلة الضمان (سنة/ثلث).
   String? _warrantyLabel(DateTime? startUtc, DateTime? endUtc) {
     if (startUtc == null || endUtc == null) return null;
     final s = _onlyDate(startUtc.toLocal());
     final e = _onlyDate(endUtc.toLocal());
     final today = _onlyDate(DateTime.now());
+
     if (today.isBefore(s)) return 'Starts soon';
     if (!today.isBefore(e)) return 'Expired';
 
+    // منطق خاص للـسنتين
     final totalMonths = _monthsBetween(s, e);
     final elapsedMonths = _monthsBetween(s, today);
     if (totalMonths >= 23 && totalMonths <= 25) {
@@ -363,17 +436,29 @@ class _BillListPageState extends State<BillListPage> {
       return 'Year 2 (final 6 months)';
     }
 
+    // منطق عام لثلاثة أثلاث
     final totalDays = e.difference(s).inDays;
     final elapsedDays = today.difference(s).inDays;
     if (totalDays <= 0) return 'Expired';
     final t1 = (totalDays / 3).ceil();
     final t2 = (2 * totalDays / 3).ceil();
+
     if (elapsedDays < t1) return 'First third';
     if (elapsedDays < t2) return 'Second third';
     return 'Final third';
   }
 
-  Widget _policyBlock({required String title, required DateTime? start, required DateTime? end}) {
+  /// يبني بلوك كامل لسياسة واحدة (مؤشر + ExpiryProgress) لـ:
+  /// - Return
+  /// - Exchange
+  /// - Warranty
+  ///
+  /// يختار منطق اللون/التسمية بناءً على [title].
+  Widget _policyBlock({
+    required String title,
+    required DateTime? start,
+    required DateTime? end,
+  }) {
     if (start == null || end == null) return const SizedBox.shrink();
 
     final kind = title.toLowerCase();
@@ -381,6 +466,7 @@ class _BillListPageState extends State<BillListPage> {
     final isExchange = kind == 'exchange';
     final isWarranty = kind == 'warranty';
 
+    // اختيار منطق اللون/التسمية حسب نوع السياسة
     final threeDayColor = isReturn ? _threeDayReturnColor(start, end) : null;
     final threeDayLabel = isReturn ? _threeDayReturnLabel(start, end) : null;
 
@@ -390,42 +476,82 @@ class _BillListPageState extends State<BillListPage> {
     final warrantyColor = isWarranty ? _warrantyColor(start, end) : null;
     final warrantyLabel = isWarranty ? _warrantyLabel(start, end) : null;
 
+    // اللون النهائي المستخدم في ExpiryProgress
     final barColor = threeDayColor ?? sevenDayColor ?? warrantyColor;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (threeDayColor != null) ...[
-          Row(children: [
-            Container(width: 10, height: 10, decoration: BoxDecoration(color: threeDayColor, shape: BoxShape.circle)),
-            const SizedBox(width: 8),
-            Text(
-              threeDayLabel ?? 'Return (3-day window)',
-              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500),
-            ),
-          ]),
+          Row(
+            children: [
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: threeDayColor,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                threeDayLabel ?? 'Return (3-day window)',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 6),
         ],
         if (sevenDayColor != null) ...[
-          Row(children: [
-            Container(width: 10, height: 10, decoration: BoxDecoration(color: sevenDayColor, shape: BoxShape.circle)),
-            const SizedBox(width: 8),
-            Text(
-              sevenDayLabel ?? 'Exchange (7-day window)',
-              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500),
-            ),
-          ]),
+          Row(
+            children: [
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: sevenDayColor,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                sevenDayLabel ?? 'Exchange (7-day window)',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 6),
         ],
         if (warrantyColor != null) ...[
-          Row(children: [
-            Container(width: 10, height: 10, decoration: BoxDecoration(color: warrantyColor, shape: BoxShape.circle)),
-            const SizedBox(width: 8),
-            Text(
-              warrantyLabel ?? 'Warranty (3 segments)',
-              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500),
-            ),
-          ]),
+          Row(
+            children: [
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: warrantyColor,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                warrantyLabel ?? 'Warranty (3 segments)',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 6),
         ],
         ExpiryProgress(
@@ -441,8 +567,15 @@ class _BillListPageState extends State<BillListPage> {
     );
   }
 
+  /// إيجاد أقرب تاريخ انتهاء بين:
+  /// - return_deadline
+  /// - exchange_deadline
+  /// - warranty_end_date
+  /// يُستخدم في فرز "Near expiry".
   DateTime? _nearestExpiry(Map<String, dynamic> d) {
-    DateTime? parseTs(dynamic v) => (v is Timestamp) ? v.toDate().toLocal() : null;
+    DateTime? parseTs(dynamic v) =>
+        (v is Timestamp) ? v.toDate().toLocal() : null;
+
     DateTime? minDate(DateTime? a, DateTime? b) {
       if (a == null) return b;
       if (b == null) return a;
@@ -452,6 +585,7 @@ class _BillListPageState extends State<BillListPage> {
     final ret = parseTs(d['return_deadline']);
     final ex  = parseTs(d['exchange_deadline']);
     final w   = parseTs(d['warranty_end_date']);
+
     final m = minDate(minDate(ret, ex), w);
     return m == null ? null : DateTime(m.year, m.month, m.day);
   }
@@ -465,43 +599,55 @@ class _BillListPageState extends State<BillListPage> {
       child: Scaffold(
         backgroundColor: _kBgDark,
 
-        // ===== AppBar بدون سهم =====
+        // ===== AppBar بدون سهم رجوع (لأنه في شريط تنقّل سفلي) =====
         appBar: AppBar(
           automaticallyImplyLeading: false,
           backgroundColor: Colors.transparent,
           elevation: 0,
-          title: const Text('Bills', style: TextStyle(color: Colors.white)),
-          flexibleSpace: Container(decoration: const BoxDecoration(gradient: _kHeaderGradient)),
+          title: const Text(
+            'Bills',
+            style: TextStyle(color: Colors.white),
+          ),
+          flexibleSpace: Container(
+            decoration: const BoxDecoration(gradient: _kHeaderGradient),
+          ),
         ),
 
-        // ===== Bottom Bar حق الهوم =====
+        // ===== الشريط السفلي المتدرّج المشترك مع الهوم (Home / Warranties / Bills) =====
         bottomNavigationBar: GradientBottomBar(
-          selectedIndex: 1, // Bills
+          selectedIndex: 1, // تبويب الفواتير
           onTap: (i) {
             if (i == 0) {
-              Navigator.of(context, rootNavigator: true).pushNamed(WarrantyListPage.route);
+              Navigator.of(context, rootNavigator: true)
+                  .pushNamed(WarrantyListPage.route);
             } else if (i == 1) {
-              // أنت بالفعل في Bills — لا شيء
+              // نحن أصلاً في تبويب الفواتير → لا شيء
             }
           },
         ),
 
+        // زر عائم لإضافة فاتورة جديدة
         floatingActionButton: FloatingActionButton(
           onPressed: () async {
-            await Navigator.of(context, rootNavigator: true)
-                .push(MaterialPageRoute(builder: (_) => const AddBillPage()));
-            if (mounted) setState(() {}); // refresh after adding
+            await Navigator.of(context, rootNavigator: true).push(
+              MaterialPageRoute(builder: (_) => const AddBillPage()),
+            );
+            if (mounted) setState(() {}); // إعادة تحميل بعد الإضافة
           },
           child: const Icon(Icons.add),
         ),
 
         body: uid == null
+        // إذا المستخدم غير مسجّل الدخول، نعرض رسالة بسيطة
             ? const Center(
-          child: Text('Please sign in to view your bills.', style: TextStyle(color: Colors.white)),
+          child: Text(
+            'Please sign in to view your bills.',
+            style: TextStyle(color: Colors.white),
+          ),
         )
             : Column(
           children: [
-            // ====== شريط البحث ======
+            // ====== شريط البحث (عنوان/متجر) ======
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
               child: Container(
@@ -519,19 +665,28 @@ class _BillListPageState extends State<BillListPage> {
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.search, color: Colors.white, size: 22),
+                    const Icon(
+                      Icons.search,
+                      color: Colors.white,
+                      size: 22,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: TextField(
                         controller: _searchCtrl,
-                        style: const TextStyle(color: Colors.white, fontSize: 16),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                        ),
                         cursorColor: Colors.white,
                         decoration: const InputDecoration(
                           hintText: 'Search by title or store',
                           hintStyle: TextStyle(color: Colors.white70),
                           border: InputBorder.none,
                           isDense: true,
-                          contentPadding: EdgeInsets.symmetric(vertical: 12),
+                          contentPadding: EdgeInsets.symmetric(
+                            vertical: 12,
+                          ),
                         ),
                         onChanged: (_) => setState(() {}),
                       ),
@@ -543,7 +698,10 @@ class _BillListPageState extends State<BillListPage> {
                           _searchCtrl.clear();
                           setState(() {});
                         },
-                        icon: const Icon(Icons.close_rounded, color: Colors.white),
+                        icon: const Icon(
+                          Icons.close_rounded,
+                          color: Colors.white,
+                        ),
                       ),
                   ],
                 ),
@@ -551,7 +709,7 @@ class _BillListPageState extends State<BillListPage> {
             ),
             const SizedBox(height: 8),
 
-            // ====== فلاتر الفرز ======
+            // ====== فلاتر الفرز: Newest / Oldest / Near expiry ======
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Wrap(
@@ -560,9 +718,12 @@ class _BillListPageState extends State<BillListPage> {
                   ChoiceChip(
                     label: const Text('Newest'),
                     selected: _sort == _BillSort.newest,
-                    onSelected: (_) => setState(() => _sort = _BillSort.newest),
+                    onSelected: (_) =>
+                        setState(() => _sort = _BillSort.newest),
                     labelStyle: TextStyle(
-                      color: _sort == _BillSort.newest ? Colors.white : _kTextDim,
+                      color: _sort == _BillSort.newest
+                          ? Colors.white
+                          : _kTextDim,
                     ),
                     selectedColor: Colors.white.withOpacity(.14),
                     backgroundColor: Colors.white.withOpacity(.06),
@@ -570,9 +731,12 @@ class _BillListPageState extends State<BillListPage> {
                   ChoiceChip(
                     label: const Text('Oldest'),
                     selected: _sort == _BillSort.oldest,
-                    onSelected: (_) => setState(() => _sort = _BillSort.oldest),
+                    onSelected: (_) =>
+                        setState(() => _sort = _BillSort.oldest),
                     labelStyle: TextStyle(
-                      color: _sort == _BillSort.oldest ? Colors.white : _kTextDim,
+                      color: _sort == _BillSort.oldest
+                          ? Colors.white
+                          : _kTextDim,
                     ),
                     selectedColor: Colors.white.withOpacity(.14),
                     backgroundColor: Colors.white.withOpacity(.06),
@@ -580,9 +744,12 @@ class _BillListPageState extends State<BillListPage> {
                   ChoiceChip(
                     label: const Text('Near expiry'),
                     selected: _sort == _BillSort.nearExpiry,
-                    onSelected: (_) => setState(() => _sort = _BillSort.nearExpiry),
+                    onSelected: (_) =>
+                        setState(() => _sort = _BillSort.nearExpiry),
                     labelStyle: TextStyle(
-                      color: _sort == _BillSort.nearExpiry ? Colors.white : _kTextDim,
+                      color: _sort == _BillSort.nearExpiry
+                          ? Colors.white
+                          : _kTextDim,
                     ),
                     selectedColor: Colors.white.withOpacity(.14),
                     backgroundColor: Colors.white.withOpacity(.06),
@@ -592,9 +759,10 @@ class _BillListPageState extends State<BillListPage> {
             ),
             const SizedBox(height: 4),
 
-            // ====== القائمة ======
+            // ====== قائمة الفواتير (Stream من Firestore) ======
             Expanded(
-              child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              child: StreamBuilder<
+                  QuerySnapshot<Map<String, dynamic>>>(
                 stream: BillService.instance.streamBillsSnapshot(
                   userId: uid,
                   orderBy: 'created_at',
@@ -603,31 +771,46 @@ class _BillListPageState extends State<BillListPage> {
                 builder: (context, s) {
                   if (s.hasError) {
                     return Center(
-                      child: Text('Error: ${s.error}', style: const TextStyle(color: Colors.white)),
+                      child: Text(
+                        'Error: ${s.error}',
+                        style: const TextStyle(color: Colors.white),
+                      ),
                     );
                   }
                   if (!s.hasData) {
-                    return const Center(child: CircularProgressIndicator());
+                    return const Center(
+                      child: CircularProgressIndicator(),
+                    );
                   }
 
+                  // المستندات الخام من Firestore
                   var docs = s.data!.docs;
 
+                  // ===== فلتر البحث على العميل (title + shop_name) =====
                   final q = _searchCtrl.text.trim().toLowerCase();
                   if (q.isNotEmpty) {
                     docs = docs.where((e) {
                       final d = e.data();
-                      final title = (d['title'] ?? '').toString().toLowerCase();
-                      final shop  = (d['shop_name'] ?? '').toString().toLowerCase();
+                      final title = (d['title'] ?? '')
+                          .toString()
+                          .toLowerCase();
+                      final shop = (d['shop_name'] ?? '')
+                          .toString()
+                          .toLowerCase();
                       return title.contains(q) || shop.contains(q);
                     }).toList();
                   }
 
                   if (docs.isEmpty) {
                     return const Center(
-                      child: Text('No bills found.', style: TextStyle(color: Colors.white)),
+                      child: Text(
+                        'No bills found.',
+                        style: TextStyle(color: Colors.white),
+                      ),
                     );
                   }
 
+                  // ===== فرز إضافي حسب "Near expiry" إذا تم اختياره =====
                   if (_sort == _BillSort.nearExpiry) {
                     docs.sort((a, b) {
                       final ax = _nearestExpiry(a.data());
@@ -640,32 +823,58 @@ class _BillListPageState extends State<BillListPage> {
                   }
 
                   return ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    padding: const EdgeInsets.fromLTRB(
+                      16,
+                      16,
+                      16,
+                      16,
+                    ),
+                    separatorBuilder: (_, __) =>
+                    const SizedBox(height: 8),
                     itemCount: docs.length,
                     itemBuilder: (_, i) {
                       final doc = docs[i];
                       final d = doc.data();
 
-                      final title  = (d['title'] ?? '—').toString();
-                      final shop   = (d['shop_name'] ?? '—').toString();
-                      final amount = (d['total_amount'] as num?)?.toDouble();
+                      final title  =
+                      (d['title'] ?? '—').toString();
+                      final shop   =
+                      (d['shop_name'] ?? '—').toString();
+                      final amount =
+                      (d['total_amount'] as num?)?.toDouble();
 
-                      final purchase = (d['purchase_date'] as Timestamp?)?.toDate().toLocal();
-                      final ret      = (d['return_deadline'] as Timestamp?)?.toDate().toLocal();
-                      final ex       = (d['exchange_deadline'] as Timestamp?)?.toDate().toLocal();
+                      final purchase = (d['purchase_date']
+                      as Timestamp?)
+                          ?.toDate()
+                          .toLocal();
+                      final ret = (d['return_deadline']
+                      as Timestamp?)
+                          ?.toDate()
+                          .toLocal();
+                      final ex = (d['exchange_deadline']
+                      as Timestamp?)
+                          ?.toDate()
+                          .toLocal();
 
-                      final hasWarranty = (d['warranty_coverage'] as bool?) ?? false;
-                      final wEnd        = (d['warranty_end_date'] as Timestamp?)?.toDate().toLocal();
+                      final hasWarranty =
+                          (d['warranty_coverage'] as bool?) ?? false;
+                      final wEnd = (d['warranty_end_date']
+                      as Timestamp?)
+                          ?.toDate()
+                          .toLocal();
 
                       return Container(
                         decoration: BoxDecoration(
                           color: _kCardDark,
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius:
+                          BorderRadius.circular(12),
                         ),
                         child: ListTile(
                           contentPadding:
-                          const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
                           title: Text(
                             shop,
                             maxLines: 1,
@@ -676,7 +885,8 @@ class _BillListPageState extends State<BillListPage> {
                             ),
                           ),
                           subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                            crossAxisAlignment:
+                            CrossAxisAlignment.start,
                             children: [
                               const SizedBox(height: 2),
                               Text(
@@ -688,7 +898,7 @@ class _BillListPageState extends State<BillListPage> {
                               ),
                               const SizedBox(height: 10),
 
-                              // ===== Return & Exchange فقط =====
+                              // ===== بلوك سياسة الاسترجاع =====
                               _policyBlock(
                                 title: 'Return',
                                 start: purchase,
@@ -696,6 +906,7 @@ class _BillListPageState extends State<BillListPage> {
                               ),
                               const SizedBox(height: 10),
 
+                              // ===== بلوك سياسة الاستبدال =====
                               _policyBlock(
                                 title: 'Exchange',
                                 start: purchase,
@@ -703,25 +914,33 @@ class _BillListPageState extends State<BillListPage> {
                               ),
                               const SizedBox(height: 10),
 
-                              // 🔻 ما فيه Warranty هنا في الليست
+                              // ملاحظة: لا نعرض شريط الضمان في التايل
+                              // (الضمان معروض بشكل أوضح في صفحة التفاصيل)
                               _billStatusChip(ret, ex),
                             ],
                           ),
+                          // عند الضغط → فتح صفحة تفاصيل الفاتورة مع BillDetails
                           onTap: () {
                             final details = BillDetails(
                               id: doc.id,
                               title: title,
                               product: shop,
                               amount: amount ?? 0,
-                              purchaseDate: purchase ?? DateTime.now(),
+                              purchaseDate:
+                              purchase ?? DateTime.now(),
                               returnDeadline: ret,
                               exchangeDeadline: ex,
                               hasWarranty: hasWarranty,
                               warrantyExpiry: wEnd,
                             );
-                            Navigator.of(context, rootNavigator: true).push(
+                            Navigator.of(
+                              context,
+                              rootNavigator: true,
+                            ).push(
                               MaterialPageRoute(
-                                builder: (_) => BillDetailPage(details: details),
+                                builder: (_) => BillDetailPage(
+                                  details: details,
+                                ),
                               ),
                             );
                           },

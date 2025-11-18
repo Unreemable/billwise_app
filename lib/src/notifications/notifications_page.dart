@@ -8,6 +8,8 @@ import '../bills/ui/bill_detail_page.dart';
 import '../warranties/ui/warranty_detail_page.dart';
 import 'notifications_service.dart';
 
+/// صفحة "الإشعارات داخل التطبيق"
+/// ما تجيب إشعارات FCM، بل تبني ف feed من الفواتير والضمانات بناءً على تواريخها.
 class NotificationsPage extends StatefulWidget {
   const NotificationsPage({super.key});
   static const route = '/notifications';
@@ -17,16 +19,21 @@ class NotificationsPage extends StatefulWidget {
 }
 
 class _NotificationsPageState extends State<NotificationsPage> {
+  // فورمات التاريخ الأساسي (نستخدمه في نص الموعد)
   final _fmtDate = DateFormat('yyyy-MM-dd');
+
+  // فورمات الشريحة الصغيرة اللي فيها اليوم + الوقت
   final _fmtChip = DateFormat('MMM d, HH:mm');
 
   bool _loading = true;
 
+  // القوائم الثلاث (اليوم - قادمة - منتهية)
   List<_NotifFeedItem> _today = [];
   List<_NotifFeedItem> _upcoming = [];
   List<_NotifFeedItem> _missed = [];
 
-  // مفاتيح الإشعارات المحذوفة نهائياً (لو رجعتي الحذف مستقبلًا)
+  // مجموعة مفاتيح الإشعارات اللي المستخدم حذفها نهائياً (من السحابة)
+  // (هنا بس نقرأها، ما فيه منطق حذف حاليًا)
   final Set<String> _dismissed = {};
 
   // ألوان وهوية الصفحة
@@ -37,15 +44,21 @@ class _NotificationsPageState extends State<NotificationsPage> {
     end: Alignment.bottomRight,
   );
 
+  // أسهل طريقة تجيب uid للمستخدم الحالي
   String? get _uid => FirebaseAuth.instance.currentUser?.uid;
 
-  // ===== Helpers =====
+  // ===== دوال مساعدة على التواريخ =====
+
+  /// ترجع نفس التاريخ لكن مضبوطة على الساعة 00:00 (نستخدمها عشان نقارن بالأيام مو بالساعات)
   DateTime _atMidnight(DateTime x) => DateTime(x.year, x.month, x.day, 0, 0);
 
+  /// تتحقق إذا t موجود بين start و end بشكل شامل (>=start و <=end)
   bool _inInclusive(DateTime t, DateTime start, DateTime end) =>
       (t.isAfter(start) || t.isAtSameMomentAs(start)) &&
           (t.isBefore(end) || t.isAtSameMomentAs(end));
 
+  /// تحاول تفهم أي نوع تاريخ (Timestamp / int / String / DateTime)
+  /// وترجعه كـ DateTime. لو ما قدرت ترجعه => null
   DateTime? _parseAnyDate(dynamic v) {
     if (v == null) return null;
     if (v is Timestamp) return v.toDate();
@@ -58,9 +71,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
     if (v is String) {
       final s = v.trim();
       if (s.isEmpty) return null;
+      // نحاول parse فورمات ISO مثل 2025-11-19T00:00:00
       try {
         return DateTime.parse(s);
       } catch (_) {}
+      // نحاول فورمات محدد yyyy-MM-dd
       try {
         final p = DateFormat('yyyy-MM-dd').parseStrict(s);
         return DateTime(p.year, p.month, p.day);
@@ -72,27 +87,36 @@ class _NotificationsPageState extends State<NotificationsPage> {
   @override
   void initState() {
     super.initState();
+    // أول ما تفتح الصفحة نحمّل الداتا من Firestore
     _load();
   }
 
+  /// الدالة الأساسية اللي:
+  /// 1) تجيب الفواتير والضمانات من Firestore
+  /// 2) تبني منها NotifFeedItem
+  /// 3) تقسّمها إلى: اليوم / قادمة / منتهية
   Future<void> _load() async {
     try {
       final uid = _uid;
       if (uid == null) {
+        // ما فيه مستخدم مسجّل
         setState(() => _loading = false);
         return;
       }
 
+      // نحمّل أولاً الإشعارات اللي سبق حذفها (من السحابة)
       await _loadDismissedFromCloud(uid);
 
       final now = DateTime.now();
-      // نافذة واسعة: -90 يوم إلى +365 يوم
+
+      // نافذة زمنية واسعة لعرض الأحداث:
+      // من 90 يوم قبل اليوم إلى سنة قدّام
       final startWindow = now.subtract(const Duration(days: 90));
       final endWindow = now.add(const Duration(days: 365));
 
       final items = <_NotifFeedItem>[];
 
-      // ===== Bills =====
+      // ===== 1) الفواتير Bills =====
       final billsSnap = await FirebaseFirestore.instance
           .collection('Bills')
           .where('user_id', isEqualTo: uid)
@@ -101,12 +125,16 @@ class _NotificationsPageState extends State<NotificationsPage> {
       for (final doc in billsSnap.docs) {
         final d = doc.data();
 
+        // عنوان الفاتورة، ولو فاضي نخليه "Bill"
         final title = (d['title'] ?? 'Bill').toString().trim().isEmpty
             ? 'Bill'
             : (d['title'] as String).trim();
+
+        // اسم المحل (ما نعرضه هنا كلابل، بس ممكن تستخدمينه لاحقًا)
         final shop = (d['shop_name'] ?? '').toString().trim();
         final label = shop.isEmpty ? title : title;
 
+        // تاريخ آخر يوم استرجاع
         final ret = _parseAnyDate(d['return_deadline']);
         if (ret != null) {
           final r0 = _atMidnight(ret);
@@ -124,6 +152,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
           }
         }
 
+        // تاريخ آخر يوم استبدال
         final ex = _parseAnyDate(d['exchange_deadline']);
         if (ex != null) {
           final e0 = _atMidnight(ex);
@@ -142,7 +171,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
         }
       }
 
-      // ===== Warranties =====
+      // ===== 2) الضمانات Warranties =====
       final warrSnap = await FirebaseFirestore.instance
           .collection('Warranties')
           .where('user_id', isEqualTo: uid)
@@ -150,11 +179,14 @@ class _NotificationsPageState extends State<NotificationsPage> {
 
       for (final doc in warrSnap.docs) {
         final d = doc.data();
+
+        // نحاول نطلع اسم مناسب للضمان (براند / مزوّد / بائع... إلخ)
         final providerRaw =
         (d['provider'] ?? d['brand'] ?? d['vendor'] ?? '').toString();
         final provider =
         providerRaw.trim().isEmpty ? 'Warranty' : providerRaw.trim();
 
+        // تواريخ نهاية الضمان (ندور في أكثر من حقل محتمل)
         final end = _parseAnyDate(
           d['end_date'] ??
               d['warranty_end_date'] ??
@@ -178,7 +210,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
         }
       }
 
-      // تقسيم حسب اليوم
+      // ===== تقسيم الإشعارات بناءً على اليوم =====
       final startToday = DateTime(now.year, now.month, now.day);
       final endToday = startToday.add(const Duration(days: 1));
 
@@ -187,16 +219,22 @@ class _NotificationsPageState extends State<NotificationsPage> {
       final missed = <_NotifFeedItem>[];
 
       for (final it in items) {
+        // لو هذا الإشعار موجود في dismissed نتجاهله
         if (_dismissed.contains(it.key)) continue;
+
         if (it.when.isBefore(startToday)) {
+          // التاريخ قبل اليوم => منتهية
           missed.add(it);
         } else if (it.when.isBefore(endToday)) {
+          // التاريخ ضمن اليوم الحالي
           today.add(it);
         } else {
+          // التاريخ بعد اليوم الحالي => قادمة
           upcoming.add(it);
         }
       }
 
+      // ترتيب: اليوم / القادمة تصاعدي، المنتهية تنازلي (الأحدث أول)
       today.sort((a, b) => a.when.compareTo(b.when));
       upcoming.sort((a, b) => a.when.compareTo(b.when));
       missed.sort((a, b) => b.when.compareTo(a.when));
@@ -217,6 +255,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
     }
   }
 
+  /// تجيب من Firestore قائمة الإشعارات اللي سبق حذفها نهائيًا من المستخدم
+  /// (users/{uid}/dismissedNotifs/*)
   Future<void> _loadDismissedFromCloud(String uid) async {
     _dismissed.clear();
     final snap = await FirebaseFirestore.instance
@@ -229,6 +269,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
     }
   }
 
+  /// ترسل إشعار محلي تجريبي (ما له علاقة بالـ FCM)
   Future<void> _sendNow() async {
     await NotificationsService.I.requestPermissions();
     await NotificationsService.I.showNow(
@@ -241,16 +282,18 @@ class _NotificationsPageState extends State<NotificationsPage> {
     );
   }
 
-  // ===== لما المستخدم يضغط على الكرت =====
+  // ===== لما المستخدم يضغط على كرت الإشعار =====
   Future<void> _handleTap(_NotifFeedItem item) async {
-    // ----- Bill -----
+    // ----- لو الإشعار مرتبط بفاتورة ----- //
     if (item.billId != null) {
       try {
         Map<String, dynamic>? d = item.billData;
+
+        // لو ما عندنا الداتا كاملة، نرجع نقرأ الوثيقة من Firestore
         if (d == null) {
           final snap = await FirebaseFirestore.instance
               .collection('Bills')
-              .doc(item.billId!) // String
+              .doc(item.billId!)
               .get();
           if (!snap.exists) {
             if (mounted) {
@@ -263,6 +306,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
           d = snap.data()!;
         }
 
+        // نجهز BillDetails عشان نفتح صفحة تفاصيل الفاتورة
         final title = (d['title'] ?? 'Bill').toString();
         final shop = (d['shop_name'] ?? '').toString();
         final amount = (d['total_amount'] as num?)?.toDouble();
@@ -278,7 +322,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
         (d['warranty_end_date'] as Timestamp?)?.toDate().toLocal();
 
         final billDetails = BillDetails(
-          id: item.billId!, // String
+          id: item.billId!, // String (غير قابل للـ null)
           title: title,
           product: shop.isEmpty ? null : shop,
           amount: amount,
@@ -306,14 +350,16 @@ class _NotificationsPageState extends State<NotificationsPage> {
       }
     }
 
-    // ----- Warranty -----
+    // ----- لو الإشعار مرتبط بضمان ----- //
     if (item.warrantyId != null) {
       try {
         Map<String, dynamic>? d = item.warrantyData;
+
+        // لو ما عندنا الداتا كاملة، نرجع نقرأ الوثيقة من Firestore
         if (d == null) {
           final snap = await FirebaseFirestore.instance
               .collection('Warranties')
-              .doc(item.warrantyId!) // String
+              .doc(item.warrantyId!)
               .get();
           if (!snap.exists) {
             if (mounted) {
@@ -326,16 +372,23 @@ class _NotificationsPageState extends State<NotificationsPage> {
           d = snap.data()!;
         }
 
+        // تجهيز الحقول للنموذج WarrantyDetails
+
+        // اسم مزوّد الضمان / البراند / البائع...
         final providerRaw =
         (d['provider'] ?? d['brand'] ?? d['vendor'] ?? '').toString();
         final provider =
         providerRaw.trim().isEmpty ? 'Warranty' : providerRaw.trim();
 
+        // اسم المنتج
         final productRaw =
         (d['product_name'] ?? d['product'] ?? '').toString().trim();
+
+        // السيريال (ما نستخدمه هنا، لكن لو حبّيتي تضيفينه للنموذج لاحقًا)
         final serialRaw =
         (d['serial_number'] ?? d['serial'] ?? '').toString().trim();
 
+        // بداية الضمان
         final start =
             (d['start_date'] as Timestamp?)?.toDate().toLocal() ??
                 (d['warranty_start_date'] as Timestamp?)
@@ -343,6 +396,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
                     .toLocal() ??
                 DateTime.now();
 
+        // نهاية الضمان
         final end =
             (d['end_date'] as Timestamp?)?.toDate().toLocal() ??
                 (d['warranty_end_date'] as Timestamp?)
@@ -350,14 +404,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
                     .toLocal() ??
                 start;
 
-        // 👇 مطابق لتعريف WarrantyDetails الموجود عندك:
+        // 👇 هذا مطابق لتعريف WarrantyDetails اللي عندك في models.dart
         final warrantyDetails = WarrantyDetails(
-          id: item.warrantyId!,                     // String
-          title: provider,                          // required String title
-          product: productRaw.isEmpty
-              ? '—'
-              : productRaw,                         // required String product
-
+          id: item.warrantyId!, // String
+          title: provider,
+          product: productRaw.isEmpty ? '—' : productRaw,
           warrantyStart: start,
           warrantyExpiry: end,
         );
@@ -390,24 +441,40 @@ class _NotificationsPageState extends State<NotificationsPage> {
         elevation: 0,
         backgroundColor: Colors.transparent,
         foregroundColor: Colors.white,
-        flexibleSpace:
-        Container(decoration: const BoxDecoration(gradient: _kHeaderGrad)),
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(gradient: _kHeaderGrad),
+        ),
       ),
       body: _loading
+      // لو لسه نحمّل من Firestore
           ? const Center(child: CircularProgressIndicator())
+      // لو التحميل خلص، نفعّل السحب لتحديث القائمة
           : RefreshIndicator(
         onRefresh: _load,
         child: ListView(
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 88),
           children: [
-            _section('Due today', _today,
-                isToday: true, deletable: false),
-            _section('Upcoming', _upcoming, deletable: false),
-            _section('Already ended', _missed,
-                deletable: false, dim: true),
+            _section(
+              'Due today',
+              _today,
+              isToday: true,
+              deletable: false,
+            ),
+            _section(
+              'Upcoming',
+              _upcoming,
+              deletable: false,
+            ),
+            _section(
+              'Already ended',
+              _missed,
+              deletable: false,
+              dim: true,
+            ),
           ],
         ),
       ),
+      // زر إرسال إشعار تجريبي (محلي)
       floatingActionButton: FloatingActionButton(
         onPressed: _sendNow,
         tooltip: 'Send test notification',
@@ -419,15 +486,19 @@ class _NotificationsPageState extends State<NotificationsPage> {
     );
   }
 
+  /// تبني جزء من الصفحة لقسم واحد:
+  /// (العنوان + قائمة الكروت)
   Widget _section(
       String title,
       List<_NotifFeedItem> list, {
         bool isToday = false,
-        bool deletable = false, // ما نستخدمه الآن
+        bool deletable = false, // حاليًا مو مستخدم (ما فيه سوايب حذف)
         bool dim = false,
       }) {
+    // نفلتر أي عنصر تم حذفه مسبقًا (موجود في dismissed)
     final visible = list.where((e) => !_dismissed.contains(e.key)).toList();
     if (visible.isEmpty) {
+      // لو ما فيه عناصر نعرض "No items"
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: ListTile(
@@ -438,13 +509,16 @@ class _NotificationsPageState extends State<NotificationsPage> {
       );
     }
 
+    // لو فيه عناصر، نعرض العنوان وبعده الكروت
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
           padding: const EdgeInsets.only(left: 12, top: 12, bottom: 6),
-          child:
-          Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+          child: Text(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
         ),
         ...visible.map((e) {
           final s = _styleFor(e.kind);
@@ -465,6 +539,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
     );
   }
 
+  /// ترجع شكل الـ style حسب نوع الإشعار (استرجاع / استبدال / ضمان...)
   _KindStyle _styleFor(_NotifKind k) {
     switch (k) {
       case _NotifKind.returnDeadline:
@@ -495,8 +570,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
   }
 }
 
-/* ========= Models ========= */
+/* ========= نماذج منطق الإشعار (Models) ========= */
 
+/// أنواع الإشعارات المحتملة.
+/// في هذا الكود نستخدم فقط الـ *Deadline*
+/// لكن محجوزة أنواع Reminder لو حبيتي توسعين المنطق لاحقًا.
 enum _NotifKind {
   returnReminder,
   returnDeadline,
@@ -506,6 +584,7 @@ enum _NotifKind {
   warrantyDeadline,
 }
 
+/// عنصر واحد في الـ feed (يمثل موعد واحد)
 class _NotifFeedItem {
   _NotifFeedItem({
     required this.when,
@@ -518,22 +597,34 @@ class _NotifFeedItem {
     this.warrantyData,
   });
 
+  // التاريخ اللي نرتب عليه الإشعار (يوم الاسترجاع / الاستبدال / انتهاء الضمان)
   final DateTime when;
+
+  // العنوان المعروض في الكرت (مثلاً: اسم الفاتورة / مزود الضمان)
   final String title;
+
+  // النص اللي يصف الموعد (مثلاً: Return deadline: 2025-11-19)
   final String deadlineText;
+
+  // نوع الإشعار (استرجاع / استبدال / ضمان...)
   final _NotifKind kind;
 
-  // روابط للفاتورة/الضمان
+  // روابط لفتح صفحة التفاصيل
   final String? billId;
   final String? warrantyId;
+
+  // لو حابين نختصر ونستخدم الداتا بدون إعادة قراءة من Firestore
   final Map<String, dynamic>? billData;
   final Map<String, dynamic>? warrantyData;
 
+  /// مفتاح فريد لهذا الإشعار (نوع + عنوان + التوقيت)
+  /// نستخدمه عشان نخزّنه في dismissedNotifs (لو حبّينا مستقبلاً منطق حذف نهائي)
   String get key => '${kind.name}|$title|${when.millisecondsSinceEpoch}';
 }
 
-/* ========= UI ========= */
+/* ========= جزء واجهة المستخدم (UI Widgets) ========= */
 
+/// يحدد الشكل العام لألوان الإشعار (الأيقونة + لون البادج...)
 class _KindStyle {
   final Color baseColor;
   final IconData icon;
@@ -545,17 +636,18 @@ class _KindStyle {
   });
 }
 
+/// الويدجت المسؤولة عن شكل كل كرت إشعار في القائمة
 class _NotifTile extends StatelessWidget {
-  final bool isToday;
-  final bool dim;
-  final Color baseColor;
-  final Color? todayBackground;
-  final IconData icon;
-  final String kindLabel;
-  final String title;
-  final String deadlineText;
-  final String whenText;
-  final VoidCallback? onTap;
+  final bool isToday;          // هل هذا الإشعار تابع لقسم "اليوم"؟
+  final bool dim;              // هل نخفف ألوانه (للمنتهية)؟
+  final Color baseColor;       // اللون الأساسي حسب نوع الإشعار
+  final Color? todayBackground; // لون خلفية مميز لليوم
+  final IconData icon;         // أيقونة النوع
+  final String kindLabel;      // نص البادج (Return • Deadline ...)
+  final String title;          // عنوان الإشعار (الفاتورة / الضمان)
+  final String deadlineText;   // نص الموعد (مثلاً Warranty ends: 2025-11-19)
+  final String whenText;       // النص الصغير اللي فوق (MMM d, HH:mm)
+  final VoidCallback? onTap;   // ماذا يحدث عند الضغط على الكرت
 
   const _NotifTile({
     super.key,
@@ -578,6 +670,7 @@ class _NotifTile extends StatelessWidget {
     final dimmed = dim ? onSurface.withOpacity(0.55) : onSurface;
     final radius = BorderRadius.circular(14);
 
+    // لون خلفية الكرت: لو اليوم نخليه لون مميز، غير كذا نستخدم cardColor
     final bgColor = isToday
         ? (todayBackground ?? Colors.purple).withOpacity(0.10)
         : Theme.of(context).cardColor;
@@ -608,6 +701,7 @@ class _NotifTile extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // دائرة الأيقونة
               Container(
                 width: 36,
                 height: 36,
@@ -619,10 +713,12 @@ class _NotifTile extends StatelessWidget {
                 child: Icon(icon, color: baseColor, size: 20),
               ),
               const SizedBox(width: 12),
+              // النصوص اللي على يمين الأيقونة
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // الصف العلوي: البادج + الوقت
                     Row(
                       children: [
                         Expanded(child: _badge(kindLabel, baseColor)),
@@ -631,6 +727,7 @@ class _NotifTile extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 8),
+                    // العنوان (اسم الفاتورة / الضمان)
                     Text(
                       title,
                       maxLines: 1,
@@ -642,6 +739,7 @@ class _NotifTile extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 4),
+                    // نص الموعد (Return deadline ... / Warranty ends ...)
                     Text(
                       deadlineText,
                       maxLines: 1,
@@ -658,6 +756,7 @@ class _NotifTile extends StatelessWidget {
     );
   }
 
+  /// بادج النوع (Return • Deadline / Exchange • Deadline ...)
   Widget _badge(String text, Color c) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
@@ -680,6 +779,7 @@ class _NotifTile extends StatelessWidget {
     );
   }
 
+  /// الشريحة الصغيرة اللي فيها التاريخ/الوقت في يمين الصف العلوي
   Widget _timeChip(String text, Color onSurface) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),

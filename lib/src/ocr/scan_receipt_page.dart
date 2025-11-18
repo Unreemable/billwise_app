@@ -7,11 +7,11 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:image/image.dart' as img;
 
-import '../gemini_service.dart';           // Gemini OCR (لا تغييرات)
+import '../gemini_service.dart';           // خدمة Gemini OCR (ما عدلنا عليها هنا)
 import '../bills/ui/add_bill_page.dart';
-import 'receipt_parser.dart';              // Fallback parser
+import 'receipt_parser.dart';              // مفسّر احتياطي للنص إذا ما رجع JSON جاهز
 
-// NEW: telemetry
+// NEW: telemetry (تتبع الأداء/الوقت للأو سي آر)
 import '../common/metrics.dart';
 
 class ScanReceiptPage extends StatefulWidget {
@@ -23,7 +23,7 @@ class ScanReceiptPage extends StatefulWidget {
 }
 
 class _ScanReceiptPageState extends State<ScanReceiptPage> {
-  // ===== ألوان وتصميم فقط =====
+  // ===== ألوان وتصميم الواجهة فقط =====
   static const _bg = Color(0xFF0B0B2E);
   static const _card = Color(0xFF171636);
   static const _cardStroke = Color(0x1FFFFFFF);
@@ -36,20 +36,28 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
     end: Alignment.bottomRight,
   );
 
+  // ملف الصورة اللي اختارها المستخدم
   File? _image;
+
+  // هل نشتغل الآن على الأو سي آر؟
   bool _processing = false;
+
+  // رسالة خطأ نظهرها تحت لو صار شيء
   String? _error;
 
+  /// اختيار صورة من الكاميرا أو الاستديو وحفظها في مجلد التطبيق
   Future<void> _pick(bool camera) async {
+    // كل ما نختار صورة جديدة، نمسح رسالة الخطأ القديمة
     setState(() => _error = null);
 
     final picker = ImagePicker();
     final x = await picker.pickImage(
       source: camera ? ImageSource.camera : ImageSource.gallery,
-      imageQuality: 92,
+      imageQuality: 92, // نقلل الجودة قليلاً عشان حجم الملف
     );
-    if (x == null) return;
+    if (x == null) return; // المستخدم رجع بدون ما يختار صورة
 
+    // نحفظ نسخة من الصورة داخل مجلد التطبيق (Documents) باسم ثابت
     final dir = await getApplicationDocumentsDirectory();
     final filename =
         'receipt_${DateTime.now().millisecondsSinceEpoch}${p.extension(x.path)}';
@@ -58,34 +66,56 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
     setState(() => _image = saved);
   }
 
-  /// يصغّر الصورة لعرض 1280px ويضغطها JPG 85 لتقليل الضجيج والتوكنات
+  /// تجهيز الصورة قبل إرسالها لـ Gemini:
+  /// - تصغير العرض إلى 1280 بكسل لو كانت كبيرة
+  /// - ضغطها بصيغة JPG بجودة 85
+  /// الهدف: نقلل الضجيج وحجم البيانات (tokens) بدون ما نخسر التفاصيل المهمة
   Future<Uint8List> _prepareBytes(File f) async {
     try {
+      // نقرأ بايتات الصورة الأصلية
       final bytes = await f.readAsBytes();
+
+      // نحاول نفك ترميز الصورة (decode)
       final decoded = img.decodeImage(bytes);
-      if (decoded == null) return Uint8List.fromList(bytes);
+      if (decoded == null) {
+        // لو ما قدرنا نفك الترميز، نرجع البايتات كما هي
+        return Uint8List.fromList(bytes);
+      }
+
+      // لو عرض الصورة أكبر من 1280، نصغرها، غير كذا نخليها كما هي
       final resized =
       decoded.width > 1280 ? img.copyResize(decoded, width: 1280) : decoded;
+
+      // نضغط الصورة إلى JPG بجودة 85 (توازن بين الجودة والحجم)
       final jpeg = img.encodeJpg(resized, quality: 85);
       return Uint8List.fromList(jpeg);
     } catch (_) {
+      // لو صار خطأ في التصغير/الضغط نرجع الصورة الأصلية
       return Uint8List.fromList(await f.readAsBytes());
     }
   }
 
+  /// خط أنابيب الأو سي آر الكامل:
+  /// 1) تجهيز الصورة (_prepareBytes)
+  /// 2) نحاول أولاً نطلب من Gemini JSON مُهيكل (extractReceipt)
+  /// 3) لو فشل يرجع لنص عادي (ocrToText) ثم نحلله بـ ReceiptParser
+  /// 4) نبني خريطة prefill ونرسلها لصفحة AddBillPage لتعبئة الحقول مسبقًا
+  /// 5) نسجل المدة والطريقة المستخدمة في Metrics.logOcrPipeline
   Future<void> _runOcrAndGo() async {
     if (_image == null) return;
 
     setState(() {
-      _processing = true;
+      _processing = true; // نوقف الأزرار ونشغّل الـ Loader
       _error = null;
     });
 
+    // ساعة توقيت للخط بالكامل
     final totalSw = Stopwatch()..start();
-    int prepareMs = 0;
-    bool overallOk = false;
-    String methodUsed = 'unknown';
-    String? errorMsg;
+
+    int prepareMs = 0;        // كم أخذ تجهيز الصورة (تصغير + ضغط)
+    bool overallOk = false;   // هل نجح الأو سي آر بالكامل؟
+    String methodUsed = 'unknown'; // أي فرع استخدمنا: json أو text+parser
+    String? errorMsg;         // رسالة الخطأ لو صار
 
     try {
       // 1) تحضير الصورة
@@ -94,9 +124,9 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
       prepSw.stop();
       prepareMs = prepSw.elapsedMilliseconds;
 
-      const mime = 'image/jpeg'; // بعد الضغط نرسل دائمًا jpeg
+      const mime = 'image/jpeg'; // بعد التحضير نرسلها دائمًا كـ JPEG
 
-      // 2) محاولة JSON منظّم من Gemini
+      // 2) محاولة الحصول على JSON جاهز من Gemini (أفضل سيناريو)
       final receipt = await GeminiOcrService.I.extractReceipt(
         processedBytes,
         mimeType: mime,
@@ -105,50 +135,70 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
       Map<String, dynamic>? prefill;
 
       if (receipt != null) {
+        // ✅ نجحنا بالحصول على JSON منظّم من Gemini
         methodUsed = 'json';
+
+        // نحول التواريخ إلى ISO string إذا احتجناها كسلسلة
         final purchaseIso = receipt.purchaseDate?.toIso8601String();
         final returnIso = receipt.returnDeadline?.toIso8601String();
         final exchangeIso = receipt.exchangeDeadline?.toIso8601String();
 
+        // نبني خريطة القيم المسبقة (prefill) لصفحة إضافة الفاتورة
         prefill = {
+          // العنوان: إذا عندنا title من Gemini نستخدمه، وإلا نركب عنوان من اسم المتجر
           'title': (receipt.title != null && receipt.title!.trim().isNotEmpty)
               ? receipt.title
               : (receipt.shopName == null || receipt.shopName!.trim().isEmpty)
               ? 'Receipt'
               : '${receipt.shopName} Purchase',
+
+          // بيانات المتجر والمبلغ والعملة
           'shop_name': receipt.shopName,
           'store': receipt.shopName,
           'total_amount': receipt.totalAmount,
           'amount': receipt.totalAmount,
           'currency': receipt.currency,
+
+          // التواريخ
           'purchase_date': receipt.purchaseDate,
           'purchaseDate': purchaseIso,
           'return_deadline': receipt.returnDeadline,
           'exchange_deadline': receipt.exchangeDeadline,
+
+          // تواريخ الضمان (هنا نفترض بداية الضمان = تاريخ الشراء)
           'warrantyStart': purchaseIso,
           'warrantyEnd': exchangeIso ?? returnIso,
+
+          // مسار الصورة عشان نخزنها مع الفاتورة
           'image_path': _image!.path,
           'imagePath': _image!.path,
+
+          // ما نحتاج نص خام هنا لأن عندنا JSON منظم
           'rawText': null,
           'raw_source': 'gemini-ocr-json',
         };
       } else {
-        // 3) OCR نصّي + ReceiptParser
+        // 3) لو JSON فشل: نرجع إلى وضع النص + المفسّر ReceiptParser
         final plain = await GeminiOcrService.I.ocrToText(
           processedBytes,
           mimeType: mime,
         );
 
+        // لو حتى النص فاضي، نطلع برسالة للمستخدم ونوقف
         if (plain == null || plain.trim().isEmpty) {
           errorMsg =
-          'لم يتم استخراج بيانات مُهيكلة من الصورة.\nنصيحة: قرّبي على منطقة اسم المتجر والإجمالي، وإضاءة أعلى، وصورة مستقيمة.';
+          'لم يتم استخراج بيانات مُهيكلة من الصورة.\n'
+              'نصيحة: قرّبي على منطقة اسم المتجر والإجمالي، وإضاءة أعلى، وصورة مستقيمة.';
           setState(() => _error = errorMsg);
           return;
         }
 
         methodUsed = 'text+parser';
+
+        // نمرر النص الخام لـ ReceiptParser عشان يحاول يستخرج (اسم المتجر، المبلغ، التاريخ، الضمان...)
         final parsed = ReceiptParser.parse(plain);
 
+        // نبني prefill من النتائج اللي طلعنا بها
         prefill = {
           'title':
           (parsed.storeName == null || parsed.storeName!.trim().isEmpty)
@@ -164,11 +214,15 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
           'warrantyEnd': parsed.warrantyExpiryDate?.toIso8601String(),
           'image_path': _image!.path,
           'imagePath': _image!.path,
+
+          // هنا نخزن النص الخام عشان لو حبّينا نراجعه لاحقًا
           'rawText': plain,
           'raw_source': 'gemini-ocr-text+parser',
         };
       }
 
+      // منطق بسيط عشان نقرر هل نقترح إضافة ضمان في صفحة AddBill:
+      // إذا عندنا تاريخ نهاية ضمان أو النص فيه كلمة warranty
       final args = {
         'suggestWarranty': (prefill['warrantyEnd'] != null) ||
             ((prefill['rawText'] ?? '')
@@ -178,17 +232,21 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
         'prefill': prefill,
       };
 
-      overallOk = true;
+      overallOk = true; // وصلنا للنهاية بدون استثناءات
 
       if (!mounted) return;
+
+      // نروح لصفحة إضافة الفاتورة مع إرسال القيم المسبقة
       await Navigator.pushNamed(context, AddBillPage.route, arguments: args);
     } catch (e) {
+      // لو صار أي استثناء، نخزّن الرسالة ونظهرها للمستخدم
       errorMsg = e.toString();
       setState(() => _error = errorMsg);
     } finally {
+      // نوقف ساعة التوقيت ونرسل كل شيء للتليمتري
       totalSw.stop();
 
-      // NEW: سجّل خط الأنابيب بالكامل
+      // NEW: تسجيل الأداء/الوقت وطريقة الأو سي آر في Firestore أو أي مكان داخل Metrics
       await Metrics.logOcrPipeline(
         prepareMs: prepareMs,
         totalMs: totalSw.elapsedMilliseconds,
@@ -199,11 +257,12 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
         extra: {'page': 'scan_receipt'},
       );
 
+      // نرجّع حالة الزرّ العاديّة
       if (mounted) setState(() => _processing = false);
     }
   }
 
-  // ===== التصميم فقط في build =====
+  // ===== دالة مساعدة للشكل الخارجي للكروت في الواجهة =====
   BoxDecoration _cardBox() => BoxDecoration(
     color: _card,
     borderRadius: BorderRadius.circular(16),
@@ -212,6 +271,7 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
 
   @override
   Widget build(BuildContext context) {
+    // نقدر نشغّل الأو سي آر فقط إذا فيه صورة وما فيه معالجة شغالة الآن
     final canRun = _image != null && !_processing;
 
     return Theme(
@@ -242,7 +302,7 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
           minimum: const EdgeInsets.fromLTRB(16, 12, 16, 12),
           child: Column(
             children: [
-              // بطاقة المعاينة
+              // ===== بطاقة معاينة الصورة =====
               Container(
                 width: double.infinity,
                 decoration: _cardBox(),
@@ -260,6 +320,7 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
                     child: Stack(
                       children: [
                         if (_image == null)
+                        // نص إرشادي قبل اختيار الصورة
                           Center(
                             child: Padding(
                               padding:
@@ -272,6 +333,7 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
                             ),
                           )
                         else
+                        // عرض الصورة اللي اختارها المستخدم
                           ClipRRect(
                             borderRadius: BorderRadius.circular(12),
                             child: Image.file(
@@ -281,6 +343,8 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
                               height: double.infinity,
                             ),
                           ),
+
+                        // لو الأو سي آر شغّال، نظهر طبقة شفافة مع دائرة تحميل
                         if (_processing)
                           Container(
                             decoration: BoxDecoration(
@@ -297,6 +361,7 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
                 ),
               ),
 
+              // ===== رسالة الخطأ (لو موجودة) =====
               if (_error != null) ...[
                 const SizedBox(height: 10),
                 Container(
@@ -313,7 +378,7 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
 
               const SizedBox(height: 16),
 
-              // أزرار الالتقاط
+              // ===== أزرار اختيار الصورة: من الاستديو أو من الكاميرا =====
               Row(
                 children: [
                   Expanded(
@@ -353,7 +418,7 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
 
               const Spacer(),
 
-              // زر التعرف
+              // ===== زر تشغيل الأو سي آر والانتقال لصفحة إضافة الفاتورة =====
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
@@ -374,8 +439,11 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
                         strokeWidth: 2, color: Colors.white),
                   )
                       : const Icon(Icons.auto_fix_high),
-                  label:
-                  Text(_processing ? 'Recognizing…' : 'Recognize & Fill Fields'),
+                  label: Text(
+                    _processing
+                        ? 'Recognizing…'
+                        : 'Recognize & Fill Fields',
+                  ),
                 ),
               ),
             ],
