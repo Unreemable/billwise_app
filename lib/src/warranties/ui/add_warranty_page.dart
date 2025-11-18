@@ -51,9 +51,9 @@ class AddWarrantyPage extends StatefulWidget {
 
 class _AddWarrantyPageState extends State<AddWarrantyPage> {
   // ===== المتحكمات الخاصة بحقوق الإدخال =====
-  final _providerCtrl    = TextEditingController();   // اسم المتجر
+  final _providerCtrl    = TextEditingController();   // اسم المتجر / المزوّد
   final _productNameCtrl = TextEditingController();   // اسم المنتج (اختياري)
-  final _serialCtrl      = TextEditingController();   // الرقم التسلسلي
+  final _serialCtrl      = TextEditingController();   // الرقم التسلسلي (اختياري)
 
   // ===== التواريخ =====
   late DateTime _start;  // بداية الضمان
@@ -61,7 +61,9 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
   final _fmt = DateFormat('yyyy-MM-dd');
 
   bool _saving = false;  // فلاج لمنع التكرار أثناء الحفظ
-  final _notifs = NotificationsService.I; // خدمة الإشعارات
+
+  // خدمة الإشعارات (تستخدم منطق: ٣ فترات + شهر قبل الانتهاء + يوم الانتهاء)
+  final _notifs = NotificationsService.I;
 
   bool get isEdit => widget.warrantyId != null;  // هل نحن في وضع التعديل؟
   bool get hasBill => widget.billId != null;     // هل الضمان مرتبط بفاتورة؟
@@ -99,7 +101,7 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
       _loadExistingWarranty();
     }
 
-    // طلب أذونات الإشعارات بعد بناء الصفحة
+    // طلب أذونات الإشعارات بعد بناء الصفحة (لمنطق التنبيهات الجديد)
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _notifs.requestPermissions(context);
     });
@@ -116,7 +118,7 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
       if (!mounted || !doc.exists) return;
       final data = doc.data()!;
 
-      // اسم المتجر
+      // اسم المتجر / المزوّد
       final providerFromDb = (data['provider'] ?? '').toString();
       if (_providerCtrl.text.trim().isEmpty && providerFromDb.isNotEmpty) {
         _providerCtrl.text = providerFromDb;
@@ -271,7 +273,7 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
       if (isEdit) {
         warrantyId = widget.warrantyId!;
 
-        // تحديث الحقول الأساسية
+        // تحديث الحقول الأساسية في Service (start/end/provider)
         await WarrantyService.instance.updateWarranty(
           id: warrantyId,
           provider: provider,
@@ -349,7 +351,13 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
         );
       }
 
-      // ===== إعادة جدولة تذكير الضمان =====
+      // ===== إعادة جدولة تذكيرات الضمان بالمنطق الجديد =====
+      //
+      // هذه الدالة الآن:
+      // - تقسّم فترة الضمان إلى 3 ثلثات وترسل إشعار في بداية كل جزء.
+      // - ترسل إشعار ثابت قبل نهاية الضمان بشهر (قدر الإمكان).
+      // - ترسل إشعار في يوم انتهاء الضمان نفسه.
+      // - كل المواعيد على 12:00 منتصف الليل حسب Asia/Riyadh.
       try {
         await _notifs.rescheduleWarrantyReminder(
           warrantyId: warrantyId,
@@ -357,7 +365,9 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
           start: _start,
           end: _end,
         );
-      } catch (_) {}
+      } catch (_) {
+        // لو فشل، ما نكسر حفظ الضمان
+      }
 
       if (!mounted) return;
       _snack(isEdit ? 'تم تحديث الضمان' : 'تم حفظ الضمان');
@@ -374,6 +384,8 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
   Future<void> _delete() async {
     try {
       await WarrantyService.instance.deleteWarranty(widget.warrantyId!);
+      // إلغاء إشعارات هذا الضمان
+      await _notifs.cancelWarrantyReminder(widget.warrantyId!);
       _snack('تم حذف الضمان');
       Navigator.of(context).pop();
     } catch (e) {
@@ -381,15 +393,17 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
     }
   }
 
-  // ===== سنackbar مختصر =====
+  // ===== Snackbar مختصر =====
   void _snack(String m) =>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
 
   @override
   Widget build(BuildContext context) {
-    final shownName = (_attachmentLocalPath == null || _attachmentLocalPath!.isEmpty)
+    final shownName =
+    (_attachmentLocalPath == null || _attachmentLocalPath!.isEmpty)
         ? 'No image'
-        : (_attachmentName ?? _attachmentLocalPath!.split(Platform.pathSeparator).last);
+        : (_attachmentName ??
+        _attachmentLocalPath!.split(Platform.pathSeparator).last);
 
     return Directionality(
       textDirection: ui.TextDirection.ltr,
@@ -400,7 +414,9 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
           elevation: 0,
           foregroundColor: Colors.white,
           title: Text(isEdit ? 'Edit Warranty' : 'Add Warranty'),
-          flexibleSpace: Container(decoration: const BoxDecoration(gradient: _kHeaderGrad)),
+          flexibleSpace: Container(
+            decoration: const BoxDecoration(gradient: _kHeaderGrad),
+          ),
           actions: [
             if (isEdit)
               IconButton(
@@ -413,10 +429,19 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
                     context: context,
                     builder: (_) => AlertDialog(
                       title: const Text('Delete warranty?'),
-                      content: const Text('Are you sure you want to delete this warranty?'),
+                      content: const Text(
+                          'Are you sure you want to delete this warranty?'),
                       actions: [
-                        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-                        FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
+                        TextButton(
+                          onPressed: () =>
+                              Navigator.pop(context, false),
+                          child: const Text('Cancel'),
+                        ),
+                        FilledButton(
+                          onPressed: () =>
+                              Navigator.pop(context, true),
+                          child: const Text('Delete'),
+                        ),
                       ],
                     ),
                   );
@@ -444,7 +469,6 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
             children: [
-              // رسالة توضيح إذا الضمان غير مرتبط بفاتورة
               if (!hasBill)
                 Container(
                   padding: const EdgeInsets.all(12),
@@ -459,13 +483,15 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
                       Icon(Icons.info_outline, size: 18, color: Colors.white),
                       SizedBox(width: 8),
                       Expanded(
-                        child: Text('This warranty is not linked to a bill.', style: TextStyle(color: Colors.white)),
+                        child: Text(
+                          'This warranty is not linked to a bill.',
+                          style: TextStyle(color: Colors.white),
+                        ),
                       ),
                     ],
                   ),
                 ),
 
-              // حقل اسم المتجر
               _GlassField(
                 controller: _providerCtrl,
                 label: 'Provider / Store',
@@ -473,7 +499,6 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
               ),
               const SizedBox(height: 12),
 
-              // حقل اسم المنتج
               _GlassField(
                 controller: _productNameCtrl,
                 label: 'Product name (optional)',
@@ -481,7 +506,6 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
               ),
               const SizedBox(height: 12),
 
-              // الرقم التسلسلي
               _GlassField(
                 controller: _serialCtrl,
                 label: 'Serial number (optional)',
@@ -491,7 +515,8 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
 
               // صف المرفق
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(.06),
                   borderRadius: BorderRadius.circular(12),
@@ -513,7 +538,8 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
                         style: const TextStyle(color: Colors.white),
                       ),
                     ),
-                    if (_attachmentLocalPath != null && _attachmentLocalPath!.isNotEmpty)
+                    if (_attachmentLocalPath != null &&
+                        _attachmentLocalPath!.isNotEmpty)
                       IconButton(
                         tooltip: 'Remove',
                         onPressed: _removeAttachment,
@@ -525,7 +551,6 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
 
               const SizedBox(height: 12),
 
-              // تاريخ بداية الضمان
               _GlassRow(
                 left: 'Warranty start date',
                 right: _fmt.format(_start),
@@ -534,14 +559,15 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
                   initial: _start,
                   onPick: (d) => setState(() {
                     _start = d;
-                    if (_end.isBefore(_start)) _end = _start.add(const Duration(days: 1));
+                    if (_end.isBefore(_start)) {
+                      _end = _start.add(const Duration(days: 1));
+                    }
                   }),
                 ),
               ),
 
               const SizedBox(height: 10),
 
-              // تاريخ نهاية الضمان
               _GlassRow(
                 left: 'Warranty end date',
                 right: _fmt.format(_end),
@@ -564,7 +590,11 @@ class _GlassField extends StatelessWidget {
   final TextEditingController controller;
   final String label;
   final IconData icon;
-  const _GlassField({required this.controller, required this.label, required this.icon});
+  const _GlassField({
+    required this.controller,
+    required this.label,
+    required this.icon,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -582,7 +612,8 @@ class _GlassField extends StatelessWidget {
           labelStyle: const TextStyle(color: Colors.white70),
           prefixIcon: Icon(icon, color: Colors.white70),
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+          contentPadding:
+          const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
         ),
       ),
     );
@@ -608,7 +639,8 @@ class _GlassRow extends StatelessWidget {
       borderRadius: BorderRadius.circular(12),
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        padding:
+        const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(.06),
           borderRadius: BorderRadius.circular(12),
@@ -616,8 +648,12 @@ class _GlassRow extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Expanded(child: Text(left, style: const TextStyle(color: Colors.white))),
-            Text(right, style: const TextStyle(color: Colors.white70)),
+            Expanded(
+              child: Text(left,
+                  style: const TextStyle(color: Colors.white)),
+            ),
+            Text(right,
+                style: const TextStyle(color: Colors.white70)),
             const SizedBox(width: 8),
             Icon(rightIcon, color: Colors.white70),
           ],
@@ -655,7 +691,11 @@ class _GradButton extends StatelessWidget {
             gradient: LinearGradient(colors: [bgFrom, bgTo]),
             borderRadius: BorderRadius.circular(14),
             boxShadow: [
-              BoxShadow(color: bgTo.withOpacity(.35), blurRadius: 14, offset: const Offset(0, 8)),
+              BoxShadow(
+                color: bgTo.withOpacity(.35),
+                blurRadius: 14,
+                offset: const Offset(0, 8),
+              ),
             ],
           ),
           child: Center(
@@ -664,7 +704,13 @@ class _GradButton extends StatelessWidget {
               children: [
                 Icon(icon, color: Colors.white),
                 const SizedBox(width: 8),
-                Text(text, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+                Text(
+                  text,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ],
             ),
           ),
@@ -679,7 +725,11 @@ class _TinyGradButton extends StatelessWidget {
   final String text;
   final IconData icon;
   final VoidCallback onPressed;
-  const _TinyGradButton({required this.text, required this.icon, required this.onPressed});
+  const _TinyGradButton({
+    required this.text,
+    required this.icon,
+    required this.onPressed,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -687,7 +737,8 @@ class _TinyGradButton extends StatelessWidget {
       borderRadius: BorderRadius.circular(10),
       onTap: onPressed,
       child: Ink(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        padding:
+        const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
           gradient: const LinearGradient(colors: [_kGrad1, _kGrad3]),
           borderRadius: BorderRadius.circular(10),
