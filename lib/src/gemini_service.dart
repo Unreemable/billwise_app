@@ -7,6 +7,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 
+// NEW: telemetry
+import 'common/metrics.dart';
+
 /// Text-only models
 const List<String> _TEXT_MODELS = <String>[
   'gemini-2.5-flash',
@@ -143,15 +146,32 @@ Future<String> _callWithModelList({
 }) async {
   Object? lastErr;
   for (final m in models) {
+    final sw = Stopwatch()..start();
+    bool ok = false;
+    String? err;
     try {
       final json = await _postJsonWithRetry(m, body);
       if (kDebugMode) debugPrint('Gemini model used: $m (v1beta)');
       final text = _extractText(json);
-      if (text.isNotEmpty) return text;
+      if (text.isNotEmpty) {
+        ok = true;
+        return text;
+      }
       throw StateError('Empty text from $m');
     } catch (e) {
       lastErr = e;
+      err = e.toString();
       if (kDebugMode) debugPrint('Model $m failed: $e');
+    } finally {
+      sw.stop();
+      // NEW: log latency per model call
+      await Metrics.logOcrLatency(
+        latencyMs: sw.elapsedMilliseconds,
+        model: m,
+        ok: ok,
+        error: err,
+        extra: {'endpoint': 'v1beta'},
+      );
     }
   }
   throw StateError('All models failed. Last error: $lastErr');
@@ -242,7 +262,8 @@ IMPORTANT: Return ONLY the JSON object.
     final raw = (await _callWithModelList(models: _VISION_MODELS, body: body)).trim();
     if (raw.isEmpty) return null;
 
-    final stripped = raw.replaceAll(RegExp(r'^```(?:json)?|```$', multiLine: true), '').trim();
+    final stripped =
+    raw.replaceAll(RegExp(r'^```(?:json)?|```$', multiLine: true), '').trim();
     String candidate = stripped;
     if (!candidate.trimLeft().startsWith('{')) {
       final m = RegExp(r'\{[\s\S]*\}').firstMatch(stripped);
@@ -287,9 +308,11 @@ You are an OCR engine. Extract PLAIN TEXT from this receipt image.
       ],
     };
 
-    final txt = (await _callWithModelList(models: _VISION_MODELS, body: body)).trim();
+    final txt =
+    (await _callWithModelList(models: _VISION_MODELS, body: body)).trim();
     if (txt.isEmpty) return null;
-    final plain = txt.replaceAll(RegExp(r'^```(?:\\w+)?|```$', multiLine: true), '').trim();
+    final plain =
+    txt.replaceAll(RegExp(r'^```(?:\\w+)?|```$', multiLine: true), '').trim();
     return plain.isEmpty ? null : plain;
   }
 }
@@ -382,6 +405,7 @@ class GeminiOcrService {
       Uint8List imageBytes, {
         String mimeType = 'image/jpeg',
       }) {
-    return GeminiService.i.transcribeImage(imageBytes: imageBytes, mimeType: mimeType);
+    return GeminiService.i
+        .transcribeImage(imageBytes: imageBytes, mimeType: mimeType);
   }
 }

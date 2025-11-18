@@ -1,24 +1,26 @@
+import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'edit_profile_page.dart';
 
-// ========= لوحة الألوان (مطابقة للهوم/النوتفكيشن) =========
+// ========= الألوان =========
 const LinearGradient kHeaderGradient = LinearGradient(
-  colors: [Color(0xFF5F33E1), Color(0xFF0B0A1C)], // بنفسجي → غامق
+  colors: [Color(0xFF5F33E1), Color(0xFF0B0A1C)],
   begin: Alignment.topRight,
   end: Alignment.bottomLeft,
 );
 
-const Color kBg       = Color(0xFF0E0B1F); // خلفية عامة داكنة
-const Color kCard     = Color(0xFF1A1530); // لون الكروت
-const Color kStroke   = Color(0x22FFFFFF); // حدود شفافة
-const Color kText     = Color(0xFFFFFFFF);
-const Color kTextSub  = Color(0x99FFFFFF);
-const Color kAccent   = Color(0xFF6A73FF); // بنفسجي فاتح للأزرار/الأيقونات
-const Color kDanger   = Color(0xFFFF5252);
+const Color kBg      = Color(0xFF0E0B1F);
+const Color kCard    = Color(0xFF1A1530);
+const Color kStroke  = Color(0x22FFFFFF);
+const Color kText    = Color(0xFFFFFFFF);
+const Color kTextSub = Color(0x99FFFFFF);
+const Color kAccent  = Color(0xFF6A73FF);
+const Color kDanger  = Color(0xFFFF5252);
 
-// ====== نفس Presets المستخدمة في صفحة التعديل (للعرض فقط) ======
+// ====== نفس Presets المستخدمة في صفحة التعديل ======
 class _AvatarPreset {
   final String id;
   final String emoji;
@@ -183,6 +185,31 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
+  // زر كراش تجريبي – يظهر فقط في Debug
+  Widget _debugDiagnostics() {
+    if (kReleaseMode) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 18),
+        const Text('Diagnostics',
+            style: TextStyle(color: kText, fontSize: 13, fontWeight: FontWeight.w700)),
+        const SizedBox(height: 8),
+        _SettingTile(
+          icon: Icons.bug_report_outlined,
+          title: 'Test Crash (Crashlytics)',
+          subtitle: 'Generate a test crash to verify Crashlytics',
+          onTap: () async {
+            _toast('Triggering test crash…');
+            await Future.delayed(const Duration(milliseconds: 400));
+            FirebaseCrashlytics.instance.crash();
+          },
+          danger: true,
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -257,6 +284,9 @@ class _ProfilePageState extends State<ProfilePage> {
                   subtitle: 'How BillWise works',
                   onTap: _showHelp,
                 ),
+
+                // قسم التشخيص (Debug فقط)
+                _debugDiagnostics(),
 
                 const SizedBox(height: 24),
                 const Center(
@@ -398,9 +428,9 @@ class _Avatar extends StatelessWidget {
         border: Border.all(color: kStroke),
       ),
       alignment: Alignment.center,
-      child: const Text(
-        'U',
-        style: TextStyle(color: kText, fontSize: 20, fontWeight: FontWeight.w800),
+      child: Text(
+        initials,
+        style: const TextStyle(color: kText, fontSize: 20, fontWeight: FontWeight.w800),
       ),
     );
   }

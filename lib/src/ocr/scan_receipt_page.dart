@@ -1,3 +1,4 @@
+// lib/src/ocr/scan_receipt_page.dart
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
@@ -9,6 +10,9 @@ import 'package:image/image.dart' as img;
 import '../gemini_service.dart';           // Gemini OCR (لا تغييرات)
 import '../bills/ui/add_bill_page.dart';
 import 'receipt_parser.dart';              // Fallback parser
+
+// NEW: telemetry
+import '../common/metrics.dart';
 
 class ScanReceiptPage extends StatefulWidget {
   const ScanReceiptPage({super.key});
@@ -77,9 +81,19 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
       _error = null;
     });
 
+    final totalSw = Stopwatch()..start();
+    int prepareMs = 0;
+    bool overallOk = false;
+    String methodUsed = 'unknown';
+    String? errorMsg;
+
     try {
       // 1) تحضير الصورة
+      final prepSw = Stopwatch()..start();
       final processedBytes = await _prepareBytes(_image!);
+      prepSw.stop();
+      prepareMs = prepSw.elapsedMilliseconds;
+
       const mime = 'image/jpeg'; // بعد الضغط نرسل دائمًا jpeg
 
       // 2) محاولة JSON منظّم من Gemini
@@ -91,8 +105,9 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
       Map<String, dynamic>? prefill;
 
       if (receipt != null) {
+        methodUsed = 'json';
         final purchaseIso = receipt.purchaseDate?.toIso8601String();
-        final returnIso   = receipt.returnDeadline?.toIso8601String();
+        final returnIso = receipt.returnDeadline?.toIso8601String();
         final exchangeIso = receipt.exchangeDeadline?.toIso8601String();
 
         prefill = {
@@ -102,19 +117,19 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
               ? 'Receipt'
               : '${receipt.shopName} Purchase',
           'shop_name': receipt.shopName,
-          'store':     receipt.shopName,
+          'store': receipt.shopName,
           'total_amount': receipt.totalAmount,
-          'amount':       receipt.totalAmount,
-          'currency':     receipt.currency,
+          'amount': receipt.totalAmount,
+          'currency': receipt.currency,
           'purchase_date': receipt.purchaseDate,
-          'purchaseDate':  purchaseIso,
-          'return_deadline':   receipt.returnDeadline,
+          'purchaseDate': purchaseIso,
+          'return_deadline': receipt.returnDeadline,
           'exchange_deadline': receipt.exchangeDeadline,
           'warrantyStart': purchaseIso,
-          'warrantyEnd':   exchangeIso ?? returnIso,
+          'warrantyEnd': exchangeIso ?? returnIso,
           'image_path': _image!.path,
-          'imagePath':  _image!.path,
-          'rawText':    null,
+          'imagePath': _image!.path,
+          'rawText': null,
           'raw_source': 'gemini-ocr-json',
         };
       } else {
@@ -125,43 +140,65 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
         );
 
         if (plain == null || plain.trim().isEmpty) {
-          setState(() => _error =
-          'لم يتم استخراج بيانات مُهيكلة من الصورة.\nنصيحة: قرّبي على منطقة اسم المتجر والإجمالي، وإضاءة أعلى، وصورة مستقيمة.');
+          errorMsg =
+          'لم يتم استخراج بيانات مُهيكلة من الصورة.\nنصيحة: قرّبي على منطقة اسم المتجر والإجمالي، وإضاءة أعلى، وصورة مستقيمة.';
+          setState(() => _error = errorMsg);
           return;
         }
 
+        methodUsed = 'text+parser';
         final parsed = ReceiptParser.parse(plain);
 
         prefill = {
-          'title': (parsed.storeName == null || parsed.storeName!.trim().isEmpty)
+          'title':
+          (parsed.storeName == null || parsed.storeName!.trim().isEmpty)
               ? 'Receipt'
               : '${parsed.storeName} Purchase',
           'shop_name': parsed.storeName,
-          'store':     parsed.storeName,
+          'store': parsed.storeName,
           'total_amount': parsed.totalAmount,
-          'amount':       parsed.totalAmount,
+          'amount': parsed.totalAmount,
           'purchase_date': parsed.purchaseDate,
-          'purchaseDate':  parsed.purchaseDate?.toIso8601String(),
+          'purchaseDate': parsed.purchaseDate?.toIso8601String(),
           'warrantyStart': parsed.warrantyStartDate?.toIso8601String(),
-          'warrantyEnd':   parsed.warrantyExpiryDate?.toIso8601String(),
+          'warrantyEnd': parsed.warrantyExpiryDate?.toIso8601String(),
           'image_path': _image!.path,
-          'imagePath':  _image!.path,
-          'rawText':    plain,
+          'imagePath': _image!.path,
+          'rawText': plain,
           'raw_source': 'gemini-ocr-text+parser',
         };
       }
 
       final args = {
         'suggestWarranty': (prefill['warrantyEnd'] != null) ||
-            ((prefill['rawText'] ?? '').toString().toLowerCase().contains('warranty')),
+            ((prefill['rawText'] ?? '')
+                .toString()
+                .toLowerCase()
+                .contains('warranty')),
         'prefill': prefill,
       };
+
+      overallOk = true;
 
       if (!mounted) return;
       await Navigator.pushNamed(context, AddBillPage.route, arguments: args);
     } catch (e) {
-      setState(() => _error = e.toString());
+      errorMsg = e.toString();
+      setState(() => _error = errorMsg);
     } finally {
+      totalSw.stop();
+
+      // NEW: سجّل خط الأنابيب بالكامل
+      await Metrics.logOcrPipeline(
+        prepareMs: prepareMs,
+        totalMs: totalSw.elapsedMilliseconds,
+        ok: overallOk,
+        path: _image?.path,
+        method: methodUsed,
+        error: errorMsg,
+        extra: {'page': 'scan_receipt'},
+      );
+
       if (mounted) setState(() => _processing = false);
     }
   }
@@ -192,7 +229,8 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
       child: Scaffold(
         appBar: AppBar(
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
+            icon:
+            const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
             onPressed: () => Navigator.maybePop(context),
           ),
           title: const Text('Quick Add '),
@@ -224,7 +262,8 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
                         if (_image == null)
                           Center(
                             child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                              padding:
+                              const EdgeInsets.symmetric(horizontal: 16),
                               child: Text(
                                 'Take a photo of the receipt or select from gallery',
                                 textAlign: TextAlign.center,
@@ -331,10 +370,12 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
                       ? const SizedBox(
                     width: 18,
                     height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white),
                   )
                       : const Icon(Icons.auto_fix_high),
-                  label: Text(_processing ? 'Recognizing…' : 'Recognize & Fill Fields'),
+                  label:
+                  Text(_processing ? 'Recognizing…' : 'Recognize & Fill Fields'),
                 ),
               ),
             ],

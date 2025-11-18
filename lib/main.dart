@@ -1,4 +1,5 @@
-// lib/main.dart
+
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -7,20 +8,22 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 
-// Local storage
+// Local storage نخزن بيانات بسيطة مثل الflags
 import 'package:shared_preferences/shared_preferences.dart';
 
-// .env
+// .env نخزن api kays
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
+// استيراد الصفحات يبدأ من هنا
 // Firebase options
 import 'firebase_options.dart';
 
 // Auth + Home
 import 'src/auth/login_screen.dart';
 import 'src/auth/register_screen.dart';
-import 'src/home/home_screen.dart'; // للتوافق فقط
+import 'src/home/home_screen.dart';
 
 // Bills & Warranties
 import 'src/bills/ui/bill_list_page.dart';
@@ -54,9 +57,37 @@ import 'src/shell/app_shell.dart';
 // Welcome
 import 'welcome/welcome_screen.dart';
 
+/// يدالة تسجيل تأخير الإشعار
+/// تقيس كم تأخرت رسالة Firebase من وقت إرسالها (sent_at_iso) إلى وصولها وتحفظ الرقم في ماتركس الفايربيس
+
+Future<void> _logFcmDeliveryDelay(RemoteMessage message) async {
+  try {
+    final sentIso = message.data['sent_at_iso'];
+    if (sentIso is String && sentIso.isNotEmpty) {
+      final sentAt = DateTime.tryParse(sentIso)?.toUtc();
+      final arriveAt = DateTime.now().toUtc();
+      if (sentAt != null) {
+        final delayMs = arriveAt.difference(sentAt).inMilliseconds;
+        await FirebaseFirestore.instance.collection('perf_metrics').add({
+          'kind': 'notification_receive',
+          'delay_ms': delayMs,
+          'at_iso': arriveAt.toIso8601String(),
+          'message_id': message.messageId,
+          'title': message.notification?.title,
+          'body': message.notification?.body,
+        });
+      }
+    }
+  } catch (_) {}
+}
+
 /// معالج FCM في الخلفية (top-level)
+/// يشتغل حتى لو التطبيق مغلق
+
+@pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await _logFcmDeliveryDelay(message);
   final n = message.notification;
   if (n != null) {
     await NotificationsService.I.init();
@@ -85,13 +116,21 @@ Future<void> main() async {
   // Firebase
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
+  // Crashlytics ^5.x
+  FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterError;
+
   // قناة الإشعارات المحلية
   await setupLocalNotifications();
 
   // معالج الخلفية
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
-  runApp(const App());
+  // شغّل التطبيق داخل runZonedGuarded لتجميع الأخطاء غير الملتقطة
+  runZonedGuarded(() {
+    runApp(const App());
+  }, (error, stack) {
+    FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+  });
 }
 
 class App extends StatelessWidget {
@@ -107,7 +146,6 @@ class App extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.dark,
-        // نخلي الخلفيات شفافة لأن عندنا SoftPastelBackground
         scaffoldBackgroundColor: Colors.transparent,
         canvasColor: Colors.transparent,
         cardColor: const Color(0x1AFFFFFF),
@@ -251,8 +289,9 @@ class _RootGateState extends State<_RootGate> {
 
     await _saveFcmTokenForUser(token);
 
-    // فورغراوند: تنبيه محلي
+    // فورغراوند: نحسب تأخير التسليم + نعرض إشعار محلي
     FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
+      await _logFcmDeliveryDelay(message);
       final n = message.notification;
       if (n != null) {
         await NotificationsService.I.showNow(
@@ -273,6 +312,7 @@ class _RootGateState extends State<_RootGate> {
     // فتح من terminated
     final initial = await FirebaseMessaging.instance.getInitialMessage();
     if (initial != null && mounted) {
+      await _logFcmDeliveryDelay(initial);
       Navigator.of(context, rootNavigator: true)
           .pushNamed(NotificationsPage.route);
     }
