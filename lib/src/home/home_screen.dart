@@ -1,4 +1,4 @@
-// ================== Home Screen (Tight Header + Row Tiles + Wide QuickAdd + Live Results) ==================
+// ================== Home Screen (الهوم الرئيسية مع التحيّة + البلاطات + نتائج البحث) ==================
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -23,108 +23,103 @@ import '../common/widgets/expiry_progress.dart';
 
 import 'dart:math' as math;
 
+// ===== ألوان عامة نستخدمها في الهوم =====
+const Color _kBgDark   = Color(0xFF0E0722);   // خلفية الصفحة الغامقة
+const Color _kGrad1    = Color(0xFF6C3EFF);   // بنفسجي
+const Color _kGrad2    = Color(0xFF934DFE);   // بنفسجي أفتح
+const Color _kGrad3    = Color(0xFF3E8EFD);   // أزرق
+const Color _kCardDark = Color(0x1AFFFFFF);   // لون البطاقات الداكنة (شفاف شوي)
+const Color _kTextDim  = Colors.white70;      // نص ثانوي باهت
 
-// ===== ألوان عامة =====
-const Color _kBgDark   = Color(0xFF0E0722);
-const Color _kGrad1    = Color(0xFF6C3EFF);
-const Color _kGrad2    = Color(0xFF934DFE);
-const Color _kGrad3    = Color(0xFF3E8EFD);
-const Color _kCardDark = Color(0x1AFFFFFF);
-const Color _kTextDim  = Colors.white70;
-
-// تدرّج الهيدر
+// تدرّج الهيدر العلوي
 const LinearGradient kHeaderGradient = LinearGradient(
   colors: [Color(0xFF1A0B3A), Color(0xFF0E0722)],
   begin: Alignment.topLeft,
   end: Alignment.bottomRight,
 );
 
-// === إعدادات ===
-const double _kHeaderHeight = 240;
-const double _kTilesGap     = 12;
-const double _kColGap       = 12;
-const double _kTilesYOffset = -6;
+// === إعدادات ثابتة للمقاسات ===
+const double _kHeaderHeight = 240;   // ارتفاع الهيدر
+const double _kTilesGap     = 12;    // المسافة بين البلاطات
+const double _kColGap       = 12;    // المسافة بين عمودي Bill/Warranty
+const double _kTilesYOffset = -6;    // تعديل بسيط لرفع البلاطات لفوق
 
-// تحكم سريع بالمقاسات:
-const double kRowTileAspect   = 0.66; // ارتفاع مربعات Bill/Warranty = itemW * هذا الرقم
-const double kQuickTileAspect = 0.68; // ارتفاع Quick Add            = itemW * هذا الرقم
+// تحكم سريع بالمقاسات (نسب الارتفاع بالنسبة للعرض)
+const double kRowTileAspect   = 0.66; // ارتفاع مربعات Bill/Warranty = عرضها * هذا الرقم
+const double kQuickTileAspect = 0.68; // ارتفاع Quick Add             = عرضها * هذا الرقم
 
+// ================== الـ Widget الرئيسي للهوم ==================
 class HomeContent extends StatefulWidget {
   const HomeContent({super.key});
+
   @override
   State<HomeContent> createState() => _HomeContentState();
 }
 
 class _HomeContentState extends State<HomeContent> {
+  // كنترولر حقل البحث + الـ Focus عشان نعرف متى نلغي الكيبورد
   final _searchCtrl  = TextEditingController();
   final _searchFocus = FocusNode();
-  int _selectedTab = 0; // 0 = Warranties, 1 = Bills
 
   @override
   void dispose() {
+    // تنظيف الموارد لما ننتهي من الصفحة
     _searchCtrl.dispose();
     _searchFocus.dispose();
     super.dispose();
   }
 
+  // دالة بسيطة تجيب اسم المستخدم اللي بنعرضه في الهيدر
   String _greetName(User? u) {
     final dn = u?.displayName?.trim();
-    if (dn != null && dn.isNotEmpty) return dn;
+    if (dn != null && dn.isNotEmpty) return dn;     // لو فيه displayName نستخدمه
     final email = u?.email ?? '';
-    if (email.contains('@')) return email.split('@').first;
-    return 'there';
+    if (email.contains('@')) return email.split('@').first; // لو ما فيه اسم نستخدم قبل الـ @
+    return 'there'; // fallback
   }
 
+  // هل في نص مكتوب في البحث؟ لو نعم نعرض Panel النتائج
   bool get _showResults => _searchCtrl.text.trim().isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
 
-    // === حسابات المقاسات مرة واحدة عشان ما يصير اختلاف ===
+    // === حسابات مقاسات البلاطات مرّة واحدة ===
     final screenW   = MediaQuery.of(context).size.width;
-    final usableW   = screenW - 32; // padding 16 يمين + 16 يسار
+    final usableW   = screenW - 32;           // padding 16 يمين + 16 يسار
     final itemW     = (usableW - _kColGap) / 2;
-    final itemH     = itemW * kRowTileAspect;
-    final quickH    = itemW * kQuickTileAspect;
-    final tilesTop  = _kHeaderHeight - 70 + _kTilesYOffset;
-    final tilesH    = itemH + _kTilesGap + quickH;
-    final contentTop= tilesTop + tilesH + 12;
+    final itemH     = itemW * kRowTileAspect; // ارتفاع مربعات Bill/Warranty
+    final quickH    = itemW * kQuickTileAspect; // ارتفاع Quick Add
+    final tilesTop  = _kHeaderHeight - 70 + _kTilesYOffset; // بداية البلاطات تحت الهيدر
+    final tilesH    = itemH + _kTilesGap + quickH;          // مجموع ارتفاع البلاطات
+    final contentTop= tilesTop + tilesH + 12;               // من وين يبدأ قسم "Expiring soon"
 
     return WillPopScope(
+      // هنا نتحكم بزر الرجوع من الهوم: لو المستخدم يكتب في السيرش وبعدين ضغط Back نمسح البحث
       onWillPop: () async {
         if (_showResults) {
           _searchCtrl.clear();
           _searchFocus.unfocus();
           setState(() {});
-          return false;
+          return false; // لا تطلع من الصفحة
         }
-        return true;
+        return true; // عادي اسمح بالرجوع (AppShell يمسكه بعدين)
       },
       child: Directionality(
-        textDirection: ui.TextDirection.ltr,
+        textDirection: ui.TextDirection.ltr, // نخلي الهوم LTR عشان التصميم
         child: Scaffold(
-          backgroundColor: _kBgDark,
-          resizeToAvoidBottomInset: true,
+          backgroundColor: _kBgDark,        // الخلفية الغامقة الأصلية للهوم
+          resizeToAvoidBottomInset: true,   // عشان ما يغطي الكيبورد المحتوى
 
-          bottomNavigationBar: GradientBottomBar(
-            selectedIndex: _selectedTab,
-            onTap: (i) {
-              setState(() => _selectedTab = i);
-              if (i == 0) {
-                Navigator.of(context, rootNavigator: true).pushNamed(WarrantyListPage.route);
-              } else if (i == 1) {
-                Navigator.of(context, rootNavigator: true).pushNamed(BillListPage.route);
-              }
-            },
-            startColor: _kGrad1,
-            endColor: _kGrad3,
-          ),
+          // ملاحظة مهمة:
+          // ما عندنا bottomNavigationBar هنا، البار السفلي صار مسؤولية AppShell بس 👇
+          // AppShell يغير بين Home / Warranties / Bills
 
           body: Stack(
             clipBehavior: Clip.none,
             children: [
-              // 1) الهيدر
+              // 1) الهيدر العلوي (التحية + الأيقونات + السيرش)
               Positioned.fill(
                 top: 0,
                 bottom: null,
@@ -132,11 +127,12 @@ class _HomeContentState extends State<HomeContent> {
                   name: _greetName(user),
                   searchCtrl: _searchCtrl,
                   searchFocus: _searchFocus,
-                  onSearchChanged: (_) => setState(() {}),
-                  onSearchSubmitted: (_) => setState(() {}),
+                  onSearchChanged: (_) => setState(() {}),   // أي تغيير في السيرش يحدث الـ UI
+                  onSearchSubmitted: (_) => setState(() {}), // نفس الشيء لو ضغط Search
                   onLogout: () async {
                     await FirebaseAuth.instance.signOut();
                     if (!context.mounted) return;
+                    // نرجع لصفحة تسجيل الدخول ونمسح كل الـ stack
                     Navigator.pushNamedAndRemoveUntil(
                       context, LoginScreen.route, (_) => false,
                     );
@@ -148,7 +144,7 @@ class _HomeContentState extends State<HomeContent> {
                 ),
               ),
 
-              // 2) البلاطات (Bill/Warranty) فوق + Quick Add تحتهم
+              // 2) البلاطات: Bill + Warranty في صف، وتحتهم Quick Add العريض
               Positioned(
                 top: tilesTop,
                 left: 16,
@@ -159,6 +155,7 @@ class _HomeContentState extends State<HomeContent> {
                     children: [
                       Row(
                         children: [
+                          // بلاطة Bill
                           SizedBox(
                             width: itemW, height: itemH,
                             child: _ActionMiniTile(
@@ -171,6 +168,7 @@ class _HomeContentState extends State<HomeContent> {
                             ),
                           ),
                           const SizedBox(width: _kColGap),
+                          // بلاطة Warranty
                           SizedBox(
                             width: itemW, height: itemH,
                             child: _ActionMiniTile(
@@ -188,6 +186,7 @@ class _HomeContentState extends State<HomeContent> {
                         ],
                       ),
                       const SizedBox(height: _kTilesGap),
+                      // بلاطة Quick Add (OCR) العريضة
                       SizedBox(
                         width: usableW,
                         height: quickH,
@@ -205,13 +204,14 @@ class _HomeContentState extends State<HomeContent> {
                 ),
               ),
 
-              // 3) المحتوى — يبدأ دائماً بعد البلاطات المحسوبة (لا تداخل)
+              // 3) المحتوى اللي تحت – "Expiring soon" ونتائج الخلط بين الفواتير والضمانات
               Positioned.fill(
                 top: contentTop,
                 child: SafeArea(
                   top: false,
                   child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
+                    // الـ padding السفلي كبير شوي عشان يكون في مساحة كافية حتى لو فيه بار سفلي
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -226,7 +226,7 @@ class _HomeContentState extends State<HomeContent> {
                 ),
               ),
 
-              // 4) نتائج البحث — تبدأ من تحت الهيدر مباشرة لتغطي البلاطات
+              // 4) Panel نتائج البحث – تغطي اللي تحت لما المستخدم يكتب في السيرش
               if (_showResults)
                 Positioned.fill(
                   top: _kHeaderHeight + 8,
@@ -248,6 +248,7 @@ class _HomeContentState extends State<HomeContent> {
   }
 }
 
+// مجرد Wrapper عشان لو احتجنا نستخدم HomeScreen بالـ route
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
   static const route = '/home';
@@ -255,7 +256,7 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) => const HomeContent();
 }
 
-// ================= Header =================
+// ================= Header (الجزء العلوي) =================
 class _Header extends StatelessWidget {
   final String name;
   final TextEditingController searchCtrl;
@@ -289,12 +290,13 @@ class _Header extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // الصف الأول: الصورة الشخصية + Hello + الاسم + أيقونات الإشعارات وتسجيل الخروج
               Row(
                 children: [
                   Expanded(
                     child: Row(
                       children: [
-                        _ProfileAvatar(name: name, onTap: onProfile),
+                        _ProfileAvatar(name: name, onTap: onProfile), // أفاتار المستخدم
                         const SizedBox(width: 10),
                         Flexible(
                           child: Column(
@@ -313,12 +315,14 @@ class _Header extends StatelessWidget {
                       ],
                     ),
                   ),
+                  // زر الإشعارات
                   IconButton(
                     tooltip: 'Notifications',
                     onPressed: onNotifications,
                     icon: const Icon(Icons.notifications_none_rounded, color: Colors.white),
                   ),
                   const SizedBox(width: 4),
+                  // زر تسجيل الخروج
                   IconButton(
                     tooltip: 'Sign out',
                     onPressed: onLogout,
@@ -327,6 +331,7 @@ class _Header extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 14),
+              // شريط البحث
               _SearchBar(
                 controller: searchCtrl,
                 focusNode: searchFocus,
@@ -370,7 +375,7 @@ class _SearchBar extends StatelessWidget {
           end: Alignment.bottomRight,
         ),
         boxShadow: [
-          BoxShadow(color: _kGrad2.withOpacity(0.45), blurRadius: 16, offset: Offset(0, 6)),
+          BoxShadow(color: _kGrad2.withOpacity(0.45), blurRadius: 16, offset: const Offset(0, 6)),
         ],
       ),
       child: Row(
@@ -396,6 +401,7 @@ class _SearchBar extends StatelessWidget {
               ),
             ),
           ),
+          // زر X لمسح البحث لما يكون فيه نص
           if (controller.text.isNotEmpty)
             IconButton(
               tooltip: 'Clear',
@@ -411,7 +417,7 @@ class _SearchBar extends StatelessWidget {
   }
 }
 
-// =============== بطاقات الإجراءات ===============
+// =============== بطاقات الإجراءات (Bill / Warranty / Quick Add) ===============
 class _ActionMiniTile extends StatelessWidget {
   final String title;
   final String subtitle;
@@ -445,6 +451,7 @@ class _ActionMiniTile extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // أيقونة صغيرة داخل مربع شبه شفاف
                   Container(
                     width: 40, height: 40,
                     decoration: BoxDecoration(
@@ -472,7 +479,7 @@ class _ActionMiniTile extends StatelessWidget {
   }
 }
 
-// مستطيل عريض لــ Quick Add
+// مستطيل عريض لــ Quick Add (OCR)
 class _ActionRectWide extends StatelessWidget {
   final String title;
   final String subtitle;
@@ -515,6 +522,7 @@ class _ActionRectWide extends StatelessWidget {
               padding: const EdgeInsets.all(16),
               child: Row(
                 children: [
+                  // مربع فيه أيقونة الـ OCR
                   Container(
                     width: 56, height: 56,
                     decoration: BoxDecoration(
@@ -552,7 +560,7 @@ class _ActionRectWide extends StatelessWidget {
   }
 }
 
-// ======= أفاتارات =======
+// ======= أفاتارات (صورة المستخدم بالأيموجي) =======
 const Map<String, List<dynamic>> _kAvatarPresets = {
   'fox_purple':     ['🦊', [Color(0xFF6A73FF), Color(0xFFE6E9FF)]],
   'panda_blue':     ['🐼', [Color(0xFF38BDF8), Color(0xFFD1FAFF)]],
@@ -573,8 +581,10 @@ class _ProfileAvatar extends StatelessWidget {
   final VoidCallback? onTap;
   const _ProfileAvatar({required this.name, this.onTap});
 
-  String _initialOf(String text) => (text.trim().isEmpty ? 'U' : text.trim()[0].toUpperCase());
+  String _initialOf(String text) =>
+      (text.trim().isEmpty ? 'U' : text.trim()[0].toUpperCase());
 
+  // افاتار افتراضي بحرف من الاسم لو ما فيه إعدادات
   Widget _fallbackCircle(BuildContext context, String initials) {
     return Container(
       width: 42, height: 42,
@@ -600,6 +610,7 @@ class _ProfileAvatar extends StatelessWidget {
       return onTap == null ? base : InkWell(onTap: onTap, borderRadius: BorderRadius.circular(21), child: base);
     }
 
+    // نسمع لتغيّر بيانات المستخدم (avatar_id) من Firestore
     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance.collection('users').doc(uid).snapshots(),
       builder: (context, snap) {
@@ -634,16 +645,19 @@ class _ProfileAvatar extends StatelessWidget {
 }
 
 // =================== Expiring Mixed ===================
+// هذا الجزء يتكفّل بعرض 3 عناصر "قريبة الانتهاء" من الفواتير والضمانات
 class _ExpiringMixed3 extends StatelessWidget {
   final String? userId;
   final String query;
   const _ExpiringMixed3({required this.userId, required this.query});
 
-  String _fmt(DateTime dt) => '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+  String _fmt(DateTime dt) =>
+      '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
   DateTime _only(DateTime d) => DateTime(d.year, d.month, d.day);
 
   @override
   Widget build(BuildContext context) {
+    // دوال مساعدة صغيرة لقراءة التواريخ والسترنج من الماب
     Timestamp? _ts(Map<String, dynamic> d, List<String> keys) {
       for (final k in keys) {
         final v = d[k];
@@ -665,9 +679,11 @@ class _ExpiringMixed3 extends StatelessWidget {
     final billsCol = FirebaseFirestore.instance.collection('Bills');
     final warrCol  = FirebaseFirestore.instance.collection('Warranties');
 
+    // نفلتر بالـ user_id لو موجود
     final billsBase = uid != null ? billsCol.where('user_id', isEqualTo: uid) : billsCol;
     final warrBase  = uid != null ? warrCol.where('user_id', isEqualTo: uid) : warrCol;
 
+    // نجيب آخر 200 فاتورة وأقصى 300 ضمان
     final billsStream = billsBase.orderBy('created_at', descending: true).limit(200).snapshots();
     final warrStream  = warrBase.limit(300).snapshots();
 
@@ -688,6 +704,7 @@ class _ExpiringMixed3 extends StatelessWidget {
 
             final items = <Map<String, dynamic>>[];
 
+            // ===== نحول الفواتير لعناصر مع موعد انتهاء (إرجاع + استبدال) =====
             for (final doc in bSnap.data!.docs) {
               final d = doc.data();
               final title = (d['title'] ?? '—').toString();
@@ -716,6 +733,7 @@ class _ExpiringMixed3 extends StatelessWidget {
               }
             }
 
+            // ===== نحول الضمانات لعناصر مع موعد انتهاء =====
             for (final doc in wSnap.data!.docs) {
               final d = doc.data();
               final provider = _str(d, ['provider','brand','vendor'], fallback: 'Warranty');
@@ -736,6 +754,7 @@ class _ExpiringMixed3 extends StatelessWidget {
               });
             }
 
+            // ===== فلترة حسب نص البحث إن وجد =====
             final q = query.trim().toLowerCase();
             if (q.isNotEmpty) {
               items.retainWhere((e) {
@@ -745,6 +764,7 @@ class _ExpiringMixed3 extends StatelessWidget {
               });
             }
 
+            // لو ما فيه أي عنصر مناسب
             if (items.isEmpty) {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -755,18 +775,22 @@ class _ExpiringMixed3 extends StatelessWidget {
                   Container(
                     decoration: BoxDecoration(color: _kCardDark, borderRadius: BorderRadius.circular(12)),
                     padding: const EdgeInsets.all(16),
-                    child: Text(q.isEmpty ? 'No items with deadlines.' : 'No results for "$q".',
-                        style: const TextStyle(color: Colors.white70)),
+                    child: Text(
+                      q.isEmpty ? 'No items with deadlines.' : 'No results for "$q".',
+                      style: const TextStyle(color: Colors.white70),
+                    ),
                   ),
                 ],
               );
             }
 
+            // نقسم العناصر لقادمة (لم تنتهِ) وماضية (منتهية)
             final upcoming = items.where((e) => !(e['expiry'] as DateTime).isBefore(todayOnly)).toList()
               ..sort((a, b) => (a['expiry'] as DateTime).compareTo(b['expiry'] as DateTime));
             final past = items.where((e) => (e['expiry'] as DateTime).isBefore(todayOnly)).toList()
               ..sort((a, b) => (b['expiry'] as DateTime).compareTo(a['expiry'] as DateTime));
 
+            // نختار بحد أقصى 3 عناصر: نبدأ بالقادمة، ولو قليلة نكمّل من المنتهية
             final selected = <Map<String, dynamic>>[]..addAll(upcoming.take(3));
             if (selected.length < 3) selected.addAll(past.take(3 - selected.length));
 
@@ -781,6 +805,7 @@ class _ExpiringMixed3 extends StatelessWidget {
                   final expiry  = e['expiry'] as DateTime;
                   final subtype = (e['subtype'] as String?);
 
+                  // نحدد الأيقونة ونوع العنصر (إرجاع / استبدال / ضمان)
                   IconData leadingIcon;
                   String kindLabel = '';
                   if (type == 'bill') {
@@ -798,7 +823,7 @@ class _ExpiringMixed3 extends StatelessWidget {
                   return Container(
                     margin: const EdgeInsets.only(bottom: 10),
                     decoration: BoxDecoration(color: _kCardDark, borderRadius: BorderRadius.circular(12)),
-                    child: MediaQuery( // حد أقصى للتكبير داخل البلاطة كاملة
+                    child: MediaQuery( // نتحكم بتكبير النص داخل البلاطة بس
                       data: MediaQuery.of(context).copyWith(
                         textScaleFactor: MediaQuery.textScaleFactorOf(context).clamp(1.0, 1.25),
                       ),
@@ -828,15 +853,13 @@ class _ExpiringMixed3 extends StatelessWidget {
                           (e['subtitle'] as String?)?.isEmpty == true ? '—' : (e['subtitle'] as String? ?? '—'),
                           maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70),
                         ),
-                        // ===== يمين: التاريخ + شريط التقدّم (مرن بدون Overflow) =====
+                        // ===== يمين: التاريخ + شريط التقدّم =====
                         trailing: ConstrainedBox(
                           constraints: BoxConstraints(
-                            // مهم: صفر عشان ما يصير min > max على الشاشات الصغيرة
                             minWidth: 0,
-                            // ناخذ أكبر قيمة بين 120 و النسبة من عرض الشاشة
                             maxWidth: math.max(
                               120.0,
-                              (MediaQuery.of(context).size.width - 32) * 0.36, // 32 = padding أفقي
+                              (MediaQuery.of(context).size.width - 32) * 0.36,
                             ),
                           ),
                           child: MediaQuery(
@@ -866,6 +889,7 @@ class _ExpiringMixed3 extends StatelessWidget {
                           ),
                         ),
 
+                        // الضغط على العنصر يودّي لتفاصيل الفاتورة أو الضمان
                         onTap: () {
                           if (type == 'bill') {
                             final details = BillDetails(
@@ -921,9 +945,9 @@ class _SearchResultsPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.of(context).viewInsets.bottom; // ارتفاع الكيبورد
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom; // ارتفاع الكيبورد لو ظاهر
     return Material(
-      color: _kBgDark.withOpacity(0.94),
+      color: _kBgDark.withOpacity(0.94), // طبقة شبه شفافة فوق المحتوى
       child: SafeArea(
         top: false,
         bottom: false,
@@ -944,7 +968,7 @@ class _SearchResultsPanel extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Expanded(child: _LiveSearchList(query: query, userId: userId)),
-              SizedBox(height: bottomInset), // يحترم الكيبورد
+              SizedBox(height: bottomInset), // نخلي space تحت قد الكيبورد
             ],
           ),
         ),
@@ -953,6 +977,7 @@ class _SearchResultsPanel extends StatelessWidget {
   }
 }
 
+// القائمة الحية لنتائج البحث (Bills + Warranties)
 class _LiveSearchList extends StatelessWidget {
   final String query;
   final String? userId;
@@ -984,6 +1009,7 @@ class _LiveSearchList extends StatelessWidget {
 
             final List<_SearchItem> out = [];
 
+            // نحط الفواتير في النتائج
             for (final d in bSnap.data!.docs) {
               final m = d.data();
               final title = (m['title'] ?? '').toString();
@@ -999,6 +1025,7 @@ class _LiveSearchList extends StatelessWidget {
               }
             }
 
+            // نحط الضمانات في النتائج
             for (final d in wSnap.data!.docs) {
               final m = d.data();
               final provider = (m['provider'] ?? m['brand'] ?? '').toString();
@@ -1022,6 +1049,7 @@ class _LiveSearchList extends StatelessWidget {
               );
             }
 
+            // نرتّب النتائج بالاسم
             out.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
 
             return ListView.separated(
@@ -1077,6 +1105,7 @@ class _LiveSearchList extends StatelessWidget {
   }
 }
 
+// موديل بسيط للعنصر في نتائج البحث (فاتورة أو ضمان)
 class _SearchItem {
   final bool isBill;
   final String id;
@@ -1102,155 +1131,4 @@ class _SearchItem {
     this.start,
     this.end,
   })  : isBill = false, amount = null, purchase = null;
-}
-
-// =================== Bottom Gradient Bar ===================
-class GradientBottomBar extends StatelessWidget {
-  final int selectedIndex;               // 0 = Warranties, 1 = Bills
-  final ValueChanged<int> onTap;
-  final Color startColor;
-  final Color endColor;
-
-  const GradientBottomBar({
-    super.key,
-    required this.selectedIndex,
-    required this.onTap,
-    this.startColor = const Color(0xFF6C3EFF),
-    this.endColor   = const Color(0xFF3E8EFD),
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.of(context).padding.bottom;
-
-    return SafeArea(
-      top: false,
-      child: ClipRRect(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-        child: Material(
-          color: Colors.transparent,
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [startColor, endColor],
-                begin: Alignment.centerLeft,
-                end: Alignment.centerRight,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.25),
-                  blurRadius: 16,
-                  offset: const Offset(0, -6),
-                ),
-              ],
-            ),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: 76 + bottomInset),
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(16, 10, 16, 10 + bottomInset),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _BottomItem(
-                        icon: Icons.verified_user_rounded,
-                        label: 'Warranties',
-                        selected: selectedIndex == 0,
-                        onTap: () => onTap(0),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    const _FabDot(),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _BottomItem(
-                        icon: Icons.receipt_long_rounded,
-                        label: 'Bills',
-                        selected: selectedIndex == 1,
-                        onTap: () => onTap(1),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _BottomItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool selected;
-  final VoidCallback? onTap;
-  const _BottomItem({required this.icon, required this.label, this.selected = false, this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final fg = selected ? Colors.white : Colors.white70;
-    final selectedBg = Colors.white.withOpacity(.14);
-    final tsf = MediaQuery.textScaleFactorOf(context).clamp(1.0, 1.2);
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(14),
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-        child: Container(
-          decoration: BoxDecoration(
-            color: selected ? selectedBg : Colors.transparent,
-            borderRadius: BorderRadius.circular(14),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          child: MediaQuery(
-            data: MediaQuery.of(context).copyWith(textScaleFactor: tsf),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(icon, color: fg, size: 20),
-                const SizedBox(width: 6),
-                Flexible(
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    softWrap: false,
-                    style: TextStyle(color: fg, fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _FabDot extends StatelessWidget {
-  const _FabDot();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 54, height: 54,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: const LinearGradient(
-          colors: [Color(0xFF6C3EFF), Color(0xFF3E8EFD)],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Color(0xFF934DFE).withOpacity(.45),
-            blurRadius: 16,
-            offset: const Offset(0, 6),
-          ),
-        ],
-        border: Border.all(color: Colors.white, width: 2),
-      ),
-      child: const Icon(Icons.home_filled, color: Colors.white),
-    );
-  }
 }

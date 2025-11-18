@@ -613,18 +613,7 @@ class _BillListPageState extends State<BillListPage> {
           ),
         ),
 
-        // ===== الشريط السفلي المتدرّج المشترك مع الهوم (Home / Warranties / Bills) =====
-        bottomNavigationBar: GradientBottomBar(
-          selectedIndex: 1, // تبويب الفواتير
-          onTap: (i) {
-            if (i == 0) {
-              Navigator.of(context, rootNavigator: true)
-                  .pushNamed(WarrantyListPage.route);
-            } else if (i == 1) {
-              // نحن أصلاً في تبويب الفواتير → لا شيء
-            }
-          },
-        ),
+
 
         // زر عائم لإضافة فاتورة جديدة
         floatingActionButton: FloatingActionButton(

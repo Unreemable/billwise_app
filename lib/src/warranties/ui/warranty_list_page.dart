@@ -273,18 +273,7 @@ class _WarrantyListPageState extends State<WarrantyListPage> {
           flexibleSpace: Container(decoration: const BoxDecoration(gradient: _kHeaderGrad)),
         ),
 
-        // ===== البار السفلي: Warranties / Bills / Home =====
-        bottomNavigationBar: GradientBottomBar(
-          selectedIndex: 0,
-          onTap: (i) {
-            if (i == 0) {
-              // أنت بالفعل في صفحة الضمانات
-            } else if (i == 1) {
-              // الانتقال لصفحة الفواتير
-              Navigator.of(context, rootNavigator: true).pushNamed(BillListPage.route);
-            }
-          },
-        ),
+
 
         // ===== جسم الصفحة =====
         body: uid == null

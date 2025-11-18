@@ -1,74 +1,82 @@
 import 'package:flutter/material.dart';
 
-// تبويبات
-import '../home/home_screen.dart';                // HomeContent
-import '../warranties/ui/warranty_list_page.dart';
-import '../bills/ui/bill_list_page.dart';
+// الصفحات اللي نمشي بينها عن طريق البار السفلي
+import '../home/home_screen.dart';                // شاشة الهوم
+import '../warranties/ui/warranty_list_page.dart'; // قائمة الضمانات
+import '../bills/ui/bill_list_page.dart';          // قائمة الفواتير
 
-/// تدرّج موحّد (90° يسار → يمين)
+/// تدرج موحد للبار (من بنفسجي لأزرق)
 const LinearGradient _kAppGradient = LinearGradient(
-  colors: [Color(0xFF5F33E1), Color(0xFF000000)],
+  colors: [Color(0xFF6C3EFF), Color(0xFF3E8EFD)],
   begin: Alignment.centerLeft,
   end: Alignment.centerRight,
 );
 
+// الـ Shell العامة للتطبيق: فيها البار السفلي + تغيير التبويبات
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
+
   @override
   State<AppShell> createState() => _AppShellState();
 }
 
 class _AppShellState extends State<AppShell> {
-  int _index = 0;
+  int _index = 0; // 0 = Home, 1 = Warranties, 2 = Bills
 
+  // مفاتيح للنّافيقيتور الداخلي لكل تبويب (عشان كل تبويب يكون له ستاك خاص)
   final _homeKey = GlobalKey<NavigatorState>();
   final _warrKey = GlobalKey<NavigatorState>();
   final _billKey = GlobalKey<NavigatorState>();
 
+  // this.currentNav = النّافيقيتور الخاص بالتبويب الحالي
   NavigatorState get _currentNav =>
       [_homeKey, _warrKey, _billKey][_index].currentState!;
 
+  // منطق زر الباك (رجوع) في الجوال
   Future<bool> _onWillPop() async {
+    // لو أقدر أرجع صفحة داخل نفس التبويب  أرجع بس داخل التبويب
     if (_currentNav.canPop()) {
       _currentNav.pop();
-      return false;
+      return false; // لا تطلع من التطبيق
     }
+    // لو مو واقفة على الهوم → رجّعني للهوم بدل ما تقفل التطبيق
     if (_index != 0) {
       setState(() => _index = 0);
       return false;
     }
+    // لو أصلاً على الهوم ومافي شي ورا  اسمح بالخروج
     return true;
   }
 
   @override
   Widget build(BuildContext context) {
-    final isHome = _index == 0;
-
     return WillPopScope(
-      onWillPop: _onWillPop,
+      onWillPop: _onWillPop, // نربط منطق زر الرجوع
       child: Scaffold(
+        // الخلفية شفافة عشان تبان خلفية الباستيل من الـ main
         backgroundColor: Colors.transparent,
+        // يخلي الجسم يمتد تحت البار السفلي (يقلل القصّة السوداء)
         extendBody: true,
 
-        // ✅ لا زر ولا شريط عندما نكون في الهوم
+        // زر الهوم اللي بالنص
         floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
-        floatingActionButton: isHome
-            ? null
-            : _CenterHomeButton(
-          selected: _index == 0,
+        floatingActionButton: _CenterHomeButton(
+          selected: _index == 0,            // لو إحنا في الهوم نخليه مرفوع شوي
           onTap: () => setState(() => _index = 0),
         ),
-        bottomNavigationBar: isHome
-            ? null
-            : _CurvedBottomBar(
-          selectedTab: _index,
-          onTapLeft:  () => setState(() => _index = 1),
-          onTapRight: () => setState(() => _index = 2),
+
+        // البار السفلي المنحني (دايم موجود لكل الشاشات)
+        bottomNavigationBar: _CurvedBottomBar(
+          selectedTab: _index,              // يحدد أي تبويب مفعل
+          onTapLeft:  () => setState(() => _index = 1), // نروح للضمانات
+          onTapRight: () => setState(() => _index = 2), // نروح للفواتير
         ),
 
+        // IndexedStack عشان نحافظ على حالة كل تبويب (ما يعيد تحميل القائمة كل مرة)
         body: IndexedStack(
           index: _index,
           children: [
+            // تبويب الهوم
             Navigator(
               key: _homeKey,
               onGenerateRoute: (s) => MaterialPageRoute(
@@ -76,6 +84,7 @@ class _AppShellState extends State<AppShell> {
                 settings: s,
               ),
             ),
+            // تبويب الضمانات
             Navigator(
               key: _warrKey,
               onGenerateRoute: (s) => MaterialPageRoute(
@@ -83,6 +92,7 @@ class _AppShellState extends State<AppShell> {
                 settings: s,
               ),
             ),
+            // تبويب الفواتير
             Navigator(
               key: _billKey,
               onGenerateRoute: (s) => MaterialPageRoute(
@@ -97,12 +107,12 @@ class _AppShellState extends State<AppShell> {
   }
 }
 
-// ====== Bottom bar + Center button ======
+// ================== البار السفلي المنحني ==================
 
 class _CurvedBottomBar extends StatelessWidget {
   final int selectedTab; // 0 home, 1 warr, 2 bills
-  final VoidCallback onTapLeft;
-  final VoidCallback onTapRight;
+  final VoidCallback onTapLeft;  // لما أضغط زر Warranties
+  final VoidCallback onTapRight; // لما أضغط زر Bills
 
   const _CurvedBottomBar({
     required this.selectedTab,
@@ -113,28 +123,34 @@ class _CurvedBottomBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BottomAppBar(
+      // نخليه شفاف بالكامل، التدرّج بنرسمه في DecoratedBox تحت
+      color: Colors.transparent,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      // AutomaticNotchedShape = شكل منحني فيه فتحة للزر الدائري اللي في النص
       shape: const AutomaticNotchedShape(
         RoundedRectangleBorder(
           borderRadius: BorderRadius.only(
-            topLeft: Radius.circular(26),
-            topRight: Radius.circular(26),
+            // زاوية البار من فوق (كل ما كبرت القيمة يصير الكيرف أنعم)
+            topLeft: Radius.circular(60),
+            topRight: Radius.circular(60),
           ),
         ),
-        CircleBorder(),
+        CircleBorder(), // الفتحة الدائرية حق زر الهوم
       ),
-      clipBehavior: Clip.antiAlias,
-      notchMargin: 8,
-      elevation: 12,
+      clipBehavior: Clip.antiAlias, // يقص المحتوى على شكل البار المنحني
       child: DecoratedBox(
+        // هنا نرسم التدرج البنفسجي/الأزرق
         decoration: const BoxDecoration(gradient: _kAppGradient),
         child: SafeArea(
-          top: false,
+          top: false, // ما نهتم بالـ top لأنه تحت الشاشة
           child: SizedBox(
-            height: 64,
+            height: 64, // ارتفاع البار
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
+              padding: const EdgeInsets.symmetric(horizontal: 50),
               child: Row(
                 children: [
+                  // زر Warranties على اليسار
                   Expanded(
                     child: Align(
                       alignment: Alignment.centerLeft,
@@ -146,7 +162,8 @@ class _CurvedBottomBar extends StatelessWidget {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 64),
+                  const SizedBox(width: 64), // فراغ للزر الدائري اللي في النص
+                  // زر Bills على اليمين
                   Expanded(
                     child: Align(
                       alignment: Alignment.centerRight,
@@ -168,10 +185,11 @@ class _CurvedBottomBar extends StatelessWidget {
   }
 }
 
+// عنصر واحد داخل البار (أيقونة + نص)
 class _BottomItem extends StatelessWidget {
   final IconData icon;
   final String label;
-  final bool selected;
+  final bool selected;   // هل هذا التبويب هو الحالي؟
   final VoidCallback onTap;
 
   const _BottomItem({
@@ -183,6 +201,7 @@ class _BottomItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // نمط النص: لو التبويب مختار نخلي الخط أسمك شوي
     final textStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
       color: Colors.white,
       fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
@@ -196,6 +215,7 @@ class _BottomItem extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // الأيقونة، تكبر شوي لو التبويب مختار
             Icon(icon, color: Colors.white, size: selected ? 26 : 24),
             const SizedBox(height: 2),
             Text(label, style: textStyle),
@@ -206,8 +226,9 @@ class _BottomItem extends StatelessWidget {
   }
 }
 
+// زر الهوم الدائري اللي في النص (Floating Action Button مخصص)
 class _CenterHomeButton extends StatelessWidget {
-  final bool selected;
+  final bool selected;   // هل إحنا الآن في الهوم؟
   final VoidCallback onTap;
 
   const _CenterHomeButton({required this.selected, required this.onTap});
@@ -215,25 +236,30 @@ class _CenterHomeButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: onTap, // لما نضغط يرجuنا للهوم
       child: AnimatedContainer(
+        // أنيميشن بسيط لما يتغير التبويب
         duration: const Duration(milliseconds: 180),
+        // لو الزر مختار (في الهوم) نرفعه شوي لفوق عشان يبان "طالع"
         transform: Matrix4.translationValues(0, selected ? -6 : 0, 0),
         width: 64,
         height: 64,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
+          // نفس تدرّج البار عشان يطلع منسجم
           gradient: const LinearGradient(
-            colors: [Color(0xFF5F33E1), Color(0xFF000000)],
+            colors: [Color(0xFF6C3EFF), Color(0xFF3E8EFD)],
             begin: Alignment.centerLeft,
             end: Alignment.centerRight,
           ),
+          // حدود بيضاء حوالين الزر
           border: Border.all(color: Colors.white, width: 4),
+          // ظل خفيف تحت الزر يعطي إحساس عمق
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.15),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
+              color: Colors.black.withOpacity(0.18),
+              blurRadius: 14,
+              offset: const Offset(0, 6),
             ),
           ],
         ),
