@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -9,7 +10,6 @@ import 'package:image_picker/image_picker.dart';
 import '../data/warranty_service.dart';
 import '../../bills/data/bill_service.dart';
 import '../../notifications/notifications_service.dart';
-import 'dart:ui' as ui;
 
 // ===== ألوان وستايل موحّد مستخدم في كامل التطبيق =====
 const Color _kBgDark  = Color(0xFF0E0722);
@@ -29,8 +29,8 @@ class AddWarrantyPage extends StatefulWidget {
   const AddWarrantyPage({
     super.key,
     this.billId,                 // لو فيه billId يعني الضمان مرتبط بفاتورة
-    this.defaultStartDate,       // تاريخ بداية جاهز (يجي من الفاتورة)
-    this.defaultEndDate,         // تاريخ نهاية جاهز
+    this.defaultStartDate,       // (ما نستخدمها الآن، نخلي الحقول فاضية)
+    this.defaultEndDate,
     this.warrantyId,             // لو غير null = تعديل
     this.initialProvider,        // اسم المتجر الجاي من AddBill
     this.prefillAttachmentPath,  // مسار صورة جاهزة لنسخها كمرفق
@@ -54,15 +54,22 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
   final _providerCtrl    = TextEditingController();   // اسم المتجر / المزوّد
   final _productNameCtrl = TextEditingController();   // اسم المنتج (اختياري)
   final _serialCtrl      = TextEditingController();   // الرقم التسلسلي (اختياري)
+  final _yearsCtrl       = TextEditingController();   // عدد سنوات الضمان
 
   // ===== التواريخ =====
-  late DateTime _start;  // بداية الضمان
-  late DateTime _end;    // نهاية الضمان
+  DateTime? _start;          // بداية الضمان (فاضي في البداية)
+  DateTime? _end;            // نهاية الضمان (يُحسب تلقائي)
   final _fmt = DateFormat('yyyy-MM-dd');
+
+  /// عدد السنوات للضمان (من 1 إلى 10 مثلاً)
+  int _years = 1;
+
+  /// إذا true يعني المستخدم عدّل تاريخ النهاية يدويًا
+  bool _endManual = false;
 
   bool _saving = false;  // فلاج لمنع التكرار أثناء الحفظ
 
-  // خدمة الإشعارات (تستخدم منطق: ٣ فترات + شهر قبل الانتهاء + يوم الانتهاء)
+  // خدمة الإشعارات (منطق التذكير الجديد)
   final _notifs = NotificationsService.I;
 
   bool get isEdit => widget.warrantyId != null;  // هل نحن في وضع التعديل؟
@@ -80,14 +87,13 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
     // تعبئة اسم المتجر لو وصل من صفحة الفاتورة
     _providerCtrl.text = (widget.initialProvider ?? '').trim();
 
-    // تهيئة التواريخ (افتراضي = اليوم + سنة)
-    _start = widget.defaultStartDate ?? DateTime.now();
-    _end   = widget.defaultEndDate   ?? _start.add(const Duration(days: 365));
+    // نخلي التواريخ فاضية في الوضع العادي
+    _start = null;
+    _end   = null;
 
-    // في حالة خطأ (النهاية قبل البداية) نعدلها تلقائياً
-    if (_end.isBefore(_start)) {
-      _end = _start.add(const Duration(days: 1));
-    }
+    // عدد السنوات الافتراضي
+    _years = 1;
+    _yearsCtrl.text = '1';
 
     // لو وصلنا صورة جاهزة نستخدمها كمرفق مباشرة
     final prefillPath = (widget.prefillAttachmentPath ?? '').trim();
@@ -101,10 +107,17 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
       _loadExistingWarranty();
     }
 
-    // طلب أذونات الإشعارات بعد بناء الصفحة (لمنطق التنبيهات الجديد)
+    // طلب أذونات الإشعارات بعد بناء الصفحة
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _notifs.requestPermissions(context);
     });
+  }
+
+  // إعادة حساب تاريخ نهاية الضمان حسب عدد السنوات
+  void _recalcEndFromYears() {
+    if (_start == null) return;
+    // نضيف عدد السنوات مباشرة
+    _end = DateTime(_start!.year + _years, _start!.month, _start!.day);
   }
 
   // ===== جلب بيانات الضمان في حالة التعديل =====
@@ -138,7 +151,20 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
       final endTs   = data['end_date'];
       if (startTs is Timestamp) _start = startTs.toDate();
       if (endTs   is Timestamp) _end   = endTs.toDate();
-      if (_end.isBefore(_start)) _end = _start.add(const Duration(days: 1));
+      if (_start != null && _end != null && _end!.isBefore(_start!)) {
+        _end = _start!.add(const Duration(days: 1));
+      }
+
+      // محاولة استنتاج عدد السنوات من الفرق بين البداية والنهاية
+      if (_start != null && _end != null) {
+        final diffYears = _end!.year - _start!.year;
+        if (diffYears >= 1 && diffYears <= 10) {
+          _years = diffYears;
+          _yearsCtrl.text = _years.toString();
+        } else {
+          _endManual = true;
+        }
+      }
 
       // بيانات المرفق المخزّن
       final existingLocal = (data['attachment_local_path'] ?? '') as String? ?? '';
@@ -161,6 +187,7 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
     _providerCtrl.dispose();
     _productNameCtrl.dispose();
     _serialCtrl.dispose();
+    _yearsCtrl.dispose();
     super.dispose();
   }
 
@@ -227,7 +254,7 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
       _attachmentLocalPath = null;
       _attachmentName = null;
     });
-    _snack('تم حذف المرفق');
+    _snack('Attachment removed');
   }
 
   // ===== اختيار تاريخ =====
@@ -251,13 +278,22 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
     try {
       final uid = FirebaseAuth.instance.currentUser?.uid;
       if (uid == null) {
-        _snack('سجّل الدخول أولاً');
+        _snack('Please sign in first');
+        return;
+      }
+
+      if (_start == null) {
+        _snack('Please select warranty start date');
+        return;
+      }
+      if (_end == null) {
+        _snack('Warranty end date is missing');
         return;
       }
 
       // حماية من مشاكل التواريخ
-      if (_end.isBefore(_start)) {
-        _snack('تاريخ النهاية يجب أن يكون بعد البداية');
+      if (_end!.isBefore(_start!)) {
+        _snack('End date must be after start date');
         return;
       }
 
@@ -273,12 +309,11 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
       if (isEdit) {
         warrantyId = widget.warrantyId!;
 
-        // تحديث الحقول الأساسية في Service (start/end/provider)
         await WarrantyService.instance.updateWarranty(
           id: warrantyId,
           provider: provider,
-          startDate: _start,
-          endDate: _end,
+          startDate: _start!,
+          endDate: _end!,
         );
 
         final docRef =
@@ -316,8 +351,8 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
         // ===== إنشاء ضمان جديد =====
         warrantyId = await WarrantyService.instance.createWarranty(
           billId: widget.billId,
-          startDate: _start,
-          endDate: _end,
+          startDate: _start!,
+          endDate: _end!,
           provider: provider,
           userId: uid,
         );
@@ -346,35 +381,29 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
         await BillService.instance.updateBill(
           billId: widget.billId!,
           warrantyCoverage: true,
-          warrantyStartDate: _start,
-          warrantyEndDate: _end,
+          warrantyStartDate: _start!,
+          warrantyEndDate: _end!,
         );
       }
 
       // ===== إعادة جدولة تذكيرات الضمان بالمنطق الجديد =====
-      //
-      // هذه الدالة الآن:
-      // - تقسّم فترة الضمان إلى 3 ثلثات وترسل إشعار في بداية كل جزء.
-      // - ترسل إشعار ثابت قبل نهاية الضمان بشهر (قدر الإمكان).
-      // - ترسل إشعار في يوم انتهاء الضمان نفسه.
-      // - كل المواعيد على 12:00 منتصف الليل حسب Asia/Riyadh.
       try {
         await _notifs.rescheduleWarrantyReminder(
           warrantyId: warrantyId,
           provider: provider,
-          start: _start,
-          end: _end,
+          start: _start!,
+          end: _end!,
         );
       } catch (_) {
         // لو فشل، ما نكسر حفظ الضمان
       }
 
       if (!mounted) return;
-      _snack(isEdit ? 'تم تحديث الضمان' : 'تم حفظ الضمان');
+      _snack(isEdit ? 'Warranty updated' : 'Warranty saved');
       Navigator.of(context).pop();
 
     } catch (e) {
-      if (mounted) _snack('خطأ: $e');
+      if (mounted) _snack('Error: $e');
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -386,10 +415,10 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
       await WarrantyService.instance.deleteWarranty(widget.warrantyId!);
       // إلغاء إشعارات هذا الضمان
       await _notifs.cancelWarrantyReminder(widget.warrantyId!);
-      _snack('تم حذف الضمان');
+      _snack('Warranty removed');
       Navigator.of(context).pop();
     } catch (e) {
-      _snack('خطأ: $e');
+      _snack('Error: $e');
     }
   }
 
@@ -513,6 +542,67 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
               ),
               const SizedBox(height: 12),
 
+              // ===== اختيار عدد سنوات الضمان (إنتِ تكتبين العدد) =====
+              Container(
+                padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(.06),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.white.withOpacity(.18)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.timelapse, color: Colors.white70),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Warranty years (1–10)',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ),
+                    SizedBox(
+                      width: 60,
+                      child: TextField(
+                        controller: _yearsCtrl,
+                        keyboardType: TextInputType.number,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.white),
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          contentPadding:
+                          EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                          border: UnderlineInputBorder(
+                            borderSide: BorderSide(color: Colors.white70),
+                          ),
+                        ),
+                        onChanged: (value) {
+                          final n = int.tryParse(value);
+                          setState(() {
+                            if (n == null || n <= 0) {
+                              _years = 1;
+                            } else if (n > 10) {
+                              _years = 10;
+                              _yearsCtrl.text = '10';
+                              _yearsCtrl.selection = TextSelection.fromPosition(
+                                const TextPosition(offset: 2),
+                              );
+                            } else {
+                              _years = n;
+                            }
+                            if (!_endManual) {
+                              _recalcEndFromYears();
+                            }
+                          });
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
               // صف المرفق
               Container(
                 padding:
@@ -551,16 +641,19 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
 
               const SizedBox(height: 12),
 
+              // تاريخ بداية الضمان
               _GlassRow(
                 left: 'Warranty start date',
-                right: _fmt.format(_start),
+                right: _start == null
+                    ? 'Select date'
+                    : _fmt.format(_start!),
                 rightIcon: Icons.date_range,
                 onTap: () => _pickDate(
-                  initial: _start,
+                  initial: _start ?? DateTime.now(),
                   onPick: (d) => setState(() {
                     _start = d;
-                    if (_end.isBefore(_start)) {
-                      _end = _start.add(const Duration(days: 1));
+                    if (!_endManual) {
+                      _recalcEndFromYears();
                     }
                   }),
                 ),
@@ -568,13 +661,19 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
 
               const SizedBox(height: 10),
 
+              // تاريخ نهاية الضمان (محسوب تلقائيًا لكن قابل للتعديل)
               _GlassRow(
                 left: 'Warranty end date',
-                right: _fmt.format(_end),
+                right: _end == null
+                    ? 'Calculated from years'
+                    : _fmt.format(_end!),
                 rightIcon: Icons.verified_user,
                 onTap: () => _pickDate(
-                  initial: _end.isBefore(_start) ? _start : _end,
-                  onPick: (d) => setState(() => _end = d),
+                  initial: _end ?? _start ?? DateTime.now(),
+                  onPick: (d) => setState(() {
+                    _end = d;
+                    _endManual = true; // من الآن فصاعدًا ما نعيد حسابه تلقائيًا
+                  }),
                 ),
               ),
             ],

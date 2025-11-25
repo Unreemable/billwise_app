@@ -661,14 +661,17 @@ class _BillDetailPageState extends State<BillDetailPage> {
           ],
         ),
 
-        // أزرار الإجراءات في الأسفل، بنفس ستايل الضمان (Edit / Delete)
+        // Inside bottomNavigationBar:
         bottomNavigationBar: SafeArea(
           minimum: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           child: Row(
             children: [
               Expanded(
                 child: FilledButton.icon(
-                  onPressed: _openEditSheet,
+                  onPressed: () async {
+                    await _openEditSheet();  // ← يفتح الإيديت
+                    setState(() {});         // ← التحديث الذهبي
+                  },
                   icon: const Icon(Icons.edit),
                   label: const Text('Edit'),
                   style: FilledButton.styleFrom(
@@ -692,6 +695,7 @@ class _BillDetailPageState extends State<BillDetailPage> {
             ],
           ),
         ),
+
         backgroundColor: const Color(0xFF0E0A1C), // خلفية داكنة لتناسق مع صفحة الضمان
       ),
     );
@@ -766,15 +770,14 @@ Widget _section({
   required DateTime end,
   required bool months,
 }) {
-  // نستخدم ExpiryProgress كما هو لكن نخفي شارة الحالة الداخلية
-  // حتى لا نكرر "active/expired" لكل سطر.
   return ExpiryProgress(
+    key: ValueKey('$title-${start.toIso8601String()}-${end.toIso8601String()}'), // ★ السطر السحري
     title: title,
     startDate: start,
     endDate: end,
     showInMonths: months,
     dense: true,
     showTitle: true,
-    showStatus: false, // إخفاء شارة الحالة الداخلية
+    showStatus: false,
   );
 }

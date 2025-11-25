@@ -28,14 +28,17 @@ const Map<String, dynamic> _GEN_CFG = <String, dynamic>{
   'temperature': 0.2,
 };
 
-/// Safety settings
+/// Safety settings هنا عملياً نطفي الفلاتر القوية (BLOCK_NONE) عشان:
+
+// ما يمنعنا من قراءة فاتورة.
+// ما يقول: محتوى خطير… وهو مجرد إيصال.
 const List<Map<String, dynamic>> _SAFETY = <Map<String, dynamic>>[
   {'category': 'HARM_CATEGORY_HARASSMENT', 'threshold': 'BLOCK_NONE'},
   {'category': 'HARM_CATEGORY_HATE_SPEECH', 'threshold': 'BLOCK_NONE'},
   {'category': 'HARM_CATEGORY_SEXUALLY_EXPLICIT', 'threshold': 'BLOCK_NONE'},
   {'category': 'HARM_CATEGORY_DANGEROUS_CONTENT', 'threshold': 'BLOCK_NONE'},
 ];
-
+// هنا نستخدم الurl اللي نرسله الطلب
 Uri _endpoint(String model) => Uri.parse(
   'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent',
 );
@@ -48,6 +51,7 @@ String _apiKeyOrThrow() {
     );
   }
   return key;
+
 }
 
 bool _isRetriableStatus(int code) =>
