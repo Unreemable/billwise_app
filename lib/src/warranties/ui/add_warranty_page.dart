@@ -1,6 +1,6 @@
+// ===================== Add Warranty Page (Unified Product Field) =====================
 import 'dart:io';
 import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -11,14 +11,13 @@ import '../data/warranty_service.dart';
 import '../../bills/data/bill_service.dart';
 import '../../notifications/notifications_service.dart';
 
-// ===== ألوان وستايل موحّد مستخدم في كامل التطبيق =====
-const Color _kBgDark  = Color(0xFF0E0722);
+// ===== Unified Colors (same across app) =====
+const Color _kBgDark = Color(0xFF0E0722);
 const Color _kTextDim = Colors.white70;
-const Color _kGrad1   = Color(0xFF6C3EFF);
-const Color _kGrad2   = Color(0xFF934DFE);
-const Color _kGrad3   = Color(0xFF3E8EFD);
+const Color _kGrad1 = Color(0xFF6C3EFF);
+const Color _kGrad3 = Color(0xFF3E8EFD);
 
-// تدرّج الهيدر مثل باقي الصفحات
+// ===== Header Gradient =====
 const LinearGradient _kHeaderGrad = LinearGradient(
   colors: [Color(0xFF1A0B3A), Color(0xFF0E0722)],
   begin: Alignment.topLeft,
@@ -28,12 +27,12 @@ const LinearGradient _kHeaderGrad = LinearGradient(
 class AddWarrantyPage extends StatefulWidget {
   const AddWarrantyPage({
     super.key,
-    this.billId,                 // لو فيه billId يعني الضمان مرتبط بفاتورة
-    this.defaultStartDate,       // (ما نستخدمها الآن، نخلي الحقول فاضية)
+    this.billId,
+    this.defaultStartDate,
     this.defaultEndDate,
-    this.warrantyId,             // لو غير null = تعديل
-    this.initialProvider,        // اسم المتجر الجاي من AddBill
-    this.prefillAttachmentPath,  // مسار صورة جاهزة لنسخها كمرفق
+    this.warrantyId,
+    this.initialProvider,
+    this.prefillAttachmentPath,
   });
 
   static const route = '/add-warranty';
@@ -50,148 +49,101 @@ class AddWarrantyPage extends StatefulWidget {
 }
 
 class _AddWarrantyPageState extends State<AddWarrantyPage> {
-  // ===== المتحكمات الخاصة بحقوق الإدخال =====
-  final _providerCtrl    = TextEditingController();   // اسم المتجر / المزوّد
-  final _productNameCtrl = TextEditingController();   // اسم المنتج (اختياري)
-  final _serialCtrl      = TextEditingController();   // الرقم التسلسلي (اختياري)
-  final _yearsCtrl       = TextEditingController();   // عدد سنوات الضمان
+  // ================= Controllers =================
+  final _providerCtrl = TextEditingController(); // Provider / Store
+  final _productCtrl = TextEditingController();  // Unified Product
+  final _serialCtrl = TextEditingController();   // Optional
+  final _yearsCtrl = TextEditingController();    // Warranty years
 
-  // ===== التواريخ =====
-  DateTime? _start;          // بداية الضمان (فاضي في البداية)
-  DateTime? _end;            // نهاية الضمان (يُحسب تلقائي)
-  final _fmt = DateFormat('yyyy-MM-dd');
-
-  /// عدد السنوات للضمان (من 1 إلى 10 مثلاً)
+  DateTime? _start;
+  DateTime? _end;
   int _years = 1;
-
-  /// إذا true يعني المستخدم عدّل تاريخ النهاية يدويًا
   bool _endManual = false;
 
-  bool _saving = false;  // فلاج لمنع التكرار أثناء الحفظ
-
-  // خدمة الإشعارات (منطق التذكير الجديد)
+  final _formatter = DateFormat('yyyy-MM-dd');
+  final _picker = ImagePicker();
   final _notifs = NotificationsService.I;
 
-  bool get isEdit => widget.warrantyId != null;  // هل نحن في وضع التعديل؟
-  bool get hasBill => widget.billId != null;     // هل الضمان مرتبط بفاتورة؟
+  bool _saving = false;
+  bool get isEdit => widget.warrantyId != null;
+  bool get hasBill => widget.billId != null;
 
-  // ===== بيانات المرفق (صورة محلية فقط) =====
-  final _picker = ImagePicker();
-  String? _attachmentLocalPath; // مسار الصورة على الجهاز
-  String? _attachmentName;      // الاسم الظاهر للمستخدم
+  String? _attachmentLocalPath;
+  String? _attachmentName;
 
   @override
   void initState() {
     super.initState();
 
-    // تعبئة اسم المتجر لو وصل من صفحة الفاتورة
     _providerCtrl.text = (widget.initialProvider ?? '').trim();
-
-    // نخلي التواريخ فاضية في الوضع العادي
-    _start = null;
-    _end   = null;
-
-    // عدد السنوات الافتراضي
-    _years = 1;
     _yearsCtrl.text = '1';
 
-    // لو وصلنا صورة جاهزة نستخدمها كمرفق مباشرة
-    final prefillPath = (widget.prefillAttachmentPath ?? '').trim();
-    if (prefillPath.isNotEmpty) {
-      _attachmentLocalPath = prefillPath;
-      _attachmentName = prefillPath.split(Platform.pathSeparator).last;
+    final path = (widget.prefillAttachmentPath ?? '').trim();
+    if (path.isNotEmpty) {
+      _attachmentLocalPath = path;
+      _attachmentName = path.split(Platform.pathSeparator).last;
     }
 
-    // تحميل بيانات الضمان في حالة التعديل
-    if (isEdit) {
-      _loadExistingWarranty();
-    }
+    if (isEdit) _loadExistingWarranty();
 
-    // طلب أذونات الإشعارات بعد بناء الصفحة
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _notifs.requestPermissions(context);
     });
   }
 
-  // إعادة حساب تاريخ نهاية الضمان حسب عدد السنوات
-  void _recalcEndFromYears() {
+  // ===== Auto-calc end date =====
+  void _recalcEnd() {
     if (_start == null) return;
-    // نضيف عدد السنوات مباشرة
     _end = DateTime(_start!.year + _years, _start!.month, _start!.day);
   }
 
-  // ===== جلب بيانات الضمان في حالة التعديل =====
+  // ===== Load data for editing =====
   Future<void> _loadExistingWarranty() async {
     try {
       final doc = await FirebaseFirestore.instance
           .collection('Warranties')
           .doc(widget.warrantyId!)
           .get();
-
       if (!mounted || !doc.exists) return;
       final data = doc.data()!;
 
-      // اسم المتجر / المزوّد
-      final providerFromDb = (data['provider'] ?? '').toString();
-      if (_providerCtrl.text.trim().isEmpty && providerFromDb.isNotEmpty) {
-        _providerCtrl.text = providerFromDb;
+      final provider = (data['provider'] ?? '').toString();
+      if (_providerCtrl.text.trim().isEmpty && provider.isNotEmpty) {
+        _providerCtrl.text = provider;
       }
 
-      // اسم المنتج (اختياري)
-      final productNameFromDb = (data['product_name'] ?? '').toString();
-      if (productNameFromDb.isNotEmpty) {
-        _productNameCtrl.text = productNameFromDb;
-      }
-
-      // الرقم التسلسلي
+      _productCtrl.text = (data['product'] ?? '').toString();
       _serialCtrl.text = (data['serial_number'] ?? '').toString();
 
-      // التواريخ
       final startTs = data['start_date'];
-      final endTs   = data['end_date'];
+      final endTs = data['end_date'];
       if (startTs is Timestamp) _start = startTs.toDate();
-      if (endTs   is Timestamp) _end   = endTs.toDate();
-      if (_start != null && _end != null && _end!.isBefore(_start!)) {
-        _end = _start!.add(const Duration(days: 1));
-      }
+      if (endTs is Timestamp) _end = endTs.toDate();
 
-      // محاولة استنتاج عدد السنوات من الفرق بين البداية والنهاية
       if (_start != null && _end != null) {
-        final diffYears = _end!.year - _start!.year;
-        if (diffYears >= 1 && diffYears <= 10) {
-          _years = diffYears;
-          _yearsCtrl.text = _years.toString();
+        final y = _end!.year - _start!.year;
+        if (y >= 1 && y <= 10) {
+          _years = y;
+          _yearsCtrl.text = y.toString();
         } else {
           _endManual = true;
         }
       }
 
-      // بيانات المرفق المخزّن
-      final existingLocal = (data['attachment_local_path'] ?? '') as String? ?? '';
-      final existingName  = (data['attachment_name'] ?? '') as String? ?? '';
-      if (existingLocal.isNotEmpty) {
-        _attachmentLocalPath = existingLocal;
-        _attachmentName = existingName.isNotEmpty
-            ? existingName
-            : existingLocal.split(Platform.pathSeparator).last;
+      final att = (data['attachment_local_path'] ?? '').toString();
+      final name = (data['attachment_name'] ?? '').toString();
+      if (att.isNotEmpty) {
+        _attachmentLocalPath = att;
+        _attachmentName = name.isEmpty
+            ? att.split(Platform.pathSeparator).last
+            : name;
       }
 
       setState(() {});
-    } catch (_) {
-      // تجاهل أي خطأ بدون إزعاج المستخدم
-    }
+    } catch (_) {}
   }
 
-  @override
-  void dispose() {
-    _providerCtrl.dispose();
-    _productNameCtrl.dispose();
-    _serialCtrl.dispose();
-    _yearsCtrl.dispose();
-    super.dispose();
-  }
-
-  // ===== اختيار صورة المرفق (كاميرا أو معرض) =====
+  // ===== Pick image attachment =====
   Future<void> _pickAttachment() async {
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
@@ -201,43 +153,30 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.camera_alt),
-              title: const Text('Camera'),
-              onTap: () => Navigator.pop(ctx, ImageSource.camera),
-            ),
+                leading: const Icon(Icons.camera_alt),
+                title: const Text('Camera'),
+                onTap: () => Navigator.pop(ctx, ImageSource.camera)),
             ListTile(
-              leading: const Icon(Icons.photo_library),
-              title: const Text('Gallery'),
-              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
-            ),
-            const SizedBox(height: 8),
+                leading: const Icon(Icons.photo_library),
+                title: const Text('Gallery'),
+                onTap: () => Navigator.pop(ctx, ImageSource.gallery)),
           ],
         ),
       ),
     );
     if (source == null) return;
 
-    try {
-      final x = await _picker.pickImage(
-        source: source,
-        imageQuality: 85, // ضغط الصورة للحفاظ على الحجم
-      );
-      if (x != null) {
-        setState(() {
-          _attachmentLocalPath = x.path;
-          _attachmentName = x.path.split(Platform.pathSeparator).last;
-        });
-      }
-    } catch (e) {
-      _snack('تعذّر فتح ${source == ImageSource.camera ? "الكاميرا" : "المعرض"}');
+    final x = await _picker.pickImage(source: source, imageQuality: 85);
+    if (x != null) {
+      setState(() {
+        _attachmentLocalPath = x.path;
+        _attachmentName = x.path.split(Platform.pathSeparator).last;
+      });
     }
   }
 
-  // ===== حذف المرفق =====
   Future<void> _removeAttachment() async {
-    // لو كنا في تعديل نحذف الحقول من Firestore
-    if (isEdit &&
-        (_attachmentLocalPath != null || (_attachmentName?.isNotEmpty ?? false))) {
+    if (isEdit) {
       try {
         await FirebaseFirestore.instance
             .collection('Warranties')
@@ -248,16 +187,13 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
         }, SetOptions(merge: true));
       } catch (_) {}
     }
-
-    // حذف من الواجهة
     setState(() {
       _attachmentLocalPath = null;
       _attachmentName = null;
     });
-    _snack('Attachment removed');
   }
 
-  // ===== اختيار تاريخ =====
+  // ===== Pick date =====
   Future<void> _pickDate({
     required DateTime initial,
     required ValueChanged<DateTime> onPick,
@@ -271,41 +207,30 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
     if (d != null) onPick(d);
   }
 
-  // ===== حفظ الضمان (إضافة أو تعديل) =====
+  // ===== Save warranty (add or edit) =====
   Future<void> _save() async {
     setState(() => _saving = true);
 
     try {
       final uid = FirebaseAuth.instance.currentUser?.uid;
-      if (uid == null) {
-        _snack('Please sign in first');
-        return;
-      }
+      if (uid == null) return _snack('Please sign in first');
 
-      if (_start == null) {
-        _snack('Please select warranty start date');
-        return;
-      }
-      if (_end == null) {
-        _snack('Warranty end date is missing');
-        return;
-      }
+      if (_start == null) return _snack('Select start date');
+      if (_end == null) return _snack('Select end date');
 
-      // حماية من مشاكل التواريخ
       if (_end!.isBefore(_start!)) {
-        _snack('End date must be after start date');
-        return;
+        return _snack('End date must be after start date');
       }
 
       final provider = _providerCtrl.text.trim().isEmpty
           ? 'Unknown'
           : _providerCtrl.text.trim();
-      final productName = _productNameCtrl.text.trim();
-      final serial      = _serialCtrl.text.trim();
+
+      final product = _productCtrl.text.trim();
+      final serial = _serialCtrl.text.trim();
 
       late final String warrantyId;
 
-      // ===== وضع التعديل =====
       if (isEdit) {
         warrantyId = widget.warrantyId!;
 
@@ -316,39 +241,32 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
           endDate: _end!,
         );
 
-        final docRef =
-        FirebaseFirestore.instance.collection('Warranties').doc(warrantyId);
+        final doc = FirebaseFirestore.instance
+            .collection('Warranties')
+            .doc(warrantyId);
 
-        // تحديث/حذف الرقم التسلسلي
-        await docRef.set(
-          serial.isEmpty
-              ? {'serial_number': FieldValue.delete()}
-              : {'serial_number': serial},
-          SetOptions(merge: true),
-        );
+        await doc.set(
+            product.isEmpty
+                ? {'product': FieldValue.delete()}
+                : {'product': product},
+            SetOptions(merge: true));
 
-        // تحديث/حذف اسم المنتج
-        await docRef.set(
-          productName.isEmpty
-              ? {'product_name': FieldValue.delete()}
-              : {'product_name': productName},
-          SetOptions(merge: true),
-        );
+        await doc.set(
+            serial.isEmpty
+                ? {'serial_number': FieldValue.delete()}
+                : {'serial_number': serial},
+            SetOptions(merge: true));
 
-        // تحديث/حذف المرفق
-        await docRef.set({
-          if (_attachmentLocalPath != null && _attachmentLocalPath!.isNotEmpty)
+        await doc.set({
+          if (_attachmentLocalPath != null)
             'attachment_local_path': _attachmentLocalPath,
-          if (_attachmentName != null && _attachmentName!.isNotEmpty)
-            'attachment_name': _attachmentName,
-          if (_attachmentLocalPath == null || _attachmentLocalPath!.isEmpty)
+          if (_attachmentName != null) 'attachment_name': _attachmentName,
+          if (_attachmentLocalPath == null)
             'attachment_local_path': FieldValue.delete(),
-          if (_attachmentName == null || _attachmentName!.isEmpty)
+          if (_attachmentName == null)
             'attachment_name': FieldValue.delete(),
         }, SetOptions(merge: true));
-
       } else {
-        // ===== إنشاء ضمان جديد =====
         warrantyId = await WarrantyService.instance.createWarranty(
           billId: widget.billId,
           startDate: _start!,
@@ -357,26 +275,24 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
           userId: uid,
         );
 
-        final docRef =
-        FirebaseFirestore.instance.collection('Warranties').doc(warrantyId);
+        final doc = FirebaseFirestore.instance
+            .collection('Warranties')
+            .doc(warrantyId);
 
+        if (product.isNotEmpty) {
+          await doc.set({'product': product}, SetOptions(merge: true));
+        }
         if (serial.isNotEmpty) {
-          await docRef.set({'serial_number': serial}, SetOptions(merge: true));
+          await doc.set({'serial_number': serial}, SetOptions(merge: true));
         }
-        if (productName.isNotEmpty) {
-          await docRef.set({'product_name': productName}, SetOptions(merge: true));
-        }
-
-        if (_attachmentLocalPath != null && _attachmentLocalPath!.isNotEmpty) {
-          await docRef.set({
+        if (_attachmentLocalPath != null) {
+          await doc.set({
             'attachment_local_path': _attachmentLocalPath,
-            if (_attachmentName != null && _attachmentName!.isNotEmpty)
-              'attachment_name': _attachmentName,
+            'attachment_name': _attachmentName,
           }, SetOptions(merge: true));
         }
       }
 
-      // ===== تحديث الفاتورة لو الضمان مرتبط بها =====
       if (hasBill) {
         await BillService.instance.updateBill(
           billId: widget.billId!,
@@ -386,7 +302,6 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
         );
       }
 
-      // ===== إعادة جدولة تذكيرات الضمان بالمنطق الجديد =====
       try {
         await _notifs.rescheduleWarrantyReminder(
           warrantyId: warrantyId,
@@ -394,46 +309,33 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
           start: _start!,
           end: _end!,
         );
-      } catch (_) {
-        // لو فشل، ما نكسر حفظ الضمان
-      }
+      } catch (_) {}
 
       if (!mounted) return;
-      _snack(isEdit ? 'Warranty updated' : 'Warranty saved');
-      Navigator.of(context).pop();
-
+      _snack(isEdit ? 'Warranty updated' : 'Warranty added');
+      Navigator.pop(context);
     } catch (e) {
-      if (mounted) _snack('Error: $e');
+      _snack('Error: $e');
     } finally {
       if (mounted) setState(() => _saving = false);
     }
   }
 
-  // ===== حذف الضمان =====
   Future<void> _delete() async {
     try {
       await WarrantyService.instance.deleteWarranty(widget.warrantyId!);
-      // إلغاء إشعارات هذا الضمان
       await _notifs.cancelWarrantyReminder(widget.warrantyId!);
-      _snack('Warranty removed');
-      Navigator.of(context).pop();
-    } catch (e) {
-      _snack('Error: $e');
-    }
+      Navigator.pop(context);
+    } catch (_) {}
   }
 
-  // ===== Snackbar مختصر =====
-  void _snack(String m) =>
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+  void _snack(String m) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+  }
 
+  // ============================ UI ============================
   @override
   Widget build(BuildContext context) {
-    final shownName =
-    (_attachmentLocalPath == null || _attachmentLocalPath!.isEmpty)
-        ? 'No image'
-        : (_attachmentName ??
-        _attachmentLocalPath!.split(Platform.pathSeparator).last);
-
     return Directionality(
       textDirection: ui.TextDirection.ltr,
       child: Scaffold(
@@ -443,38 +345,29 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
           elevation: 0,
           foregroundColor: Colors.white,
           title: Text(isEdit ? 'Edit Warranty' : 'Add Warranty'),
-          flexibleSpace: Container(
-            decoration: const BoxDecoration(gradient: _kHeaderGrad),
-          ),
+          flexibleSpace:
+          Container(decoration: const BoxDecoration(gradient: _kHeaderGrad)),
           actions: [
             if (isEdit)
               IconButton(
                 icon: const Icon(Icons.delete_outline, color: Colors.white),
-                tooltip: 'Delete',
-                onPressed: _saving
-                    ? null
-                    : () async {
+                onPressed: _saving ? null : () async {
                   final ok = await showDialog<bool>(
                     context: context,
                     builder: (_) => AlertDialog(
                       title: const Text('Delete warranty?'),
-                      content: const Text(
-                          'Are you sure you want to delete this warranty?'),
+                      content: const Text('This cannot be undone.'),
                       actions: [
                         TextButton(
-                          onPressed: () =>
-                              Navigator.pop(context, false),
-                          child: const Text('Cancel'),
-                        ),
+                            onPressed: () => Navigator.pop(context, false),
+                            child: const Text('Cancel')),
                         FilledButton(
-                          onPressed: () =>
-                              Navigator.pop(context, true),
-                          child: const Text('Delete'),
-                        ),
+                            onPressed: () => Navigator.pop(context, true),
+                            child: const Text('Delete')),
                       ],
                     ),
                   );
-                  if (ok == true) await _delete();
+                  if (ok == true) _delete();
                 },
               ),
           ],
@@ -492,9 +385,8 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
           ),
         ),
 
-        // ===== محتوى الصفحة =====
         body: AbsorbPointer(
-          absorbing: _saving, // يمنع اللمس أثناء الحفظ
+          absorbing: _saving,
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
             children: [
@@ -509,18 +401,17 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
                   ),
                   child: Row(
                     children: const [
-                      Icon(Icons.info_outline, size: 18, color: Colors.white),
+                      Icon(Icons.info_outline, color: Colors.white, size: 18),
                       SizedBox(width: 8),
                       Expanded(
-                        child: Text(
-                          'This warranty is not linked to a bill.',
-                          style: TextStyle(color: Colors.white),
-                        ),
+                        child: Text('This warranty is not linked to a bill.',
+                            style: TextStyle(color: Colors.white)),
                       ),
                     ],
                   ),
                 ),
 
+              // ===== Provider =====
               _GlassField(
                 controller: _providerCtrl,
                 label: 'Provider / Store',
@@ -528,13 +419,15 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
               ),
               const SizedBox(height: 12),
 
+              // ===== Unified Product =====
               _GlassField(
-                controller: _productNameCtrl,
-                label: 'Product name (optional)',
+                controller: _productCtrl,
+                label: 'Product',
                 icon: Icons.shopping_bag_outlined,
               ),
               const SizedBox(height: 12),
 
+              // ===== Serial number =====
               _GlassField(
                 controller: _serialCtrl,
                 label: 'Serial number (optional)',
@@ -542,7 +435,7 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
               ),
               const SizedBox(height: 12),
 
-              // ===== اختيار عدد سنوات الضمان (إنتِ تكتبين العدد) =====
+              // ===== Years =====
               Container(
                 padding:
                 const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -556,10 +449,8 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
                     const Icon(Icons.timelapse, color: Colors.white70),
                     const SizedBox(width: 8),
                     const Expanded(
-                      child: Text(
-                        'Warranty years (1–10)',
-                        style: TextStyle(color: Colors.white),
-                      ),
+                      child: Text('Warranty years (1–10)',
+                          style: TextStyle(color: Colors.white)),
                     ),
                     SizedBox(
                       width: 60,
@@ -576,23 +467,20 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
                             borderSide: BorderSide(color: Colors.white70),
                           ),
                         ),
-                        onChanged: (value) {
-                          final n = int.tryParse(value);
+                        onChanged: (v) {
+                          final n = int.tryParse(v);
                           setState(() {
                             if (n == null || n <= 0) {
                               _years = 1;
                             } else if (n > 10) {
                               _years = 10;
                               _yearsCtrl.text = '10';
-                              _yearsCtrl.selection = TextSelection.fromPosition(
-                                const TextPosition(offset: 2),
-                              );
+                              _yearsCtrl.selection =
+                              const TextSelection.collapsed(offset: 2);
                             } else {
                               _years = n;
                             }
-                            if (!_endManual) {
-                              _recalcEndFromYears();
-                            }
+                            if (!_endManual) _recalcEnd();
                           });
                         },
                       ),
@@ -600,10 +488,9 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
                   ],
                 ),
               ),
-
               const SizedBox(height: 12),
 
-              // صف المرفق
+              // ===== Attachment =====
               Container(
                 padding:
                 const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -622,58 +509,62 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        shownName,
+                        _attachmentLocalPath == null
+                            ? 'No image'
+                            : (_attachmentName ??
+                            _attachmentLocalPath!
+                                .split(Platform.pathSeparator)
+                                .last),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(color: Colors.white),
                       ),
                     ),
-                    if (_attachmentLocalPath != null &&
-                        _attachmentLocalPath!.isNotEmpty)
+                    if (_attachmentLocalPath != null)
                       IconButton(
-                        tooltip: 'Remove',
+                        icon:
+                        const Icon(Icons.close, color: Colors.white70),
                         onPressed: _removeAttachment,
-                        icon: const Icon(Icons.close, color: Colors.white70),
                       ),
                   ],
                 ),
               ),
-
               const SizedBox(height: 12),
 
-              // تاريخ بداية الضمان
+              // ===== Start date =====
               _GlassRow(
                 left: 'Warranty start date',
                 right: _start == null
-                    ? 'Select date'
-                    : _fmt.format(_start!),
-                rightIcon: Icons.date_range,
+                    ? 'Select'
+                    : _formatter.format(_start!),
+                icon: Icons.date_range,
                 onTap: () => _pickDate(
                   initial: _start ?? DateTime.now(),
-                  onPick: (d) => setState(() {
-                    _start = d;
-                    if (!_endManual) {
-                      _recalcEndFromYears();
-                    }
-                  }),
+                  onPick: (d) {
+                    setState(() {
+                      _start = d;
+                      if (!_endManual) _recalcEnd();
+                    });
+                  },
                 ),
               ),
-
               const SizedBox(height: 10),
 
-              // تاريخ نهاية الضمان (محسوب تلقائيًا لكن قابل للتعديل)
+              // ===== End date =====
               _GlassRow(
                 left: 'Warranty end date',
                 right: _end == null
-                    ? 'Calculated from years'
-                    : _fmt.format(_end!),
-                rightIcon: Icons.verified_user,
+                    ? 'Calculated'
+                    : _formatter.format(_end!),
+                icon: Icons.verified_user,
                 onTap: () => _pickDate(
                   initial: _end ?? _start ?? DateTime.now(),
-                  onPick: (d) => setState(() {
-                    _end = d;
-                    _endManual = true; // من الآن فصاعدًا ما نعيد حسابه تلقائيًا
-                  }),
+                  onPick: (d) {
+                    setState(() {
+                      _end = d;
+                      _endManual = true;
+                    });
+                  },
                 ),
               ),
             ],
@@ -684,11 +575,13 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
   }
 }
 
-// ===== ويدجت حقل زجاجي موحّد =====
+// =================== Reusable Widgets ===================
+
 class _GlassField extends StatelessWidget {
   final TextEditingController controller;
   final String label;
   final IconData icon;
+
   const _GlassField({
     required this.controller,
     required this.label,
@@ -719,16 +612,16 @@ class _GlassField extends StatelessWidget {
   }
 }
 
-// ===== صف تفاعلي يستخدم لاختيار التواريخ =====
 class _GlassRow extends StatelessWidget {
   final String left;
   final String right;
-  final IconData rightIcon;
+  final IconData icon;
   final VoidCallback onTap;
+
   const _GlassRow({
     required this.left,
     required this.right,
-    required this.rightIcon,
+    required this.icon,
     required this.onTap,
   });
 
@@ -738,8 +631,7 @@ class _GlassRow extends StatelessWidget {
       borderRadius: BorderRadius.circular(12),
       onTap: onTap,
       child: Container(
-        padding:
-        const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(.06),
           borderRadius: BorderRadius.circular(12),
@@ -748,13 +640,11 @@ class _GlassRow extends StatelessWidget {
         child: Row(
           children: [
             Expanded(
-              child: Text(left,
-                  style: const TextStyle(color: Colors.white)),
+              child: Text(left, style: const TextStyle(color: Colors.white)),
             ),
-            Text(right,
-                style: const TextStyle(color: Colors.white70)),
+            Text(right, style: const TextStyle(color: Colors.white70)),
             const SizedBox(width: 8),
-            Icon(rightIcon, color: Colors.white70),
+            Icon(icon, color: Colors.white70),
           ],
         ),
       ),
@@ -762,56 +652,40 @@ class _GlassRow extends StatelessWidget {
   }
 }
 
-// ===== زر كبير بتدرّج لوني =====
 class _GradButton extends StatelessWidget {
   final String text;
   final IconData icon;
   final VoidCallback? onPressed;
-  final Color bgFrom;
-  final Color bgTo;
 
   const _GradButton({
     required this.text,
     required this.icon,
     required this.onPressed,
-    this.bgFrom = _kGrad1,
-    this.bgTo   = _kGrad3,
   });
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 48,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: onPressed,
-        child: Ink(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(colors: [bgFrom, bgTo]),
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: [
-              BoxShadow(
-                color: bgTo.withOpacity(.35),
-                blurRadius: 14,
-                offset: const Offset(0, 8),
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: onPressed,
+      child: Ink(
+        height: 48,
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(colors: [_kGrad1, _kGrad3]),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Center(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: Colors.white),
+              const SizedBox(width: 8),
+              Text(
+                text,
+                style: const TextStyle(
+                    color: Colors.white, fontWeight: FontWeight.w700),
               ),
             ],
-          ),
-          child: Center(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, color: Colors.white),
-                const SizedBox(width: 8),
-                Text(
-                  text,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
           ),
         ),
       ),
@@ -819,11 +693,11 @@ class _GradButton extends StatelessWidget {
   }
 }
 
-// ===== زر صغير لتحديد المرفق =====
 class _TinyGradButton extends StatelessWidget {
   final String text;
   final IconData icon;
   final VoidCallback onPressed;
+
   const _TinyGradButton({
     required this.text,
     required this.icon,
@@ -836,8 +710,7 @@ class _TinyGradButton extends StatelessWidget {
       borderRadius: BorderRadius.circular(10),
       onTap: onPressed,
       child: Ink(
-        padding:
-        const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
           gradient: const LinearGradient(colors: [_kGrad1, _kGrad3]),
           borderRadius: BorderRadius.circular(10),

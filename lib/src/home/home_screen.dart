@@ -880,12 +880,16 @@ class _ExpiringMixed3 extends StatelessWidget {
                                 ExpiryProgress(
                                   startDate: startForBar,
                                   endDate:   expiry,
-                                  title:     '',       // ما نعرض اسم
+
+                                  // أهم شيء — نمرر نوع العنصر
+                                  title:     kindLabel,     // ← Return / Exchange / Warranty
+
                                   dense:     true,
-                                  showTitle: false,    // ← منع العنوان والنقطة الملونة
-                                  showStatus: true,    // يبقى فقط "Expires in ..."
+                                  showTitle: false,         // نخفي العنوان شكلياً فقط
+                                  showStatus: true,
                                   showInMonths: (type == 'warranty'),
                                 ),
+
 
                               ],
                             ),
