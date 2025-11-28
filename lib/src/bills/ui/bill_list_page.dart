@@ -23,7 +23,10 @@ const LinearGradient _kHeaderGradient = LinearGradient(
   end: Alignment.bottomRight,
 );
 const LinearGradient _kSearchGradient = LinearGradient(
-  colors: [Color(0xFF6C3EFF), Color(0xFF3E8EFD)],
+  colors:  [
+    Color(0xFF6C3EFF), // البنفسجي الأساسي
+    Color(0xFFC58CFF), // لافندر وردي ناعم بدل الأزرق
+  ],
   begin: Alignment.topLeft,
   end: Alignment.bottomRight,
 );

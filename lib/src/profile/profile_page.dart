@@ -5,6 +5,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'edit_profile_page.dart';
 
+import '../../main.dart'; // للوصول لحالة الثيم
+
 // ========= الألوان =========
 const LinearGradient kHeaderGradient = LinearGradient(
   colors: [Color(0xFF5F33E1), Color(0xFF0B0A1C)],
@@ -185,7 +187,6 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  // زر كراش تجريبي – يظهر فقط في Debug
   Widget _debugDiagnostics() {
     if (kReleaseMode) return const SizedBox.shrink();
     return Column(
@@ -214,6 +215,10 @@ class _ProfilePageState extends State<ProfilePage> {
   Widget build(BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
 
+    // 🔥 السويتش حق الثيم
+    final appState = App.of(context);
+    final bool isDark = appState.themeMode == ThemeMode.dark;
+
     return AbsorbPointer(
       absorbing: _busy,
       child: Stack(
@@ -230,7 +235,7 @@ class _ProfilePageState extends State<ProfilePage> {
             body: ListView(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
               children: [
-                // Header مع متابعة avatar_id من Firestore
+                // Header
                 if (uid == null)
                   _ProfileHeader(
                     displayName: _displayName,
@@ -259,6 +264,17 @@ class _ProfilePageState extends State<ProfilePage> {
                     style: TextStyle(color: kText, fontSize: 13, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 8),
 
+                // ===== زر تغيير الثيم =====
+                _ThemeSwitchTile(
+                  value: isDark,
+                  onChanged: (val) {
+                    appState.setThemeMode(
+                      val ? ThemeMode.dark : ThemeMode.light,
+                    );
+                    setState(() {});
+                  },
+                ),
+
                 _SettingTile(
                   icon: Icons.cloud_upload_outlined,
                   title: 'Backup',
@@ -285,12 +301,13 @@ class _ProfilePageState extends State<ProfilePage> {
                   onTap: _showHelp,
                 ),
 
-                // قسم التشخيص (Debug فقط)
+                // Debug
                 _debugDiagnostics(),
 
                 const SizedBox(height: 24),
                 const Center(
-                  child: Text('BillWise • v1.0.0', style: TextStyle(color: kTextSub, fontSize: 12)),
+                  child: Text('BillWise • v1.0.0',
+                      style: TextStyle(color: kTextSub, fontSize: 12)),
                 ),
               ],
             ),
@@ -303,6 +320,44 @@ class _ProfilePageState extends State<ProfilePage> {
               child: const CircularProgressIndicator(color: kAccent),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _ThemeSwitchTile extends StatelessWidget {
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  const _ThemeSwitchTile({
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: kCard,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: kStroke),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.25), blurRadius: 24, spreadRadius: -18),
+        ],
+      ),
+      child: SwitchListTile(
+        title: const Text('Dark Mode',
+            style: TextStyle(color: kText, fontWeight: FontWeight.w700)),
+        subtitle: Text(
+          value ? 'Using dark theme' : 'Using light theme',
+          style: const TextStyle(color: kTextSub),
+        ),
+        activeColor: kAccent,
+        inactiveThumbColor: Colors.white,
+        inactiveTrackColor: Colors.white30,
+        value: value,
+        onChanged: onChanged,
       ),
     );
   }
@@ -354,7 +409,8 @@ class _ProfileHeader extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(displayName,
-                    style: const TextStyle(color: kText, fontSize: 18, fontWeight: FontWeight.w700)),
+                    style:
+                    const TextStyle(color: kText, fontSize: 18, fontWeight: FontWeight.w700)),
                 Text(email, style: const TextStyle(color: kTextSub, fontSize: 13)),
                 const SizedBox(height: 6),
                 Container(

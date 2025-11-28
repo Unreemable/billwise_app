@@ -24,19 +24,20 @@ import '../common/widgets/expiry_progress.dart';
 import 'dart:math' as math;
 
 // ===== ألوان عامة نستخدمها في الهوم =====
-const Color _kBgDark   = Color(0xFF0E0722);   // خلفية الصفحة الغامقة
-const Color _kGrad1    = Color(0xFF6C3EFF);   // بنفسجي
-const Color _kGrad2    = Color(0xFF934DFE);   // بنفسجي أفتح
-const Color _kGrad3    = Color(0xFF3E8EFD);   // أزرق
-const Color _kCardDark = Color(0x1AFFFFFF);   // لون البطاقات الداكنة (شفاف شوي)
-const Color _kTextDim  = Colors.white70;      // نص ثانوي باهت
-
+const Color _kBgDark   = Color(0xFF18102F);   // زي ما هو
+const Color _kGrad1    = Color(0xFF9B5CFF);   // Violet أفتح ومريح
+const Color _kGrad2    = Color(0xFF6C3EFF);   // البنفسجي الأساسي
+const Color _kGrad3    = Color(0xFFC58CFF);   // Lavender وردي ناعم بدل الأزرق
+const Color _kCardDark = Color(0xFF2B2048);   // كروت Expiring
+const Color _kTextDim  = Colors.white70;
 // تدرّج الهيدر العلوي
 const LinearGradient kHeaderGradient = LinearGradient(
   colors: [Color(0xFF1A0B3A), Color(0xFF0E0722)],
   begin: Alignment.topLeft,
   end: Alignment.bottomRight,
 );
+
+
 
 // === إعدادات ثابتة للمقاسات ===
 const double _kHeaderHeight = 240;   // ارتفاع الهيدر
@@ -175,7 +176,7 @@ class _HomeContentState extends State<HomeContent> {
                               title: 'Warranty',
                               subtitle: 'Add Warranty',
                               icon: Icons.verified_user_rounded,
-                              gradient: const [Color(0xFFFD6C8E), _kGrad2],
+                              gradient: const [_kGrad3, _kGrad1],
                               onTap: () => Navigator.of(context, rootNavigator: true).push(
                                 MaterialPageRoute(builder: (_) => const AddWarrantyPage(
                                   billId: null, defaultStartDate: null, defaultEndDate: null,

@@ -5,9 +5,12 @@ import '../home/home_screen.dart';                // شاشة الهوم
 import '../warranties/ui/warranty_list_page.dart'; // قائمة الضمانات
 import '../bills/ui/bill_list_page.dart';          // قائمة الفواتير
 
-/// تدرج موحد للبار (من بنفسجي لأزرق)
+/// تدرج موحد للبار (بنفسجي → لافندر ناعم)
 const LinearGradient _kAppGradient = LinearGradient(
-  colors: [Color(0xFF6C3EFF), Color(0xFF3E8EFD)],
+  colors: [
+    Color(0xFF6C3EFF), // البنفسجي الأساسي
+    Color(0xFF6C3EFF), // لافندر وردي ناعم بدل الأزرق
+  ],
   begin: Alignment.centerLeft,
   end: Alignment.centerRight,
 );
@@ -248,7 +251,7 @@ class _CenterHomeButton extends StatelessWidget {
           shape: BoxShape.circle,
           // نفس تدرّج البار عشان يطلع منسجم
           gradient: const LinearGradient(
-            colors: [Color(0xFF6C3EFF), Color(0xFF3E8EFD)],
+            colors: [Color(0xFF6C3EFF), Color(0xFF6C3EFF)],
             begin: Alignment.centerLeft,
             end: Alignment.centerRight,
           ),

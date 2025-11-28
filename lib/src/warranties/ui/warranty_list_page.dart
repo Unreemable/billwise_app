@@ -9,12 +9,12 @@ import '../../bills/ui/bill_list_page.dart';
 import 'warranty_detail_page.dart';
 
 // ===== ثيم الألوان (نفس ألوان صفحة الهوم) =====
-const Color _kBgDark  = Color(0xFF0E0722);
-const Color _kGrad1   = Color(0xFF6C3EFF);
-const Color _kGrad2   = Color(0xFF934DFE);
-const Color _kGrad3   = Color(0xFF3E8EFD);
-const Color _kCard    = Color(0x1AFFFFFF);
-const Color _kTextDim = Colors.white70;
+const Color _kBgDark   = Color(0xFF18102F);   // زي ما هو
+const Color _kGrad1    = Color(0xFF9B5CFF);   // Violet أفتح ومريح
+const Color _kGrad2    = Color(0xFF6C3EFF);   // البنفسجي الأساسي
+const Color _kGrad3    = Color(0xFFC58CFF);   // Lavender وردي ناعم بدل الأزرق
+const Color _kCard = Color(0xFF22183C);   // كروت Expiring
+const Color _kTextDim  = Colors.white70;
 
 // تدرّج الهيدر العلوي
 const LinearGradient _kHeaderGrad = LinearGradient(
@@ -154,7 +154,7 @@ class _FabDot extends StatelessWidget {
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           gradient: const LinearGradient(
-            colors: [Color(0xFF6C3EFF), Color(0xFF3E8EFD)],
+            colors: [Color(0xFF6C3EFF), Color(0xFFC58CFF)],
           ),
           boxShadow: [
             BoxShadow(

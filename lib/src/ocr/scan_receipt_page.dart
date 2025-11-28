@@ -326,7 +326,7 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
                               padding:
                               const EdgeInsets.symmetric(horizontal: 16),
                               child: Text(
-                                'Take a photo of the receipt or select from gallery',
+                                'Take a photo of the bill or select from gallery',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(color: _textDim),
                               ),
