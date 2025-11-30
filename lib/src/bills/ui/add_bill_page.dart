@@ -10,9 +10,6 @@ import '../data/bill_service.dart';
 import '../../notifications/notifications_service.dart';
 
 /// شاشة إضافة / تعديل فاتورة في BillWise
-/// - تستخدم نفس الستايل البصري لصفحة الضمان
-/// - تستخدم BillService لحفظ الفاتورة في Firestore
-/// - تستخدم NotificationsService لجدولة تنبيهات محلية
 class AddBillPage extends StatefulWidget {
   const AddBillPage({
     super.key,
@@ -23,14 +20,8 @@ class AddBillPage extends StatefulWidget {
 
   static const route = '/add-bill';
 
-  /// إذا billId != null → وضع تعديل
-  /// إذا billId == null  → إضافة فاتورة جديدة
   final String? billId;
-
-  /// بيانات تمهيدية من OCR (عنوان، متجر، مبلغ، تواريخ، إلخ)
   final Map<String, dynamic>? prefill;
-
-  /// إذا الـ OCR اكتشف وجود ضمان → نفعل خيار الضمان تلقائياً
   final bool suggestWarranty;
 
   @override
@@ -38,12 +29,11 @@ class AddBillPage extends StatefulWidget {
 }
 
 class _AddBillPageState extends State<AddBillPage> {
-  // ====== لوحة الألوان (نفس صفحة الضمان) ======
   static const _bg = Color(0xFF0B0B2E);
   static const _card = Color(0xFF171636);
   static const _cardStroke = Color(0x1FFFFFFF);
   static const _textDim = Color(0xFFBFC3D9);
-  static const _accent = Color(0xFF8A46F9); // زرار الأفعال الرئيسية
+  static const _accent = Color(0xFF8A46F9);
   static const _danger = Color(0xFFEF5350);
   static const _headerGrad = LinearGradient(
     colors: [Color(0xFF0B0B2E), Color(0xFF21124C)],
@@ -51,58 +41,46 @@ class _AddBillPageState extends State<AddBillPage> {
     end: Alignment.bottomRight,
   );
 
-  // ===== المتحكمات لحقل الإدخال =====
-  final _titleCtrl = TextEditingController(); // عنوان / وصف الفاتورة
-  final _shopCtrl = TextEditingController(); // اسم المتجر
-  final _amountCtrl = TextEditingController(); // المبلغ
+  final _titleCtrl = TextEditingController();
+  final _shopCtrl = TextEditingController();
+  final _amountCtrl = TextEditingController();
 
-  // ===== خدمة التنبيهات المحلية =====
   final _notifs = NotificationsService.I;
 
-  // ===== التواريخ الأساسية =====
-  DateTime? _purchaseDate; // تاريخ الشراء
-  DateTime? _returnDeadline; // آخر موعد للاسترجاع
-  DateTime? _exchangeDeadline; // آخر موعد للاستبدال
+  DateTime? _purchaseDate;
+  DateTime? _returnDeadline;
+  DateTime? _exchangeDeadline;
 
-  /// إذا المستخدم عدّل التاريخ يدويًا ما نرجع نغيّره تلقائي
   bool _returnManual = false;
   bool _exchangeManual = false;
 
-  /// مفاتيح تفعيل / تعطيل الاسترجاع والاستبدال
   bool _enableReturn = true;
   bool _enableExchange = true;
 
-  // ===== معلومات الضمان =====
-  bool _hasWarranty = false; // هل الفاتورة فيها ضمان؟
-  DateTime? _ocrWarrantyStart; // بداية الضمان من OCR (اختياري)
-  DateTime? _ocrWarrantyEnd; // نهاية الضمان من OCR (اختياري)
+  bool _hasWarranty = false;
+  DateTime? _ocrWarrantyStart;
+  DateTime? _ocrWarrantyEnd;
 
-  /// عدد الأيام المستخرجة من سياسة الاسترجاع/الاستبدال (من OCR)
   int? _retDays;
   int? _exDays;
 
-  // ===== صورة الفاتورة المرفقة =====
   final _picker = ImagePicker();
-  String? _receiptImagePath; // مسار الصورة المحلي
+  String? _receiptImagePath;
 
-  // تنسيق التاريخ لواجهة المستخدم
   final _fmt = DateFormat('yyyy-MM-dd');
 
-  bool _saving = false; // حالة التحميل أثناء الحفظ
-  bool _loadingExisting = false; // تحميل فاتورة موجودة مسبقاً
-  bool _checkingWarranty = false; // التحقق من وجود ضمان في مجموعة Warranties
-  bool _hasExistingWarranty = false; // صحيح إذا كان لهذه الفاتورة ضمان مسجّل مسبقاً
+  bool _saving = false;
+  bool _loadingExisting = false;
+  bool _checkingWarranty = false;
+  bool _hasExistingWarranty = false;
 
   @override
   void initState() {
     super.initState();
-    // طلب صلاحيات التنبيهات بعد بناء الشاشة
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _notifs.requestPermissions(context);
     });
   }
-
-  // ===== توابع مساعدة لقراءة البيانات من OCR / Firestore =====
 
   DateTime? _parseDate(dynamic v) {
     if (v == null) return null;
@@ -123,9 +101,10 @@ class _AddBillPageState extends State<AddBillPage> {
 
   int? _extractDays(dynamic v) {
     if (v == null) return null;
-    var normalized = v.toString().trim();
 
+    var normalized = v.toString().trim();
     const eastern = '٠١٢٣٤٥٦٧٨٩';
+
     for (var i = 0; i < eastern.length; i++) {
       normalized = normalized.replaceAll(eastern[i], i.toString());
     }
@@ -156,6 +135,7 @@ class _AddBillPageState extends State<AddBillPage> {
   void _applyAutoWindowsFromPurchase(DateTime purchase) {
     final defRet = _retDays ?? 3;
     final defEx = _exDays ?? 7;
+
     if (!_returnManual) _returnDeadline = _deadlineFrom(purchase, defRet);
     if (!_exchangeManual) _exchangeDeadline = _deadlineFrom(purchase, defEx);
   }
@@ -163,18 +143,19 @@ class _AddBillPageState extends State<AddBillPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+
     if (widget.billId != null && !_loadingExisting) {
       _loadExisting(widget.billId!);
     } else if (widget.billId == null) {
       _applyPrefillOnce();
     }
   }
-
   Future<void> _loadExisting(String billId) async {
     setState(() {
       _loadingExisting = true;
       _checkingWarranty = true;
     });
+
     try {
       final data = await BillService.instance.getBill(billId);
       if (data == null) {
@@ -208,6 +189,7 @@ class _AddBillPageState extends State<AddBillPage> {
           .where('bill_id', isEqualTo: billId)
           .limit(1)
           .get();
+
       _hasExistingWarranty = snap.docs.isNotEmpty;
 
       setState(() {});
@@ -222,6 +204,9 @@ class _AddBillPageState extends State<AddBillPage> {
 
   bool _prefillApplied = false;
 
+  /// ============================
+  ///   OCR Prefill + أول منتج = عنوان
+  /// ============================
   void _applyPrefillOnce() {
     if (_prefillApplied) return;
     _prefillApplied = true;
@@ -236,31 +221,48 @@ class _AddBillPageState extends State<AddBillPage> {
       if (args['suggestWarranty'] == true) suggestWarranty = true;
     }
 
-    if (widget.prefill != null) prefill = {...prefill, ...widget.prefill!};
+    if (widget.prefill != null) {
+      prefill = {...prefill, ...widget.prefill!};
+    }
 
-    _titleCtrl.text = (prefill['title'] ?? _titleCtrl.text).toString();
-    _shopCtrl.text = (prefill['store'] ?? _shopCtrl.text).toString();
-    final amt = _parseAmount(prefill['amount']);
+    // ============================
+    //        🟣 NEW LOGIC:
+    //   العنوان = أول منتج مستخرج
+    // ============================
+    if (prefill['items'] is List && prefill['items'].isNotEmpty) {
+      final first = prefill['items'].first;
+
+      // case: {"name": "Item X"}
+      if (first is Map && first['name'] != null) {
+        _titleCtrl.text = first['name'].toString();
+      }
+      // case: "Item name"
+      else if (first is String) {
+        _titleCtrl.text = first;
+      }
+    } else {
+      // fallback على عنوان OCR العادي
+      _titleCtrl.text = (prefill['title'] ?? _titleCtrl.text).toString();
+    }
+
+    _shopCtrl.text = (prefill['store'] ?? prefill['shop_name'] ?? '').toString();
+
+    final amt = _parseAmount(prefill['amount'] ?? prefill['total_amount']);
     if (amt != null) _amountCtrl.text = amt.toString();
 
-    _purchaseDate ??= _parseDate(prefill['purchaseDate']);
-    _returnDeadline ??= _parseDate(prefill['returnDeadline']);
-    _exchangeDeadline ??= _parseDate(prefill['exchangeDeadline']);
+    _purchaseDate ??= _parseDate(prefill['purchase_date']);
+    _returnDeadline ??= _parseDate(prefill['return_deadline']);
+    _exchangeDeadline ??= _parseDate(prefill['exchange_deadline']);
 
-    _retDays ??= _extractDays(
-      prefill['returnDays'] ??
-          prefill['returnPolicy'] ??
-          prefill['return_text'] ??
-          prefill['return'] ??
-          prefill['policy'],
-    );
-    _exDays ??= _extractDays(
-      prefill['exchangeDays'] ??
-          prefill['exchangePolicy'] ??
-          prefill['exchange_text'] ??
-          prefill['exchange'] ??
-          prefill['policy'],
-    );
+    _retDays ??= _extractDays(prefill['return_text'] ??
+        prefill['return'] ??
+        prefill['returnPolicy'] ??
+        prefill['policy']);
+
+    _exDays ??= _extractDays(prefill['exchange_text'] ??
+        prefill['exchange'] ??
+        prefill['exchangePolicy'] ??
+        prefill['policy']);
 
     if (_purchaseDate != null) {
       _returnDeadline ??= _deadlineFrom(_purchaseDate!, (_retDays ?? 3));
@@ -298,6 +300,7 @@ class _AddBillPageState extends State<AddBillPage> {
       ) async {
     final min = DateTime(2015);
     final max = DateTime(2100);
+
     var init = initial ?? DateTime.now();
     if (init.isBefore(min)) init = min;
     if (init.isAfter(max)) init = max;
@@ -332,15 +335,19 @@ class _AddBillPageState extends State<AddBillPage> {
         ),
       ),
     );
+
     if (source == null) return;
+
     final x = await _picker.pickImage(
       source: source,
       imageQuality: 85,
     );
-    if (x != null) setState(() => _receiptImagePath = x.path);
-  }
 
-  // ===== منطق الحفظ / التحديث / الحذف =====
+    if (x != null) {
+      setState(() => _receiptImagePath = x.path);
+    }
+  }
+  // ===== منطق الحفظ =====
 
   Future<String?> _saveNewBill() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -390,7 +397,6 @@ class _AddBillPageState extends State<AddBillPage> {
         receiptImagePath: _receiptImagePath,
       );
 
-      // 🔔 بعد الحفظ → جدولة تنبيهات الفاتورة
       await _tryRescheduleWithUX(
         billId: id,
         title: _titleCtrl.text.trim(),
@@ -401,8 +407,10 @@ class _AddBillPageState extends State<AddBillPage> {
       );
 
       if (!mounted) return id;
+
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Bill saved ✅')));
+
       return id;
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -451,7 +459,6 @@ class _AddBillPageState extends State<AddBillPage> {
         receiptImagePath: _receiptImagePath,
       );
 
-      // 🔔 إعادة جدولة التنبيهات بعد التحديث
       await _tryRescheduleWithUX(
         billId: widget.billId!,
         title: _titleCtrl.text.trim(),
@@ -462,8 +469,10 @@ class _AddBillPageState extends State<AddBillPage> {
       );
 
       if (!mounted) return;
+
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Bill updated ✅')));
+
       Navigator.of(context).pop();
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -490,14 +499,17 @@ class _AddBillPageState extends State<AddBillPage> {
         ],
       ),
     );
+
     if (ok != true) return;
 
     try {
       await BillService.instance.deleteBill(widget.billId!);
       await _notifs.cancelBillReminders(widget.billId!);
+
       if (!mounted) return;
+
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Bill deleted ✅')));
+          .showSnackBar(const SnackBar(content: Text('Bill deleted')));
       Navigator.of(context).pop();
     } catch (e) {
       if (!mounted) return;
@@ -519,9 +531,7 @@ class _AddBillPageState extends State<AddBillPage> {
     if (widget.billId != null && _hasExistingWarranty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('A warranty already exists for this bill.'),
-        ),
+        const SnackBar(content: Text('Warranty already exists')),
       );
       return;
     }
@@ -531,8 +541,7 @@ class _AddBillPageState extends State<AddBillPage> {
       if (!mounted) return;
 
       final baseStart = _ocrWarrantyStart ?? _purchaseDate ?? DateTime.now();
-      final baseEnd =
-          _ocrWarrantyEnd ?? baseStart.add(const Duration(days: 365));
+      final baseEnd = _ocrWarrantyEnd ?? baseStart.add(const Duration(days: 365));
 
       await Navigator.of(context).push(
         MaterialPageRoute(
@@ -545,6 +554,7 @@ class _AddBillPageState extends State<AddBillPage> {
           ),
         ),
       );
+
       if (mounted) Navigator.of(context).pop();
       return;
     }
@@ -553,8 +563,7 @@ class _AddBillPageState extends State<AddBillPage> {
     if (newId == null || !mounted) return;
 
     final baseStart = _ocrWarrantyStart ?? _purchaseDate ?? DateTime.now();
-    final baseEnd =
-        _ocrWarrantyEnd ?? baseStart.add(const Duration(days: 365));
+    final baseEnd = _ocrWarrantyEnd ?? baseStart.add(const Duration(days: 365));
 
     await Navigator.of(context).push(
       MaterialPageRoute(
@@ -567,10 +576,10 @@ class _AddBillPageState extends State<AddBillPage> {
         ),
       ),
     );
+
     if (mounted) Navigator.of(context).pop();
   }
 
-  /// تغليف إعادة جدولة التنبيهات مع UX مرتب:
   Future<void> _tryRescheduleWithUX({
     required String billId,
     required String title,
@@ -590,21 +599,22 @@ class _AddBillPageState extends State<AddBillPage> {
       );
     } catch (e) {
       final msg = e.toString();
+
       if (!mounted) return;
+
       if (msg.contains('exact_alarms_not_permitted')) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-              'Bill was saved, but the system blocked exact alarms.\n'
-                  'Settings → Apps → Special app access → Alarms & reminders → BillWise → Allow',
+              'Bill saved but system blocked exact alarms.\n'
+                  'Settings → Apps → Special access → Alarms & reminders → Allow',
             ),
-            duration: Duration(seconds: 6),
+            duration: Duration(seconds: 5),
           ),
         );
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Saved, but notifications failed: $e')),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Saved but notifications failed: $e')));
       }
     }
   }
@@ -650,15 +660,11 @@ class _AddBillPageState extends State<AddBillPage> {
         textTheme: Theme.of(context)
             .textTheme
             .apply(bodyColor: Colors.white, displayColor: Colors.white),
-        switchTheme: const SwitchThemeData(
-          trackOutlineColor: WidgetStatePropertyAll(Colors.transparent),
-        ),
       ),
       child: Scaffold(
         appBar: AppBar(
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                color: Colors.white),
+            icon: const Icon(Icons.arrow_back_ios_new_rounded),
             onPressed: () => Navigator.maybePop(context),
           ),
           title: Text(isEdit ? 'Edit Bill' : 'Add Bill'),
@@ -674,6 +680,7 @@ class _AddBillPageState extends State<AddBillPage> {
             decoration: const BoxDecoration(gradient: _headerGrad),
           ),
         ),
+
         body: _loadingExisting
             ? const Center(child: CircularProgressIndicator())
             : SafeArea(
@@ -685,31 +692,22 @@ class _AddBillPageState extends State<AddBillPage> {
                   children: [
                     TextField(
                       controller: _titleCtrl,
-                      decoration: _filled(
-                        'Bill title/description',
-                        icon: Icons.text_format,
-                      ),
-                      textInputAction: TextInputAction.next,
+                      decoration: _filled('Bill title/description',
+                          icon: Icons.text_format),
                     ),
                     const SizedBox(height: 10),
                     TextField(
                       controller: _shopCtrl,
-                      decoration: _filled(
-                        'Store name',
-                        icon: Icons.store,
-                      ),
-                      textInputAction: TextInputAction.next,
+                      decoration: _filled('Store name',
+                          icon: Icons.store),
                     ),
                     const SizedBox(height: 10),
                     TextField(
                       controller: _amountCtrl,
-                      decoration: _filled(
-                        'Amount (SAR)',
-                        icon: Icons.attach_money,
-                      ),
+                      decoration: _filled('Amount (SAR)',
+                          icon: Icons.attach_money),
                       keyboardType:
-                      const TextInputType.numberWithOptions(
-                          decimal: true),
+                      const TextInputType.numberWithOptions(decimal: true),
                       inputFormatters: [
                         FilteringTextInputFormatter.allow(
                           RegExp(r'[0-9.]'),
@@ -727,9 +725,7 @@ class _AddBillPageState extends State<AddBillPage> {
                               borderRadius: BorderRadius.circular(12),
                             ),
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 10,
-                            ),
+                                horizontal: 14, vertical: 10),
                           ),
                           onPressed: _pickReceipt,
                           icon: const Icon(Icons.attach_file),
@@ -740,13 +736,10 @@ class _AddBillPageState extends State<AddBillPage> {
                           child: Text(
                             _receiptImagePath == null
                                 ? 'No image'
-                                : _receiptImagePath!
-                                .split('/')
-                                .last,
+                                : _receiptImagePath!.split('/').last,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style:
-                            const TextStyle(color: _textDim),
+                            style: const TextStyle(color: _textDim),
                           ),
                         ),
                       ],
@@ -754,24 +747,23 @@ class _AddBillPageState extends State<AddBillPage> {
                   ],
                 ),
               ),
+
               const SizedBox(height: 14),
+
+              // Purchase Date Section
               _sectionCard(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Purchase date',
-                      style:
-                      TextStyle(fontWeight: FontWeight.w600),
-                    ),
+                    const Text('Purchase date',
+                        style: TextStyle(fontWeight: FontWeight.w600)),
                     const SizedBox(height: 6),
                     ListTile(
                       dense: true,
                       contentPadding: EdgeInsets.zero,
                       title: Text(
                         _fmtOrDash(_purchaseDate),
-                        style:
-                        const TextStyle(color: Colors.white),
+                        style: const TextStyle(color: Colors.white),
                       ),
                       leading: const Icon(Icons.date_range),
                       trailing: const Icon(Icons.edit_calendar),
@@ -785,15 +777,15 @@ class _AddBillPageState extends State<AddBillPage> {
                             });
                           }),
                     ),
-                    const Divider(
-                        height: 12, color: _cardStroke),
+
+                    const Divider(height: 12, color: _cardStroke),
+
+                    // Return deadline
                     Row(
                       children: [
                         const Icon(Icons.event, color: _textDim),
                         const SizedBox(width: 8),
-                        const Expanded(
-                          child: Text('Return deadline'),
-                        ),
+                        const Expanded(child: Text('Return deadline')),
                         Switch(
                           value: _enableReturn,
                           activeColor: _accent,
@@ -804,14 +796,14 @@ class _AddBillPageState extends State<AddBillPage> {
                                   _returnDeadline == null &&
                                   _purchaseDate != null) {
                                 _returnDeadline = _deadlineFrom(
-                                    _purchaseDate!,
-                                    (_retDays ?? 3));
+                                    _purchaseDate!, (_retDays ?? 3));
                               }
                             });
                           },
                         ),
                       ],
                     ),
+
                     Opacity(
                       opacity: _enableReturn ? 1 : .5,
                       child: ListTile(
@@ -821,8 +813,8 @@ class _AddBillPageState extends State<AddBillPage> {
                           _enableReturn
                               ? _fmtOrDash(_returnDeadline)
                               : ' (Optional)',
-                          style: const TextStyle(
-                              color: Colors.white),
+                          style:
+                          const TextStyle(color: Colors.white),
                         ),
                         trailing: const Icon(Icons.edit),
                         iconColor: _textDim,
@@ -847,24 +839,24 @@ class _AddBillPageState extends State<AddBillPage> {
                           ScaffoldMessenger.of(context)
                               .showSnackBar(
                             const SnackBar(
-                              content: Text(
-                                  'Return deadline cleared'),
-                            ),
+                                content: Text(
+                                    'Return deadline cleared')),
                           );
                         }
                             : null,
                       ),
                     ),
-                    const Divider(
-                        height: 12, color: _cardStroke),
+
+                    const Divider(height: 12, color: _cardStroke),
+
+                    // Exchange deadline
                     Row(
                       children: [
                         const Icon(Icons.event_repeat,
                             color: _textDim),
                         const SizedBox(width: 8),
                         const Expanded(
-                          child: Text('Exchange deadline'),
-                        ),
+                            child: Text('Exchange deadline')),
                         Switch(
                           value: _enableExchange,
                           activeColor: _accent,
@@ -874,16 +866,16 @@ class _AddBillPageState extends State<AddBillPage> {
                               if (v &&
                                   _exchangeDeadline == null &&
                                   _purchaseDate != null) {
-                                _exchangeDeadline =
-                                    _deadlineFrom(
-                                        _purchaseDate!,
-                                        (_exDays ?? 7));
+                                _exchangeDeadline = _deadlineFrom(
+                                    _purchaseDate!,
+                                    (_exDays ?? 7));
                               }
                             });
                           },
                         ),
                       ],
                     ),
+
                     Opacity(
                       opacity: _enableExchange ? 1 : .5,
                       child: ListTile(
@@ -893,8 +885,8 @@ class _AddBillPageState extends State<AddBillPage> {
                           _enableExchange
                               ? _fmtOrDash(_exchangeDeadline)
                               : ' (Optional)',
-                          style: const TextStyle(
-                              color: Colors.white),
+                          style:
+                          const TextStyle(color: Colors.white),
                         ),
                         trailing: const Icon(Icons.edit),
                         iconColor: _textDim,
@@ -919,9 +911,7 @@ class _AddBillPageState extends State<AddBillPage> {
                           ScaffoldMessenger.of(context)
                               .showSnackBar(
                             const SnackBar(
-                              content: Text(
-                                  'Exchange deadline cleared'),
-                            ),
+                                content: Text('Exchange cleared')),
                           );
                         }
                             : null,
@@ -930,7 +920,10 @@ class _AddBillPageState extends State<AddBillPage> {
                   ],
                 ),
               ),
+
               const SizedBox(height: 14),
+
+              // Warranty toggle
               _sectionCard(
                 child: SwitchListTile.adaptive(
                   dense: true,
@@ -942,11 +935,10 @@ class _AddBillPageState extends State<AddBillPage> {
                   title: const Text('Has warranty?'),
                   subtitle: (_hasWarranty && widget.billId != null)
                       ? Column(
-                    crossAxisAlignment:
-                    CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       if (_checkingWarranty)
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 6),
                       if (_checkingWarranty)
                         const LinearProgressIndicator(
                             minHeight: 2),
@@ -957,8 +949,8 @@ class _AddBillPageState extends State<AddBillPage> {
                           EdgeInsets.only(top: 6),
                           child: Text(
                             'A warranty already exists for this bill.',
-                            style: TextStyle(
-                                color: _textDim),
+                            style:
+                            TextStyle(color: _textDim),
                           ),
                         ),
                     ],
@@ -966,7 +958,10 @@ class _AddBillPageState extends State<AddBillPage> {
                       : null,
                 ),
               ),
+
               const SizedBox(height: 22),
+
+              // Save buttons
               Row(
                 children: [
                   Expanded(
@@ -975,26 +970,21 @@ class _AddBillPageState extends State<AddBillPage> {
                         backgroundColor: _accent,
                         foregroundColor: Colors.white,
                         padding:
-                        const EdgeInsets.symmetric(
-                            vertical: 14),
+                        const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
-                          borderRadius:
-                          BorderRadius.circular(16),
+                          borderRadius: BorderRadius.circular(16),
                         ),
                       ),
                       onPressed: _saving ? null : _save,
                       icon: const Icon(Icons.save_outlined),
                       label: Text(
                         _saving
-                            ? (isEdit
-                            ? 'Updating…'
-                            : 'Saving…')
-                            : (isEdit
-                            ? 'Update'
-                            : 'Save'),
+                            ? (isEdit ? 'Updating…' : 'Saving…')
+                            : (isEdit ? 'Update' : 'Save'),
                       ),
                     ),
                   ),
+
                   if (_hasWarranty &&
                       !(isEdit && _hasExistingWarranty)) ...[
                     const SizedBox(width: 12),
@@ -1004,17 +994,14 @@ class _AddBillPageState extends State<AddBillPage> {
                           backgroundColor:
                           const Color(0xFF2C2B52),
                           foregroundColor: Colors.white,
-                          padding:
-                          const EdgeInsets.symmetric(
+                          padding: const EdgeInsets.symmetric(
                               vertical: 14),
                           shape: RoundedRectangleBorder(
-                            borderRadius:
-                            BorderRadius.circular(16),
+                            borderRadius: BorderRadius.circular(16),
                           ),
                         ),
-                        onPressed: _saving
-                            ? null
-                            : _saveAndAddWarranty,
+                        onPressed:
+                        _saving ? null : _saveAndAddWarranty,
                         icon:
                         const Icon(Icons.verified_user),
                         label: Text(
@@ -1027,7 +1014,9 @@ class _AddBillPageState extends State<AddBillPage> {
                   ],
                 ],
               ),
+
               const SizedBox(height: 8),
+
               if (isEdit)
                 TextButton.icon(
                   onPressed: _saving ? null : _deleteBill,
