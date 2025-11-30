@@ -206,6 +206,7 @@ class _AddBillPageState extends State<AddBillPage> {
 
   /// ============================
   ///   OCR Prefill + أول منتج = عنوان
+  ///   + دعم warrantyStart / warrantyEnd
   /// ============================
   void _applyPrefillOnce() {
     if (_prefillApplied) return;
@@ -214,6 +215,7 @@ class _AddBillPageState extends State<AddBillPage> {
     Map<String, dynamic> prefill = {};
     bool suggestWarranty = widget.suggestWarranty;
 
+    // 1) Prefill from navigation args
     final args = ModalRoute.of(context)?.settings.arguments;
     if (args is Map) {
       final fromArgs = (args['prefill'] as Map?) ?? {};
@@ -221,39 +223,60 @@ class _AddBillPageState extends State<AddBillPage> {
       if (args['suggestWarranty'] == true) suggestWarranty = true;
     }
 
+    // 2) Prefill from widget
     if (widget.prefill != null) {
       prefill = {...prefill, ...widget.prefill!};
     }
 
     // ============================
-    //        🟣 NEW LOGIC:
-    //   العنوان = أول منتج مستخرج
+    //  🟣 العنوان = أول منتج
     // ============================
     if (prefill['items'] is List && prefill['items'].isNotEmpty) {
       final first = prefill['items'].first;
 
-      // case: {"name": "Item X"}
       if (first is Map && first['name'] != null) {
         _titleCtrl.text = first['name'].toString();
-      }
-      // case: "Item name"
-      else if (first is String) {
+      } else if (first is String) {
         _titleCtrl.text = first;
       }
     } else {
-      // fallback على عنوان OCR العادي
       _titleCtrl.text = (prefill['title'] ?? _titleCtrl.text).toString();
     }
 
-    _shopCtrl.text = (prefill['store'] ?? prefill['shop_name'] ?? '').toString();
+    // ============================
+    //  🟣 المتجر Store name
+    // ============================
+    _shopCtrl.text = (prefill['store'] ??
+        prefill['shop'] ??
+        prefill['shop_name'] ??
+        '')
+        .toString();
 
+    // ============================
+    //  🟣 Purchase date
+    // ============================
+    _purchaseDate ??= _parseDate(prefill['purchase_date']);
+
+    // ============================
+    //  🟣 Warranty Start / End
+    // ============================
+    _ocrWarrantyStart = _parseDate(prefill['warrantyStart']);
+    _ocrWarrantyEnd = _parseDate(prefill['warrantyEnd']);
+
+    // لو ما في purchase date → خليها من warrantyStart
+    if (_purchaseDate == null && _ocrWarrantyStart != null) {
+      _purchaseDate = _ocrWarrantyStart;
+    }
+
+    // ============================
+    //  🟣 المبلغ Amount
+    // ============================
     final amt = _parseAmount(prefill['amount'] ?? prefill['total_amount']);
     if (amt != null) _amountCtrl.text = amt.toString();
 
-    _purchaseDate ??= _parseDate(prefill['purchase_date']);
-    _returnDeadline ??= _parseDate(prefill['return_deadline']);
-    _exchangeDeadline ??= _parseDate(prefill['exchange_deadline']);
-
+    // ============================
+    //  🟣 Return / Exchange windows
+    // ============================
     _retDays ??= _extractDays(prefill['return_text'] ??
         prefill['return'] ??
         prefill['returnPolicy'] ??
@@ -265,18 +288,24 @@ class _AddBillPageState extends State<AddBillPage> {
         prefill['policy']);
 
     if (_purchaseDate != null) {
-      _returnDeadline ??= _deadlineFrom(_purchaseDate!, (_retDays ?? 3));
-      _exchangeDeadline ??= _deadlineFrom(_purchaseDate!, (_exDays ?? 7));
+      _returnDeadline ??=
+          _deadlineFrom(_purchaseDate!, (_retDays ?? 3));
+      _exchangeDeadline ??=
+          _deadlineFrom(_purchaseDate!, (_exDays ?? 7));
     }
 
-    _ocrWarrantyStart = _parseDate(prefill['warrantyStart']);
-    _ocrWarrantyEnd = _parseDate(prefill['warrantyEnd']);
-
+    // ============================
+    //  🟣 Receipt Path
+    // ============================
     final path = (prefill['receiptPath'] ?? '') as String;
     if (path.isNotEmpty) _receiptImagePath = path;
 
+    // ============================
+    //  🟣 OCR detected warranty
+    // ============================
     if (suggestWarranty && !_hasWarranty) {
       _hasWarranty = true;
+
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -290,6 +319,7 @@ class _AddBillPageState extends State<AddBillPage> {
 
     setState(() {});
   }
+
 
   // ===== Pickers =====
 
@@ -528,6 +558,7 @@ class _AddBillPageState extends State<AddBillPage> {
   }
 
   Future<void> _saveAndAddWarranty() async {
+    // إذا الفاتورة لها ضمان سابق → لا نسمح بإضافة جديد
     if (widget.billId != null && _hasExistingWarranty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -536,6 +567,9 @@ class _AddBillPageState extends State<AddBillPage> {
       return;
     }
 
+    // ================================
+    //   حالة تعديل فاتورة موجودة
+    // ================================
     if (widget.billId != null) {
       await _updateBill();
       if (!mounted) return;
@@ -550,7 +584,10 @@ class _AddBillPageState extends State<AddBillPage> {
             defaultStartDate: baseStart,
             defaultEndDate: baseEnd,
             initialProvider: _shopCtrl.text.trim(),
+
+            // 🔥 أهم سطرين — هنا نرسل صورة الفاتورة + تاريخ الشراء
             prefillAttachmentPath: _receiptImagePath,
+            purchaseDate: _purchaseDate,
           ),
         ),
       );
@@ -559,6 +596,9 @@ class _AddBillPageState extends State<AddBillPage> {
       return;
     }
 
+    // ================================
+    //   حالة إنشاء فاتورة جديدة
+    // ================================
     final newId = await _saveNewBill();
     if (newId == null || !mounted) return;
 
@@ -572,7 +612,10 @@ class _AddBillPageState extends State<AddBillPage> {
           defaultStartDate: baseStart,
           defaultEndDate: baseEnd,
           initialProvider: _shopCtrl.text.trim(),
+
+          // 🔥 أيضاً هنا
           prefillAttachmentPath: _receiptImagePath,
+          purchaseDate: _purchaseDate,
         ),
       ),
     );
