@@ -9,7 +9,7 @@ import '../../common/widgets/expiry_progress.dart';
 // ===== Theme Colors =====
 const Color _kBgDark = Color(0xFF0E0722);
 const Color _kGrad1 = Color(0xFF6C3EFF);
-const Color _kGrad3 = Color(0xFF3E8EFD);
+const Color _kGrad3 = Color(0xFF9B5CFF);
 const Color _kCard = Color(0x1AFFFFFF);
 const Color _kTextDim = Colors.white70;
 

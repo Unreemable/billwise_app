@@ -28,7 +28,7 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
   static const _card = Color(0xFF171636);
   static const _cardStroke = Color(0x1FFFFFFF);
   static const _textDim = Color(0xFFBFC3D9);
-  static const _accent = Color(0xFF5D6BFF);
+  static const _accent = Color(0xFF9B5CFF);
   static const _secondaryBtn = Color(0xFF2C2B52);
   static const _headerGrad = LinearGradient(
     colors: [Color(0xFF0B0B2E), Color(0xFF21124C)],

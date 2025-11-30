@@ -8,8 +8,8 @@ import '../bills/ui/bill_list_page.dart';          // قائمة الفواتي�
 /// تدرج موحد للبار (بنفسجي → لافندر ناعم)
 const LinearGradient _kAppGradient = LinearGradient(
   colors: [
-    Color(0xFF6C3EFF), // البنفسجي الأساسي
-    Color(0xFF6C3EFF), // لافندر وردي ناعم بدل الأزرق
+    Color(0xFF9B5CFF), // البنفسجي الأساسي
+    Color(0xFF9B5CFF), // لافندر وردي ناعم بدل الأزرق
   ],
   begin: Alignment.centerLeft,
   end: Alignment.centerRight,
@@ -251,7 +251,7 @@ class _CenterHomeButton extends StatelessWidget {
           shape: BoxShape.circle,
           // نفس تدرّج البار عشان يطلع منسجم
           gradient: const LinearGradient(
-            colors: [Color(0xFF6C3EFF), Color(0xFF6C3EFF)],
+            colors: [Color(0xFF9B5CFF), Color(0xFF6C3EFF)],
             begin: Alignment.centerLeft,
             end: Alignment.centerRight,
           ),

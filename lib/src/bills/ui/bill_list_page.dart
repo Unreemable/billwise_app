@@ -16,6 +16,9 @@ import '../../warranties/ui/warranty_list_page.dart';
 /// ===== نفس ألوان صفحة الهوم (ثيم داكن + تدرجات) =====
 const Color _kBgDark   = Color(0xFF0E0722);
 const Color _kCardDark = Color(0x1AFFFFFF);
+const Color _kGrad1    = Color(0xFF9B5CFF);   // بداية التدرّج
+const Color _kGrad2    = Color(0xFF6C3EFF);   // لظل الشادو
+const Color _kGrad3    = Color(0xFFC58CFF);   // نهاية التدرّج
 const Color _kTextDim  = Colors.white70;
 const LinearGradient _kHeaderGradient = LinearGradient(
   colors: [Color(0xFF1A0B3A), Color(0xFF0E0722)],
@@ -23,10 +26,8 @@ const LinearGradient _kHeaderGradient = LinearGradient(
   end: Alignment.bottomRight,
 );
 const LinearGradient _kSearchGradient = LinearGradient(
-  colors:  [
-    Color(0xFF6C3EFF), // البنفسجي الأساسي
-    Color(0xFFC58CFF), // لافندر وردي ناعم بدل الأزرق
-  ],
+  colors:  [Color(0xFF6C3EFF), Color(0xFFC58CFF)],
+
   begin: Alignment.topLeft,
   end: Alignment.bottomRight,
 );
@@ -646,10 +647,14 @@ class _BillListPageState extends State<BillListPage> {
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(16),
-                  gradient: _kSearchGradient,
+                  gradient: const LinearGradient(
+                    colors: [_kGrad1, _kGrad3],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
                   boxShadow: [
                     BoxShadow(
-                      color: const Color(0xFF934DFE).withOpacity(.45),
+                      color: _kGrad2.withOpacity(0.45),
                       blurRadius: 16,
                       offset: const Offset(0, 6),
                     ),
@@ -699,6 +704,7 @@ class _BillListPageState extends State<BillListPage> {
                 ),
               ),
             ),
+
             const SizedBox(height: 8),
 
             // ====== فلاتر الفرز: Newest / Oldest / Near expiry ======

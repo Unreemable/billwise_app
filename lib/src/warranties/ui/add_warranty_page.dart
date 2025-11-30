@@ -1,4 +1,4 @@
-// ===================== Add Warranty Page (Unified Product Field) =====================
+// ===================== Add Warranty Page (Updated Colors to match Quick Add) =====================
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
@@ -11,11 +11,13 @@ import '../data/warranty_service.dart';
 import '../../bills/data/bill_service.dart';
 import '../../notifications/notifications_service.dart';
 
-// ===== Unified Colors (same across app) =====
+// ===== Unified Dark Theme =====
 const Color _kBgDark = Color(0xFF0E0722);
 const Color _kTextDim = Colors.white70;
-const Color _kGrad1 = Color(0xFF6C3EFF);
-const Color _kGrad3 = Color(0xFF3E8EFD);
+
+// ===== Buttons Colors from Quick Add =====
+const Color _accent = Color(0xFF9B5CFF);      // PRIMARY BUTTON
+const Color _secondaryBtn = Color(0xFF2C2B52); // SECONDARY BUTTON (not used yet)
 
 // ===== Header Gradient =====
 const LinearGradient _kHeaderGrad = LinearGradient(
@@ -50,10 +52,10 @@ class AddWarrantyPage extends StatefulWidget {
 
 class _AddWarrantyPageState extends State<AddWarrantyPage> {
   // ================= Controllers =================
-  final _providerCtrl = TextEditingController(); // Provider / Store
-  final _productCtrl = TextEditingController();  // Unified Product
-  final _serialCtrl = TextEditingController();   // Optional
-  final _yearsCtrl = TextEditingController();    // Warranty years
+  final _providerCtrl = TextEditingController();
+  final _productCtrl = TextEditingController();
+  final _serialCtrl = TextEditingController();
+  final _yearsCtrl = TextEditingController();
 
   DateTime? _start;
   DateTime? _end;
@@ -65,6 +67,7 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
   final _notifs = NotificationsService.I;
 
   bool _saving = false;
+
   bool get isEdit => widget.warrantyId != null;
   bool get hasBill => widget.billId != null;
 
@@ -74,11 +77,10 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
   @override
   void initState() {
     super.initState();
-
     _providerCtrl.text = (widget.initialProvider ?? '').trim();
     _yearsCtrl.text = '1';
 
-    final path = (widget.prefillAttachmentPath ?? '').trim();
+    final path = widget.prefillAttachmentPath ?? '';
     if (path.isNotEmpty) {
       _attachmentLocalPath = path;
       _attachmentName = path.split(Platform.pathSeparator).last;
@@ -91,102 +93,92 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
     });
   }
 
-  // ===== Auto-calc end date =====
   void _recalcEnd() {
     if (_start == null) return;
     _end = DateTime(_start!.year + _years, _start!.month, _start!.day);
   }
 
-  // ===== Load data for editing =====
   Future<void> _loadExistingWarranty() async {
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('Warranties')
-          .doc(widget.warrantyId!)
-          .get();
-      if (!mounted || !doc.exists) return;
-      final data = doc.data()!;
+    final doc = await FirebaseFirestore.instance
+        .collection('Warranties')
+        .doc(widget.warrantyId!)
+        .get();
 
-      final provider = (data['provider'] ?? '').toString();
-      if (_providerCtrl.text.trim().isEmpty && provider.isNotEmpty) {
-        _providerCtrl.text = provider;
+    if (!doc.exists) return;
+    final data = doc.data()!;
+
+    if (_providerCtrl.text.trim().isEmpty) {
+      _providerCtrl.text = (data['provider'] ?? '').toString();
+    }
+
+    _productCtrl.text = (data['product'] ?? '').toString();
+    _serialCtrl.text = (data['serial_number'] ?? '').toString();
+
+    final s = data['start_date'];
+    final e = data['end_date'];
+    if (s is Timestamp) _start = s.toDate();
+    if (e is Timestamp) _end = e.toDate();
+
+    if (_start != null && _end != null) {
+      int y = _end!.year - _start!.year;
+      if (y >= 1 && y <= 10) {
+        _years = y;
+        _yearsCtrl.text = y.toString();
+      } else {
+        _endManual = true;
       }
+    }
 
-      _productCtrl.text = (data['product'] ?? '').toString();
-      _serialCtrl.text = (data['serial_number'] ?? '').toString();
+    _attachmentLocalPath = data['attachment_local_path'];
+    _attachmentName = data['attachment_name'];
 
-      final startTs = data['start_date'];
-      final endTs = data['end_date'];
-      if (startTs is Timestamp) _start = startTs.toDate();
-      if (endTs is Timestamp) _end = endTs.toDate();
-
-      if (_start != null && _end != null) {
-        final y = _end!.year - _start!.year;
-        if (y >= 1 && y <= 10) {
-          _years = y;
-          _yearsCtrl.text = y.toString();
-        } else {
-          _endManual = true;
-        }
-      }
-
-      final att = (data['attachment_local_path'] ?? '').toString();
-      final name = (data['attachment_name'] ?? '').toString();
-      if (att.isNotEmpty) {
-        _attachmentLocalPath = att;
-        _attachmentName = name.isEmpty
-            ? att.split(Platform.pathSeparator).last
-            : name;
-      }
-
-      setState(() {});
-    } catch (_) {}
+    setState(() {});
   }
 
-  // ===== Pick image attachment =====
+  // ===== Pick image =====
   Future<void> _pickAttachment() async {
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
-      showDragHandle: true,
       builder: (ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-                leading: const Icon(Icons.camera_alt),
-                title: const Text('Camera'),
-                onTap: () => Navigator.pop(ctx, ImageSource.camera)),
+              leading: const Icon(Icons.camera_alt),
+              title: const Text('Camera'),
+              onTap: () => Navigator.pop(ctx, ImageSource.camera),
+            ),
             ListTile(
-                leading: const Icon(Icons.photo_library),
-                title: const Text('Gallery'),
-                onTap: () => Navigator.pop(ctx, ImageSource.gallery)),
+              leading: const Icon(Icons.photo_library),
+              title: const Text('Gallery'),
+              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+            ),
           ],
         ),
       ),
     );
     if (source == null) return;
 
-    final x = await _picker.pickImage(source: source, imageQuality: 85);
-    if (x != null) {
+    final img = await _picker.pickImage(source: source, imageQuality: 85);
+    if (img != null) {
       setState(() {
-        _attachmentLocalPath = x.path;
-        _attachmentName = x.path.split(Platform.pathSeparator).last;
+        _attachmentLocalPath = img.path;
+        _attachmentName = img.path.split(Platform.pathSeparator).last;
       });
     }
   }
 
   Future<void> _removeAttachment() async {
     if (isEdit) {
-      try {
-        await FirebaseFirestore.instance
-            .collection('Warranties')
-            .doc(widget.warrantyId!)
-            .set({
-          'attachment_local_path': FieldValue.delete(),
-          'attachment_name': FieldValue.delete(),
-        }, SetOptions(merge: true));
-      } catch (_) {}
+      await FirebaseFirestore.instance
+          .collection('Warranties')
+          .doc(widget.warrantyId!)
+          .set({
+        'attachment_local_path': FieldValue.delete(),
+        'attachment_name': FieldValue.delete(),
+      }, SetOptions(merge: true));
     }
+
     setState(() {
       _attachmentLocalPath = null;
       _attachmentName = null;
@@ -207,33 +199,28 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
     if (d != null) onPick(d);
   }
 
-  // ===== Save warranty (add or edit) =====
+  // ===== Save / Update =====
   Future<void> _save() async {
     setState(() => _saving = true);
 
     try {
       final uid = FirebaseAuth.instance.currentUser?.uid;
-      if (uid == null) return _snack('Please sign in first');
+      if (uid == null) return;
 
       if (_start == null) return _snack('Select start date');
       if (_end == null) return _snack('Select end date');
-
-      if (_end!.isBefore(_start!)) {
-        return _snack('End date must be after start date');
-      }
+      if (_end!.isBefore(_start!)) return _snack('End must be after start');
 
       final provider = _providerCtrl.text.trim().isEmpty
           ? 'Unknown'
           : _providerCtrl.text.trim();
-
       final product = _productCtrl.text.trim();
       final serial = _serialCtrl.text.trim();
 
-      late final String warrantyId;
+      String warrantyId;
 
       if (isEdit) {
         warrantyId = widget.warrantyId!;
-
         await WarrantyService.instance.updateWarranty(
           id: warrantyId,
           provider: provider,
@@ -246,16 +233,18 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
             .doc(warrantyId);
 
         await doc.set(
-            product.isEmpty
-                ? {'product': FieldValue.delete()}
-                : {'product': product},
-            SetOptions(merge: true));
+          product.isEmpty
+              ? {'product': FieldValue.delete()}
+              : {'product': product},
+          SetOptions(merge: true),
+        );
 
         await doc.set(
-            serial.isEmpty
-                ? {'serial_number': FieldValue.delete()}
-                : {'serial_number': serial},
-            SetOptions(merge: true));
+          serial.isEmpty
+              ? {'serial_number': FieldValue.delete()}
+              : {'serial_number': serial},
+          SetOptions(merge: true),
+        );
 
         await doc.set({
           if (_attachmentLocalPath != null)
@@ -302,31 +291,19 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
         );
       }
 
-      try {
-        await _notifs.rescheduleWarrantyReminder(
-          warrantyId: warrantyId,
-          provider: provider,
-          start: _start!,
-          end: _end!,
-        );
-      } catch (_) {}
+      await _notifs.rescheduleWarrantyReminder(
+        warrantyId: warrantyId,
+        provider: provider,
+        start: _start!,
+        end: _end!,
+      );
 
       if (!mounted) return;
       _snack(isEdit ? 'Warranty updated' : 'Warranty added');
       Navigator.pop(context);
-    } catch (e) {
-      _snack('Error: $e');
     } finally {
       if (mounted) setState(() => _saving = false);
     }
-  }
-
-  Future<void> _delete() async {
-    try {
-      await WarrantyService.instance.deleteWarranty(widget.warrantyId!);
-      await _notifs.cancelWarrantyReminder(widget.warrantyId!);
-      Navigator.pop(context);
-    } catch (_) {}
   }
 
   void _snack(String m) {
@@ -340,6 +317,8 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
       textDirection: ui.TextDirection.ltr,
       child: Scaffold(
         backgroundColor: _kBgDark,
+
+        // ----------- AppBar -----------
         appBar: AppBar(
           backgroundColor: Colors.transparent,
           elevation: 0,
@@ -347,32 +326,9 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
           title: Text(isEdit ? 'Edit Warranty' : 'Add Warranty'),
           flexibleSpace:
           Container(decoration: const BoxDecoration(gradient: _kHeaderGrad)),
-          actions: [
-            if (isEdit)
-              IconButton(
-                icon: const Icon(Icons.delete_outline, color: Colors.white),
-                onPressed: _saving ? null : () async {
-                  final ok = await showDialog<bool>(
-                    context: context,
-                    builder: (_) => AlertDialog(
-                      title: const Text('Delete warranty?'),
-                      content: const Text('This cannot be undone.'),
-                      actions: [
-                        TextButton(
-                            onPressed: () => Navigator.pop(context, false),
-                            child: const Text('Cancel')),
-                        FilledButton(
-                            onPressed: () => Navigator.pop(context, true),
-                            child: const Text('Delete')),
-                      ],
-                    ),
-                  );
-                  if (ok == true) _delete();
-                },
-              ),
-          ],
         ),
 
+        // ----------- Save Button -----------
         bottomNavigationBar: SafeArea(
           top: false,
           child: Padding(
@@ -390,28 +346,7 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
             children: [
-              if (!hasBill)
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  margin: const EdgeInsets.only(bottom: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(.06),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white.withOpacity(.18)),
-                  ),
-                  child: Row(
-                    children: const [
-                      Icon(Icons.info_outline, color: Colors.white, size: 18),
-                      SizedBox(width: 8),
-                      Expanded(
-                        child: Text('This warranty is not linked to a bill.',
-                            style: TextStyle(color: Colors.white)),
-                      ),
-                    ],
-                  ),
-                ),
-
-              // ===== Provider =====
+              // Provider
               _GlassField(
                 controller: _providerCtrl,
                 label: 'Provider / Store',
@@ -419,7 +354,7 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
               ),
               const SizedBox(height: 12),
 
-              // ===== Unified Product =====
+              // Product
               _GlassField(
                 controller: _productCtrl,
                 label: 'Product',
@@ -427,7 +362,7 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
               ),
               const SizedBox(height: 12),
 
-              // ===== Serial number =====
+              // Serial
               _GlassField(
                 controller: _serialCtrl,
                 label: 'Serial number (optional)',
@@ -435,10 +370,9 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
               ),
               const SizedBox(height: 12),
 
-              // ===== Years =====
+              // Years
               Container(
-                padding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(.06),
                   borderRadius: BorderRadius.circular(12),
@@ -461,8 +395,6 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
                         style: const TextStyle(color: Colors.white),
                         decoration: const InputDecoration(
                           isDense: true,
-                          contentPadding:
-                          EdgeInsets.symmetric(horizontal: 4, vertical: 6),
                           border: UnderlineInputBorder(
                             borderSide: BorderSide(color: Colors.white70),
                           ),
@@ -475,8 +407,6 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
                             } else if (n > 10) {
                               _years = 10;
                               _yearsCtrl.text = '10';
-                              _yearsCtrl.selection =
-                              const TextSelection.collapsed(offset: 2);
                             } else {
                               _years = n;
                             }
@@ -490,10 +420,9 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
               ),
               const SizedBox(height: 12),
 
-              // ===== Attachment =====
+              // Attachment
               Container(
-                padding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(.06),
                   borderRadius: BorderRadius.circular(12),
@@ -512,18 +441,14 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
                         _attachmentLocalPath == null
                             ? 'No image'
                             : (_attachmentName ??
-                            _attachmentLocalPath!
-                                .split(Platform.pathSeparator)
-                                .last),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                            _attachmentLocalPath!.split(Platform.pathSeparator).last),
                         style: const TextStyle(color: Colors.white),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     if (_attachmentLocalPath != null)
                       IconButton(
-                        icon:
-                        const Icon(Icons.close, color: Colors.white70),
+                        icon: const Icon(Icons.close, color: Colors.white70),
                         onPressed: _removeAttachment,
                       ),
                   ],
@@ -531,12 +456,10 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
               ),
               const SizedBox(height: 12),
 
-              // ===== Start date =====
+              // Start Date
               _GlassRow(
                 left: 'Warranty start date',
-                right: _start == null
-                    ? 'Select'
-                    : _formatter.format(_start!),
+                right: _start == null ? 'Select' : _formatter.format(_start!),
                 icon: Icons.date_range,
                 onTap: () => _pickDate(
                   initial: _start ?? DateTime.now(),
@@ -548,14 +471,12 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
                   },
                 ),
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 12),
 
-              // ===== End date =====
+              // End Date
               _GlassRow(
                 left: 'Warranty end date',
-                right: _end == null
-                    ? 'Calculated'
-                    : _formatter.format(_end!),
+                right: _end == null ? 'Calculated' : _formatter.format(_end!),
                 icon: Icons.verified_user,
                 onTap: () => _pickDate(
                   initial: _end ?? _start ?? DateTime.now(),
@@ -577,6 +498,7 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
 
 // =================== Reusable Widgets ===================
 
+// Glass input field
 class _GlassField extends StatelessWidget {
   final TextEditingController controller;
   final String label;
@@ -604,14 +526,14 @@ class _GlassField extends StatelessWidget {
           labelStyle: const TextStyle(color: Colors.white70),
           prefixIcon: Icon(icon, color: Colors.white70),
           border: InputBorder.none,
-          contentPadding:
-          const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
         ),
       ),
     );
   }
 }
 
+// Row picker
 class _GlassRow extends StatelessWidget {
   final String left;
   final String right;
@@ -639,9 +561,7 @@ class _GlassRow extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Expanded(
-              child: Text(left, style: const TextStyle(color: Colors.white)),
-            ),
+            Expanded(child: Text(left, style: const TextStyle(color: Colors.white))),
             Text(right, style: const TextStyle(color: Colors.white70)),
             const SizedBox(width: 8),
             Icon(icon, color: Colors.white70),
@@ -652,6 +572,7 @@ class _GlassRow extends StatelessWidget {
   }
 }
 
+// PRIMARY BUTTON — same as Quick Add
 class _GradButton extends StatelessWidget {
   final String text;
   final IconData icon;
@@ -671,7 +592,7 @@ class _GradButton extends StatelessWidget {
       child: Ink(
         height: 48,
         decoration: BoxDecoration(
-          gradient: const LinearGradient(colors: [_kGrad1, _kGrad3]),
+          color: _accent, // Main Purple (Quick Add)
           borderRadius: BorderRadius.circular(14),
         ),
         child: Center(
@@ -693,6 +614,7 @@ class _GradButton extends StatelessWidget {
   }
 }
 
+// SMALL BUTTON — same purple
 class _TinyGradButton extends StatelessWidget {
   final String text;
   final IconData icon;
@@ -712,8 +634,8 @@ class _TinyGradButton extends StatelessWidget {
       child: Ink(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
-          gradient: const LinearGradient(colors: [_kGrad1, _kGrad3]),
-          borderRadius: BorderRadius.circular(10),
+          color: _accent, // same purple
+          borderRadius: BorderRadius.circular(14),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,

@@ -43,7 +43,7 @@ class _AddBillPageState extends State<AddBillPage> {
   static const _card = Color(0xFF171636);
   static const _cardStroke = Color(0x1FFFFFFF);
   static const _textDim = Color(0xFFBFC3D9);
-  static const _accent = Color(0xFF5D6BFF); // زرار الأفعال الرئيسية
+  static const _accent = Color(0xFF8A46F9); // زرار الأفعال الرئيسية
   static const _danger = Color(0xFFEF5350);
   static const _headerGrad = LinearGradient(
     colors: [Color(0xFF0B0B2E), Color(0xFF21124C)],
