@@ -1,4 +1,4 @@
-// ===================== Add Warranty Page (OCR-aware + purchaseDate support) =====================
+// ===================== Add Warranty Page (FINAL — WITH PREFILL SUPPORT) =====================
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
@@ -14,11 +14,8 @@ import '../../notifications/notifications_service.dart';
 // ===== Unified Dark Theme =====
 const Color _kBgDark = Color(0xFF0E0722);
 const Color _kTextDim = Colors.white70;
-
-// ===== Buttons Colors =====
 const Color _accent = Color(0xFF9B5CFF);
 
-// ===== Header Gradient =====
 const LinearGradient _kHeaderGrad = LinearGradient(
   colors: [Color(0xFF1A0B3A), Color(0xFF0E0722)],
   begin: Alignment.topLeft,
@@ -31,21 +28,25 @@ class AddWarrantyPage extends StatefulWidget {
     this.billId,
     this.defaultStartDate,
     this.defaultEndDate,
+    this.purchaseDate,
     this.warrantyId,
     this.initialProvider,
     this.prefillAttachmentPath,
-    this.purchaseDate,           // 👈 NEW (from bill)
+
+    this.prefill,   // ← NEW: complete prefill support
   });
 
   static const route = '/add-warranty';
 
   final String? billId;
-  final DateTime? defaultStartDate;   // from OCR
-  final DateTime? defaultEndDate;     // from OCR
-  final DateTime? purchaseDate;       // from AddBillPage
+  final DateTime? defaultStartDate;
+  final DateTime? defaultEndDate;
+  final DateTime? purchaseDate;
   final String? warrantyId;
   final String? initialProvider;
   final String? prefillAttachmentPath;
+
+  final Map<String, dynamic>? prefill; // ← prefill for EDITING
 
   @override
   State<AddWarrantyPage> createState() => _AddWarrantyPageState();
@@ -62,64 +63,79 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
   int _years = 1;
   bool _endManual = false;
 
+  String? _attachmentLocalPath;
+  String? _attachmentName;
+
   final _fmt = DateFormat('yyyy-MM-dd');
   final _picker = ImagePicker();
   final _notifs = NotificationsService.I;
 
   bool _saving = false;
-  bool get isEdit => widget.warrantyId != null;
 
-  String? _attachmentLocalPath;
-  String? _attachmentName;
+  bool get isEdit => widget.warrantyId != null;
 
   @override
   void initState() {
     super.initState();
 
+    // ---------- Provider ----------
     _providerCtrl.text = (widget.initialProvider ?? '').trim();
 
-    // ============================
-    //    🔥 Warranty Start Logic
-    // ============================
-    // 1) OCR start → استخدمه
-    // 2) OCR ما جاب → استخدم purchaseDate من الفاتورة
-    // 3) لو ولا واحد → ينتظر المستخدم يختار
-    _start = widget.defaultStartDate ??
-        widget.purchaseDate ??
-        null;
+    // ---------- DATE LOGIC ----------
+    _start = widget.defaultStartDate ?? widget.purchaseDate;
 
-    // ============================
-    //    🔥 Warranty End Logic
-    // ============================
     if (widget.defaultEndDate != null) {
-      // جاي من OCR
       _end = widget.defaultEndDate;
-      _endManual = true; // بما إن OCR أعطى تاريخ جاهز
+      _endManual = true;
     } else if (_start != null) {
-      // نستخدم الحساب التلقائي
       _end = DateTime(_start!.year + _years, _start!.month, _start!.day);
     }
 
-    // Handle attachment
-    final p = widget.prefillAttachmentPath;
-    if (p != null && p.isNotEmpty) {
-      _attachmentLocalPath = p;
-      _attachmentName = p.split(Platform.pathSeparator).last;
+    // ---------- Attachment ----------
+    if (widget.prefillAttachmentPath != null) {
+      _attachmentLocalPath = widget.prefillAttachmentPath!;
+      _attachmentName =
+          widget.prefillAttachmentPath!.split(Platform.pathSeparator).last;
     }
 
-    if (isEdit) _loadExistingWarranty();
+    // ---------- Load Existing Warranty (if Edit) ----------
+    if (isEdit) {
+      _loadExistingWarranty();
+    }
+
+    // ---------- Prefill from WarrantyDetailPage ----------
+    if (widget.prefill != null) {
+      final f = widget.prefill!;
+
+      _providerCtrl.text = f['provider'] ?? _providerCtrl.text;
+      _productCtrl.text = f['product'] ?? '';
+      _serialCtrl.text = f['serial'] ?? '';
+
+      if (f['start'] != null) _start = f['start'];
+      if (f['end'] != null) {
+        _end = f['end'];
+        _endManual = true;
+      }
+
+      // Years recalc
+      if (_start != null && _end != null) {
+        _years = _end!.year - _start!.year;
+        _years = _years.clamp(1, 10);
+        _yearsCtrl.text = _years.toString();
+      }
+
+      if (f['attachment'] != null) {
+        _attachmentLocalPath = f['attachment'];
+        _attachmentName = f['attachment'].split(Platform.pathSeparator).last;
+      }
+    }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _notifs.requestPermissions(context);
     });
   }
 
-  // Calculate end date
-  void _recalcEnd() {
-    if (_start == null) return;
-    _end = DateTime(_start!.year + _years, _start!.month, _start!.day);
-  }
-
+  // ---------- Load existing warranty ----------
   Future<void> _loadExistingWarranty() async {
     final doc = await FirebaseFirestore.instance
         .collection('Warranties')
@@ -133,17 +149,12 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
     _productCtrl.text = (d['product'] ?? '').toString();
     _serialCtrl.text = (d['serial_number'] ?? '').toString();
 
-    if (d['start_date'] is Timestamp) {
-      _start = d['start_date'].toDate();
-    }
-    if (d['end_date'] is Timestamp) {
-      _end = d['end_date'].toDate();
-    }
+    if (d['start_date'] is Timestamp) _start = d['start_date'].toDate();
+    if (d['end_date'] is Timestamp) _end = d['end_date'].toDate();
 
     if (_start != null && _end != null) {
       _years = _end!.year - _start!.year;
-      if (_years < 1) _years = 1;
-      if (_years > 10) _years = 10;
+      _years = _years.clamp(1, 10);
       _yearsCtrl.text = _years.toString();
     }
 
@@ -153,7 +164,7 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
     setState(() {});
   }
 
-  // Pick date
+  // ---------- Date Picker ----------
   Future<void> _pickDate({
     required DateTime initial,
     required ValueChanged<DateTime> onPick,
@@ -167,9 +178,9 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
     if (d != null) onPick(d);
   }
 
-  // Pick image
+  // ---------- Attachment Picker ----------
   Future<void> _pickAttachment() async {
-    final s = await showModalBottomSheet<ImageSource>(
+    final src = await showModalBottomSheet<ImageSource>(
       context: context,
       builder: (_) => SafeArea(
         child: Column(
@@ -190,22 +201,22 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
       ),
     );
 
-    if (s == null) return;
+    if (src == null) return;
 
-    final x = await _picker.pickImage(source: s, imageQuality: 85);
+    final x = await _picker.pickImage(source: src, imageQuality: 85);
     if (x != null) {
       setState(() {
         _attachmentLocalPath = x.path;
-        _attachmentName = x.path.split(Platform.pathSeparator).last;
+        _attachmentName = x.path.split('/').last;
       });
     }
   }
 
-  // Save
+  // ---------- Save ----------
   Future<void> _save() async {
     if (_start == null) return _msg("Please select start date");
     if (_end == null) return _msg("Please select end date");
-    if (_end!.isBefore(_start!)) return _msg("End date must be after start");
+    if (_end!.isBefore(_start!)) return _msg("End must be after start");
 
     setState(() => _saving = true);
 
@@ -223,6 +234,7 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
 
     if (isEdit) {
       id = widget.warrantyId!;
+
       await WarrantyService.instance.updateWarranty(
         id: id,
         provider: provider,
@@ -230,8 +242,10 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
         endDate: _end!,
       );
 
-      final ref = FirebaseFirestore.instance.collection('Warranties').doc(id);
-      await ref.set({
+      await FirebaseFirestore.instance
+          .collection('Warranties')
+          .doc(id)
+          .set({
         'product': product.isEmpty ? FieldValue.delete() : product,
         'serial_number': serial.isEmpty ? FieldValue.delete() : serial,
         if (_attachmentLocalPath != null)
@@ -249,21 +263,21 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
       );
 
       final ref = FirebaseFirestore.instance.collection('Warranties').doc(id);
-      if (product.isNotEmpty) {
+
+      if (product.isNotEmpty)
         await ref.set({'product': product}, SetOptions(merge: true));
-      }
-      if (serial.isNotEmpty) {
+
+      if (serial.isNotEmpty)
         await ref.set({'serial_number': serial}, SetOptions(merge: true));
-      }
-      if (_attachmentLocalPath != null) {
+
+      if (_attachmentLocalPath != null)
         await ref.set({
           'attachment_local_path': _attachmentLocalPath,
           'attachment_name': _attachmentName,
         }, SetOptions(merge: true));
-      }
     }
 
-    // Update bill warranty flags
+    // Update bill if linked
     if (widget.billId != null) {
       await BillService.instance.updateBill(
         billId: widget.billId!,
@@ -273,6 +287,7 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
       );
     }
 
+    // Notifications
     await _notifs.rescheduleWarrantyReminder(
       warrantyId: id,
       provider: provider,
@@ -281,13 +296,28 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
     );
 
     if (!mounted) return;
-    _msg(isEdit ? 'Warranty updated' : 'Warranty added');
-    Navigator.pop(context);
+    _msg(isEdit ? "Warranty updated" : "Warranty added ✅");
+    Navigator.pop(context, true);
   }
 
   void _msg(String m) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(m),
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.only(
+          left: 16,
+          right: 16,
+          bottom: 10, // نفس المسافة عشان ما يدف زر الهوم
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
+
 
   // ============================ UI ============================
   @override
@@ -300,10 +330,11 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
         appBar: AppBar(
           backgroundColor: Colors.transparent,
           elevation: 0,
-          title: Text(isEdit ? 'Edit Warranty' : 'Add Warranty'),
+          title: Text(isEdit ? "Edit Warranty" : "Add Warranty"),
           foregroundColor: Colors.white,
-          flexibleSpace:
-          Container(decoration: const BoxDecoration(gradient: _kHeaderGrad)),
+          flexibleSpace: Container(
+            decoration: const BoxDecoration(gradient: _kHeaderGrad),
+          ),
         ),
 
         bottomNavigationBar: SafeArea(
@@ -311,7 +342,9 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             child: _GradBtn(
-              text: _saving ? 'Saving...' : (isEdit ? 'Update' : 'Save'),
+              text: _saving
+                  ? "Saving..."
+                  : (isEdit ? "Update" : "Save"),
               icon: Icons.save,
               onTap: _saving ? null : _save,
             ),
@@ -327,12 +360,14 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
               icon: Icons.store_outlined,
             ),
             const SizedBox(height: 12),
+
             _GlassField(
               label: "Product",
               controller: _productCtrl,
               icon: Icons.shopping_bag_outlined,
             ),
             const SizedBox(height: 12),
+
             _GlassField(
               label: "Serial number (optional)",
               controller: _serialCtrl,
@@ -340,12 +375,9 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
             ),
             const SizedBox(height: 12),
 
-            // Years
             _yearsField(),
-
             const SizedBox(height: 12),
 
-            // Attachment
             _attachmentPicker(),
 
             const SizedBox(height: 12),
@@ -360,7 +392,13 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
                 onPick: (d) {
                   setState(() {
                     _start = d;
-                    if (!_endManual) _recalcEnd();
+                    if (!_endManual) {
+                      _end = DateTime(
+                        _start!.year + _years,
+                        _start!.month,
+                        _start!.day,
+                      );
+                    }
                   });
                 },
               ),
@@ -368,7 +406,7 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
 
             const SizedBox(height: 12),
 
-            // End date
+            // End Date
             _GlassPicker(
               left: "Warranty end date",
               right: _end == null ? "Calculated" : _fmt.format(_end!),
@@ -389,6 +427,7 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
     );
   }
 
+  // ---------- Years ----------
   Widget _yearsField() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -419,9 +458,17 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
               onChanged: (v) {
                 final n = int.tryParse(v);
                 setState(() {
-                  _years = (n == null || n < 1) ? 1 : (n > 10 ? 10 : n);
+                  _years = (n == null || n < 1)
+                      ? 1
+                      : (n > 10 ? 10 : n);
                   _yearsCtrl.text = _years.toString();
-                  if (!_endManual) _recalcEnd();
+                  if (!_endManual && _start != null) {
+                    _end = DateTime(
+                      _start!.year + _years,
+                      _start!.month,
+                      _start!.day,
+                    );
+                  }
                 });
               },
             ),
@@ -431,6 +478,7 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
     );
   }
 
+  // ---------- Attach image ----------
   Widget _attachmentPicker() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -462,8 +510,7 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
   }
 }
 
-// =================== UI Widgets ===================
-
+// ------- UI widgets -------
 class _GlassField extends StatelessWidget {
   final TextEditingController controller;
   final String label;

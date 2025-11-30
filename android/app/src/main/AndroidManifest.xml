@@ -4,6 +4,7 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <!-- ===== Permissions ===== -->
+
     <!-- إشعارات (Android 13+) -->
     <uses-permission
         android:name="android.permission.POST_NOTIFICATIONS"
@@ -13,18 +14,19 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
 
-    <!-- منبّهات دقيقة (مطلوب لبعض الجداول) -->
+    <!-- منبّهات دقيقة -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
     <!-- إيقاظ الجهاز عند المنبّه -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
-    <!-- إعادة جدولة بعد إعادة التشغيل (لو عندك Reciever يتعامل معها) -->
+    <!-- بعد إعادة التشغيل -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <!-- وسائط (Android 13+) -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-    <!-- تخزين خارجي للأجهزة < Android 13 -->
+
+    <!-- تخزين خارجي (< Android 13) -->
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
@@ -39,21 +41,20 @@
         android:name="${applicationName}"
         android:label="BillWise"
         android:icon="@mipmap/ic_launcher"
-        android:supportsRtl="true">
+        android:supportsRtl="true"
+        android:enableOnBackInvokedCallback="true">   <!-- ★★ تمت الإضافة هنا ★★ -->
 
-        <!-- قناة الإشعارات الافتراضية لـ FCM (يجب أن تطابق القناة التي أنشأناها في Flutter: billwise_reminders) -->
+        <!-- قناة الإشعارات لـ FCM -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="billwise_reminders" />
 
-        <!-- (اختياري) أيقونة افتراضية لإشعارات FCM؛ يفضّل أيقونة أحادية اللون -->
+        <!-- لو تبين تضيفي أيقونة إشعار افتراضية (اختياري) -->
         <!--
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
             android:resource="@mipmap/ic_launcher" />
         -->
-
-        <!-- لا تُضيفي خدمة FCM يدويًا؛ تُضاف تلقائيًا من المكتبة -->
 
         <activity
             android:name=".MainActivity"
@@ -80,11 +81,12 @@
             android:value="2" />
     </application>
 
-    <!-- استعلامات (مثلاً للمشاركة/المعالجة) -->
+    <!-- استعلامات (مثلاً للمشاركة) -->
     <queries>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT" />
             <data android:mimeType="text/plain" />
         </intent>
     </queries>
+
 </manifest>

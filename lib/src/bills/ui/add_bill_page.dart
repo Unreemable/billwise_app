@@ -438,8 +438,21 @@ class _AddBillPageState extends State<AddBillPage> {
 
       if (!mounted) return id;
 
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Bill saved ✅')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Bill saved ✅'),
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.only(
+            left: 16,
+            right: 16,
+            bottom: 10, // عشان ما يدف زر الهوم
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
 
       return id;
     } finally {

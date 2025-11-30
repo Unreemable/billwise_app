@@ -198,7 +198,7 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
       if (!isProbablyBill) {
         // 🔴 مو فاتورة → لا تروحين لصفحة AddBill وخلي المستخدم يعيد التصوير
         errorMsg =
-        'This image does not look like a bill.\nPlease capture a real bill .';
+        'This image does not look like a bill.\nPlease try again .';
         setState(() => _error = errorMsg);
         return;
       }
@@ -214,6 +214,11 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
       if (!mounted) return;
 
       await Navigator.pushNamed(context, AddBillPage.route, arguments: args);
+
+// بعد الرجوع من AddBill / AddWarranty
+      if (mounted) {
+        Navigator.popUntil(context, (r) => r.isFirst); // ← يرجّع للهوم
+      }
     } catch (e) {
       errorMsg = e.toString();
       setState(() => _error = errorMsg);
@@ -414,3 +419,11 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
     );
   }
 }
+
+
+
+
+
+
+
+

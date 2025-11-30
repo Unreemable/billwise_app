@@ -110,7 +110,7 @@ class _HomeContentState extends State<HomeContent> {
       child: Directionality(
         textDirection: ui.TextDirection.ltr, // نخلي الهوم LTR عشان التصميم
         child: Scaffold(
-          backgroundColor: _kBgDark,        // الخلفية الغامقة الأصلية للهوم
+          backgroundColor: Theme.of(context).colorScheme.background,        // الخلفية الغامقة الأصلية للهوم
           resizeToAvoidBottomInset: true,   // عشان ما يغطي الكيبورد المحتوى
 
           // ملاحظة مهمة:

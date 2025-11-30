@@ -1,3 +1,4 @@
+
 // ===================== Warranty Details Page (with image preview + open) =====================
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
@@ -6,6 +7,7 @@ import 'dart:ui' as ui;
 
 import '../../common/models.dart';
 import '../../common/widgets/expiry_progress.dart';
+import '../../warranties/ui/add_warranty_page.dart';
 
 // ===== Theme Colors =====
 const Color _kBgDark = Color(0xFF0E0722);
@@ -152,8 +154,27 @@ class _WarrantyDetailPageState extends State<WarrantyDetailPage> {
                   child: _GradBtn(
                     text: 'Edit',
                     icon: Icons.edit,
-                    onTap: () {
-                      // would open edit page OR sheet (not changed here)
+                    onTap: () async {
+                      final updated = await Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => AddWarrantyPage(
+                            warrantyId: _d.id,
+                            prefill: {
+                              'title': _d.title,
+                              'product': _product,
+                              'serial': _serialNumber,
+                              'start': _d.warrantyStart,
+                              'expiry': _d.warrantyExpiry,
+                              'attachment': _attachmentLocalPath,
+                            },
+                          ),
+                        ),
+                      );
+
+                      if (updated == true) {
+                        await _loadExtraFields();   // يعيد تحميل الصورة/السيريال/الاسم
+                        setState(() {});            // تحديث الواجهة
+                      }
                     },
                   ),
                 ),
