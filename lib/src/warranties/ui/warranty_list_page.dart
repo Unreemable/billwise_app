@@ -1,46 +1,49 @@
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../common/models.dart';
 import '../../common/widgets/expiry_progress.dart';
 import '../../bills/ui/bill_list_page.dart';
 import 'warranty_detail_page.dart';
+import './add_warranty_page.dart'; // نحتاجها للزر العائم
 
-// ===== ثيم الألوان (نفس ألوان صفحة الهوم) =====
-const Color _kBgDark   = Color(0xFF18102F);   // زي ما هو
+// ===== ألوان عامة نستخدمها في الهوم (تم تحويلها لثوابت ديناميكية) =====
 const Color _kGrad1    = Color(0xFF9B5CFF);   // Violet أفتح ومريح
 const Color _kGrad2    = Color(0xFF6C3EFF);   // البنفسجي الأساسي
 const Color _kGrad3    = Color(0xFFC58CFF);   // Lavender وردي ناعم بدل الأزرق
-const Color _kCard = Color(0xFF22183C);   // كروت Expiring
-const Color _kTextDim  = Colors.white70;
 
-// تدرّج الهيدر العلوي
-const LinearGradient _kHeaderGrad = LinearGradient(
-  colors: [Color(0xFF1A0B3A), Color(0xFF0E0722)],
-  begin: Alignment.topLeft,
-  end: Alignment.bottomRight,
-);
+// ===============================================================
+//              شريط التنقل السفلي (GradientBottomBar)
+//              هذا الجزء يجب أن يعتمد على الثيم أيضاً
+// ===============================================================
 
-// ============ البار السفلي المتدرّج (Warranties / Bills + Home) ============
 class GradientBottomBar extends StatelessWidget {
-  final int selectedIndex;               // 0 = Warranties, 1 = Bills
+  final int selectedIndex;
   final ValueChanged<int> onTap;
-  final Color startColor;
-  final Color endColor;
 
   const GradientBottomBar({
     super.key,
     required this.selectedIndex,
     required this.onTap,
-    this.startColor = const Color(0xFF6C3EFF),
-    this.endColor   = const Color(0xFF3E8EFD),
   });
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final primaryColor = theme.primaryColor;
+
+    // تحديد ألوان التدرج بناءً على وضع الثيم
+    final Color startColor = primaryColor;
+    final Color endColor = isDark
+        ? primaryColor.withOpacity(0.8)
+        : primaryColor.withOpacity(0.9);
+
     final bottomInset = MediaQuery.of(context).padding.bottom;
+
     return SafeArea(
       top: false,
       child: ClipRRect(
@@ -67,7 +70,6 @@ class GradientBottomBar extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // زر تبويب الضمانات
                   _BottomItem(
                     icon: Icons.verified_user_rounded,
                     label: 'Warranties',
@@ -75,14 +77,13 @@ class GradientBottomBar extends StatelessWidget {
                     onTap: () => onTap(0),
                   ),
                   const SizedBox(width: 18),
-                  // زر الهوم في النص
                   _FabDot(
                     onTap: () {
                       Navigator.of(context, rootNavigator: true).pushNamed('/home');
                     },
+                    accentColor: primaryColor,
                   ),
                   const SizedBox(width: 18),
-                  // زر تبويب الفواتير
                   _BottomItem(
                     icon: Icons.receipt_long_rounded,
                     label: 'Bills',
@@ -142,10 +143,15 @@ class _BottomItem extends StatelessWidget {
 // الدائرة الوسطية (الهوم) في البار السفلي
 class _FabDot extends StatelessWidget {
   final VoidCallback? onTap;
-  const _FabDot({this.onTap});
+  final Color accentColor;
+
+  const _FabDot({this.onTap, required this.accentColor});
 
   @override
   Widget build(BuildContext context) {
+    final start = accentColor;
+    final end = accentColor.withOpacity(0.8);
+
     return InkWell(
       borderRadius: BorderRadius.circular(27),
       onTap: onTap,
@@ -153,12 +159,12 @@ class _FabDot extends StatelessWidget {
         width: 54, height: 54,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          gradient: const LinearGradient(
-            colors: [Color(0xFF6C3EFF), Color(0xFFC58CFF)],
+          gradient: LinearGradient(
+            colors: [start, end],
           ),
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFF934DFE).withOpacity(.45),
+              color: accentColor.withOpacity(.45),
               blurRadius: 16,
               offset: const Offset(0, 6),
             ),
@@ -209,11 +215,13 @@ class _WarrantyListPageState extends State<WarrantyListPage> {
   DateTime _onlyDate(DateTime d) => DateTime(d.year, d.month, d.day);
 
   // توليد Chip يوضح حالة الضمان: active | expired | upcoming
-  Chip _statusChip(DateTime? startUtc, DateTime? endUtc) {
+  Chip _statusChip(BuildContext context, DateTime? startUtc, DateTime? endUtc) {
     if (startUtc == null || endUtc == null) return const Chip(label: Text('—'));
     final s = _onlyDate(startUtc.toLocal());
     final e = _onlyDate(endUtc.toLocal());
     final today = _onlyDate(DateTime.now());
+    final textColor = Theme.of(context).textTheme.bodyMedium!.color!;
+
 
     late final String text;
     late final Color color;
@@ -228,8 +236,13 @@ class _WarrantyListPageState extends State<WarrantyListPage> {
       color = Colors.green;
     }
 
+    // هنا يجب أن نضمن أن نص الـ Chip يكون واضحاً في Light Mode
+    final chipTextColor = Theme.of(context).brightness == Brightness.dark
+        ? Colors.white
+        : Colors.white; // نستخدم الأبيض دائماً على خلفية Chip الملونة بالكامل
+
     return Chip(
-      label: Text(text, style: const TextStyle(color: Colors.white)),
+      label: Text(text, style: TextStyle(color: chipTextColor)),
       backgroundColor: color,
       visualDensity: VisualDensity.compact,
       padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -254,34 +267,83 @@ class _WarrantyListPageState extends State<WarrantyListPage> {
     return q.snapshots();
   }
 
+  // دالة مساعدة لإنشاء تدرج الـ AppBar
+  LinearGradient _appBarGradient(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final accentColor = theme.primaryColor;
+
+    if (isDark) {
+      // تدرج داكن (مطابق للـ Header الأصلي)
+      return const LinearGradient(
+        colors: [Color(0xFF1A0B3A), Color(0xFF0E0722)],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      );
+    } else {
+      // Light Mode: خلفية فاتحة (مطابقة لـ Scaffold)
+      return LinearGradient(
+        colors: [theme.scaffoldBackgroundColor, theme.scaffoldBackgroundColor],
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+      );
+    }
+  }
+
+
   @override
   Widget build(BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final textColor = theme.textTheme.bodyMedium!.color!;
+    final dimColor = theme.hintColor;
+    final accentColor = theme.primaryColor;
+
+    // ألوان البطاقات
+    final cardBgColor = theme.cardColor;
+    final cardStrokeColor = isDark
+        ? Colors.white.withOpacity(0.1)
+        : Colors.black.withOpacity(0.1);
+
 
     return Directionality(
       textDirection: ui.TextDirection.ltr,
       child: Scaffold(
-        backgroundColor: _kBgDark,
+        // خلفية ديناميكية
+        backgroundColor: theme.scaffoldBackgroundColor,
 
         // ===== AppBar =====
         appBar: AppBar(
           automaticallyImplyLeading: false,
           elevation: 0,
           backgroundColor: Colors.transparent,
-          foregroundColor: Colors.white,
+          foregroundColor: textColor, // لون النص والأيقونات
           title: const Text('Warranties'),
-          flexibleSpace: Container(decoration: const BoxDecoration(gradient: _kHeaderGrad)),
+          flexibleSpace: Container(decoration: BoxDecoration(gradient: _appBarGradient(context))),
         ),
 
+        // زر عائم لإضافة ضمان جديد
+        floatingActionButton: FloatingActionButton(
+          onPressed: () async {
+            await Navigator.of(context, rootNavigator: true).push(
+              MaterialPageRoute(builder: (_) => const AddWarrantyPage()),
+            );
+            if (mounted) setState(() {});
+          },
+          backgroundColor: accentColor,
+          foregroundColor: Colors.white,
+          child: const Icon(Icons.add),
+        ),
 
 
         // ===== جسم الصفحة =====
         body: uid == null
         // لو المستخدم مو مسجّل دخول
-            ? const Center(
+            ? Center(
           child: Text(
             'Please sign in to view your warranties.',
-            style: TextStyle(color: Colors.white),
+            style: TextStyle(color: textColor),
           ),
         )
             : Column(
@@ -293,6 +355,8 @@ class _WarrantyListPageState extends State<WarrantyListPage> {
                 controller: _searchCtrl,
                 hint: 'Search by provider or product',
                 onChanged: (_) => setState(() {}),
+                accentColor: accentColor,
+                isDark: isDark,
               ),
             ),
 
@@ -307,16 +371,25 @@ class _WarrantyListPageState extends State<WarrantyListPage> {
                     label: 'Newest',
                     selected: _sort == _WarrantiesSort.newest,
                     onTap: () => setState(() => _sort = _WarrantiesSort.newest),
+                    accentColor: accentColor,
+                    cardBgColor: cardBgColor,
+                    textColor: textColor,
                   ),
                   _SortChip(
                     label: 'Oldest',
                     selected: _sort == _WarrantiesSort.oldest,
                     onTap: () => setState(() => _sort = _WarrantiesSort.oldest),
+                    accentColor: accentColor,
+                    cardBgColor: cardBgColor,
+                    textColor: textColor,
                   ),
                   _SortChip(
                     label: 'Near expiry',
                     selected: _sort == _WarrantiesSort.nearExpiry,
                     onTap: () => setState(() => _sort = _WarrantiesSort.nearExpiry),
+                    accentColor: accentColor,
+                    cardBgColor: cardBgColor,
+                    textColor: textColor,
                   ),
                 ],
               ),
@@ -332,7 +405,7 @@ class _WarrantyListPageState extends State<WarrantyListPage> {
                     return Center(
                       child: Text(
                         'Error: ${snap.error}',
-                        style: const TextStyle(color: Colors.white),
+                        style: TextStyle(color: textColor),
                       ),
                     );
                   }
@@ -355,10 +428,10 @@ class _WarrantyListPageState extends State<WarrantyListPage> {
                   }
 
                   if (docs.isEmpty) {
-                    return const Center(
+                    return Center(
                       child: Text(
                         'No warranties yet.',
-                        style: TextStyle(color: Colors.white70),
+                        style: TextStyle(color: dimColor),
                       ),
                     );
                   }
@@ -379,8 +452,16 @@ class _WarrantyListPageState extends State<WarrantyListPage> {
 
                       return Container(
                         decoration: BoxDecoration(
-                          color: _kCard,
-                          borderRadius: BorderRadius.circular(14),
+                            color: cardBgColor, // لون البطاقة ديناميكي
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: cardStrokeColor),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(isDark ? 0.1 : 0.05),
+                                blurRadius: 6,
+                                offset: const Offset(0, 3),
+                              ),
+                            ]
                         ),
                         child: ListTile(
                           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -390,7 +471,7 @@ class _WarrantyListPageState extends State<WarrantyListPage> {
                             provider,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                            style: TextStyle(color: textColor, fontWeight: FontWeight.w600),
                           ),
 
                           // باقي المعلومات (اسم المنتج + التواريخ + البار + الحالة)
@@ -403,13 +484,13 @@ class _WarrantyListPageState extends State<WarrantyListPage> {
                                   productName,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(color: Colors.white, fontSize: 12),
+                                  style: TextStyle(color: dimColor, fontSize: 12),
                                 ),
                               ],
                               const SizedBox(height: 4),
                               Text(
                                 'Start: ${_fmt(start)} • End: ${_fmt(end)}',
-                                style: const TextStyle(color: _kTextDim),
+                                style: TextStyle(color: dimColor),
                               ),
                               const SizedBox(height: 8),
                               if (start != null && end != null)
@@ -419,9 +500,10 @@ class _WarrantyListPageState extends State<WarrantyListPage> {
                                   endDate: end,
                                   dense: true,
                                   showInMonths: true,
+                                  // لن يتم عرض رسالة الحالة يدوياً
                                 ),
                               const SizedBox(height: 8),
-                              _statusChip(start, end),
+                              _statusChip(context, start, end),
                             ],
                           ),
 
@@ -461,27 +543,49 @@ class _SearchBar extends StatelessWidget {
   final TextEditingController controller;
   final String hint;
   final ValueChanged<String>? onChanged;
+  final Color accentColor;
+  final bool isDark;
 
   const _SearchBar({
     required this.controller,
     required this.hint,
     this.onChanged,
+    required this.accentColor,
+    required this.isDark,
   });
+
+  // تدرج شريط البحث
+  LinearGradient _searchGradient(Color accentColor) {
+    if (isDark) {
+      return LinearGradient(
+        colors: [_kGrad1, _kGrad3],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      );
+    } else {
+      // Light Mode: خلفية بيضاء صلبة
+      return const LinearGradient(colors: [Colors.white, Colors.white]);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    // ألوان الشريط في Light Mode
+    final fgColor = isDark ? Colors.white : Colors.black87;
+    final hintColor = isDark ? Colors.white70 : Colors.black54;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
-        gradient: const LinearGradient(
-          colors: [_kGrad1, _kGrad3],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+        gradient: _searchGradient(accentColor),
+        // حدود صريحة في Light Mode
+        border: Border.all(
+          color: isDark ? Colors.transparent : Colors.black.withOpacity(0.1),
         ),
         boxShadow: [
           BoxShadow(
-            color: _kGrad2.withOpacity(0.45),
+            color: isDark ? _kGrad2.withOpacity(0.45) : Colors.black.withOpacity(0.1),
             blurRadius: 16,
             offset: const Offset(0, 6),
           ),
@@ -489,17 +593,17 @@ class _SearchBar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(Icons.search, color: Colors.white, size: 22),
+          Icon(Icons.search, color: fgColor, size: 22),
           const SizedBox(width: 8),
           Expanded(
             child: TextField(
               controller: controller,
               onChanged: onChanged,
-              style: const TextStyle(color: Colors.white, fontSize: 16),
-              cursorColor: Colors.white,
+              style: TextStyle(color: fgColor, fontSize: 16),
+              cursorColor: accentColor,
               decoration: InputDecoration(
                 hintText: hint,
-                hintStyle: const TextStyle(color: Colors.white70),
+                hintStyle: TextStyle(color: hintColor),
                 border: InputBorder.none,
                 isDense: true,
                 contentPadding: const EdgeInsets.symmetric(vertical: 12),
@@ -514,7 +618,7 @@ class _SearchBar extends StatelessWidget {
                 controller.clear();
                 if (onChanged != null) onChanged!('');
               },
-              icon: const Icon(Icons.close_rounded, color: Colors.white),
+              icon: Icon(Icons.close_rounded, color: fgColor),
             ),
         ],
       ),
@@ -527,15 +631,37 @@ class _SortChip extends StatelessWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
+  final Color accentColor;
+  final Color cardBgColor;
+  final Color textColor;
 
   const _SortChip({
     required this.label,
     required this.selected,
     required this.onTap,
+    required this.accentColor,
+    required this.cardBgColor,
+    required this.textColor,
   });
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    // خلفية الشريحة غير المختارة
+    final unselectedBg = isDark
+        ? accentColor.withOpacity(.12)
+        : cardBgColor; // الأبيض في Light Mode
+
+    // لون الحدود
+    final borderColor = isDark
+        ? Colors.white.withOpacity(.18)
+        : Colors.black.withOpacity(.1);
+
+    // لون النص
+    final labelColor = selected ? Colors.white : textColor;
+
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
@@ -543,13 +669,13 @@ class _SortChip extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
-          color: selected ? Colors.white.withOpacity(.12) : Colors.white.withOpacity(.06),
-          border: Border.all(color: Colors.white.withOpacity(.18)),
+          color: selected ? accentColor : unselectedBg,
+          border: Border.all(color: borderColor),
         ),
         child: Text(
           label,
           style: TextStyle(
-            color: Colors.white,
+            color: labelColor,
             fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
           ),
         ),

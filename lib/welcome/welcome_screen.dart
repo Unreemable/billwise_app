@@ -1,12 +1,10 @@
-// lib/welcome/welcome_screen.dart
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../src/auth/login_screen.dart';
 import '../src/auth/register_screen.dart';
 
-const Color kBgDark  = Color(0xFF0E0B1F);
-const Color kAccent  = Color(0xFF6A73FF);
-const Color kText    = Colors.white;
+// تم حذف ثوابت الألوان المخصصة (kBgDark, kAccent, kText)
+// وسنعتمد على Theme.of(context)
 
 class WelcomeScreen extends StatelessWidget {
   const WelcomeScreen({super.key});
@@ -14,10 +12,15 @@ class WelcomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final accentColor = theme.primaryColor;
+    final textColor = theme.textTheme.bodyLarge!.color!;
+
     return Directionality(
       textDirection: TextDirection.ltr, // English layout
       child: Scaffold(
-        backgroundColor: kBgDark,
+        // استخدام لون خلفية الثيم
+        backgroundColor: theme.scaffoldBackgroundColor,
         body: SafeArea(
           child: Stack(
             children: [
@@ -27,21 +30,23 @@ class WelcomeScreen extends StatelessWidget {
                 children: [
                   const SizedBox(height: 24),
 
-                  // ===== كتلة (لوجو + سطر توضيحي) متموضعة أعلى قليلًا من المنتصف =====
+                  // ===== كتلة (لوجو + سطر توضيحي) =====
                   Expanded(
                     child: Align(
-                      alignment: const Alignment(0, -0.18), // ارفع/نزّل بتغيير القيمة (من -1 إلى 1)
+                      alignment: const Alignment(0, -0.18),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 24),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
-                          children: const [
-                            _TitleLogoBig(),
-                            SizedBox(height: 12),
+                          children: [
+                            // تمرير اللون الأساسي للشعار
+                            _TitleLogoBig(accentColor: accentColor),
+                            const SizedBox(height: 12),
                             Text(
                               'All your bills and warranties in one place',
                               textAlign: TextAlign.center,
-                              style: TextStyle(color: Colors.white70, height: 1.4, fontSize: 14),
+                              // استخدام لون النص الخافت من الثيم
+                              style: TextStyle(color: theme.hintColor, height: 1.4, fontSize: 14),
                             ),
                           ],
                         ),
@@ -55,11 +60,12 @@ class WelcomeScreen extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
+                        // زر Log in (ElevatedButton)
                         SizedBox(
                           height: 52,
                           child: ElevatedButton(
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: kAccent,
+                              backgroundColor: accentColor, // اللون الأساسي الأرجواني
                               foregroundColor: Colors.white,
                               elevation: 0,
                               shape: RoundedRectangleBorder(
@@ -72,12 +78,13 @@ class WelcomeScreen extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 10),
+                        // زر Sign up (OutlinedButton)
                         SizedBox(
                           height: 52,
                           child: OutlinedButton(
                             style: OutlinedButton.styleFrom(
-                              side: const BorderSide(color: kAccent, width: 1.2),
-                              foregroundColor: kAccent,
+                              side: BorderSide(color: accentColor, width: 1.2), // حدود بلون أرجواني
+                              foregroundColor: accentColor, // نص بلون أرجواني
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(14),
                               ),
@@ -101,10 +108,13 @@ class WelcomeScreen extends StatelessWidget {
 }
 
 class _TitleLogoBig extends StatelessWidget {
-  const _TitleLogoBig();
+  final Color accentColor;
+  const _TitleLogoBig({required this.accentColor});
 
   @override
   Widget build(BuildContext context) {
+    final textColor = Theme.of(context).textTheme.bodyLarge!.color!;
+
     return LayoutBuilder(
       builder: (context, c) {
         final side = math.min(c.maxWidth, MediaQuery.of(context).size.height) * 0.38;
@@ -113,7 +123,8 @@ class _TitleLogoBig extends StatelessWidget {
           decoration: BoxDecoration(
             boxShadow: [
               BoxShadow(
-                color: kAccent.withOpacity(0.25),
+                // استخدام ظل يعتمد على اللون الأساسي
+                color: accentColor.withOpacity(0.25),
                 blurRadius: 28,
                 spreadRadius: -6,
                 offset: const Offset(0, 12),
@@ -121,14 +132,16 @@ class _TitleLogoBig extends StatelessWidget {
             ],
           ),
           child: Image.asset(
-            'assets/BillWise_logo.png',
+            'assets/BillWise_logo.png', // نفترض أن الشعار يحتاج لـ assets
             height: side.clamp(120, 260),
             fit: BoxFit.contain,
             semanticLabel: 'BillWise Logo',
-            errorBuilder: (_, __, ___) => const Text(
+            errorBuilder: (_, __, ___) => Text(
               'BillWise',
               style: TextStyle(
-                color: kText, fontSize: 42, fontWeight: FontWeight.w700,
+                color: textColor, // لون النص من الثيم
+                fontSize: 42,
+                fontWeight: FontWeight.w700,
               ),
             ),
           ),
@@ -142,15 +155,22 @@ class _BottomWave extends StatelessWidget {
   const _BottomWave();
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    // الألوان الديناميكية للموجة
+    final Color topColor = isDark ? const Color(0xFF141028) : theme.cardColor.withOpacity(0.8);
+    final Color bottomColor = isDark ? theme.scaffoldBackgroundColor : theme.scaffoldBackgroundColor;
+
     return Align(
       alignment: Alignment.bottomCenter,
       child: ClipPath(
         clipper: _WaveClipper(),
         child: Container(
           height: 210,
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [Color(0xFF141028), Color(0xFF0E0B1F)],
+              colors: [topColor, bottomColor],
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
             ),

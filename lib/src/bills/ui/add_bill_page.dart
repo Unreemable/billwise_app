@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -29,17 +31,14 @@ class AddBillPage extends StatefulWidget {
 }
 
 class _AddBillPageState extends State<AddBillPage> {
-  static const _bg = Color(0xFF0B0B2E);
-  static const _card = Color(0xFF171636);
-  static const _cardStroke = Color(0x1FFFFFFF);
-  static const _textDim = Color(0xFFBFC3D9);
-  static const _accent = Color(0xFF8A46F9);
-  static const _danger = Color(0xFFEF5350);
-  static const _headerGrad = LinearGradient(
-    colors: [Color(0xFF0B0B2E), Color(0xFF21124C)],
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-  );
+  // *** ثوابت الألوان المستخلصة من صور الوضع الداكن (للتطبيق الصارم في Dark Mode) ***
+  static const Color _kCardDark = Color(0xFF171636);
+  static const Color _kInputFillDark = Color(0xFF202048);
+  static const Color _kCardStrokeDark = Color(0x1FFFFFFF);
+  static const Color _kTextDimDark = Color(0xFFBFC3D9);
+  // *** اللون الأرجواني الساطع الموحد المطلوب لجميع الأزرار والمفاتيح ***
+  static const Color _kAccentColor = Color(0xFF9B5CFF); // لون أرجواني ساطع وموحد
+  // ---------------------------------------------------------------------------------
 
   final _titleCtrl = TextEditingController();
   final _shopCtrl = TextEditingController();
@@ -356,25 +355,41 @@ class _AddBillPageState extends State<AddBillPage> {
       initialDate: init,
       firstDate: min,
       lastDate: max,
+      // تأكد من استخدام primaryColor للـ DatePicker
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(
+              primary: Theme.of(context).primaryColor,
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
     if (d != null) onPick(d);
   }
 
   Future<void> _pickReceipt() async {
+    final theme = Theme.of(context);
+    final textStyle = theme.textTheme.bodyMedium;
+    final iconColor = theme.iconTheme.color;
+
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
+      // الخلفية تعتمد على الثيم الرئيسي
       builder: (ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.camera_alt),
-              title: const Text('Camera'),
+              leading: Icon(Icons.camera_alt, color: iconColor),
+              title: Text('Camera', style: textStyle),
               onTap: () => Navigator.pop(ctx, ImageSource.camera),
             ),
             ListTile(
-              leading: const Icon(Icons.photo_library),
-              title: const Text('Gallery'),
+              leading: Icon(Icons.photo_library, color: iconColor),
+              title: Text('Gallery', style: textStyle),
               onTap: () => Navigator.pop(ctx, ImageSource.gallery),
             ),
           ],
@@ -454,8 +469,21 @@ class _AddBillPageState extends State<AddBillPage> {
 
       if (!mounted) return id;
 
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Bill saved ✅')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Bill saved ✅'),
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.only(
+            left: 16,
+            right: 16,
+            bottom: 10, // عشان ما يدف زر الهوم
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
 
       return id;
     } finally {
@@ -528,6 +556,9 @@ class _AddBillPageState extends State<AddBillPage> {
   Future<void> _deleteBill() async {
     if (widget.billId == null) return;
 
+    final theme = Theme.of(context);
+    final dangerColor = theme.colorScheme.error;
+
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -540,6 +571,7 @@ class _AddBillPageState extends State<AddBillPage> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(backgroundColor: dangerColor),
             child: const Text('Delete'),
           ),
         ],
@@ -682,26 +714,54 @@ class _AddBillPageState extends State<AddBillPage> {
     }
   }
 
+  // ===== Theme Aware Input Field Definition (Using explicit Dark Mode colors) =====
   InputDecoration _filled(String label, {IconData? icon}) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    // *** استخدام الألوان الثابتة الداكنة لـ Dark Mode لتحقيق المظهر المطلوب ***
+    final inputFillColor = isDark
+        ? _kInputFillDark // #202048 (لون ملء حقول الإدخال)
+        : const Color(0xFFF0F0F5); // لون رمادي فاتح جداً في Light Mode
+
+    // لون النص والتسمية (افتراضي من الثيم، أو مُعرَّف بوضوح)
+    final labelColor = isDark
+        ? _kTextDimDark // #BFC3D9 (لون نص خافت لـ Dark Mode)
+        : Colors.black54;
+
     return InputDecoration(
       labelText: label,
-      prefixIcon: icon == null ? null : Icon(icon),
+      prefixIcon: icon == null ? null : Icon(icon, color: labelColor),
       filled: true,
-      fillColor: const Color(0xFF202048),
+      fillColor: inputFillColor,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
         borderSide: BorderSide.none,
       ),
-      labelStyle: const TextStyle(color: _textDim),
+      labelStyle: TextStyle(color: labelColor),
+      // لون النص المدخل نفسه سيأتي من TextTheme الرئيسي
+      counterStyle: TextStyle(color: labelColor),
     );
   }
 
+  // ===== Theme Aware Section Card (Using explicit Dark Mode colors) =====
   Widget _sectionCard({required Widget child}) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    // لون حد البطاقة
+    final cardStroke = isDark
+        ? _kCardStrokeDark // #1FFFFFFF (شفافية بيضاء خفيفة)
+        : theme.primaryColor.withOpacity(0.1);
+
+    // لون خلفية البطاقة
+    final cardBgColor = isDark ? _kCardDark : theme.cardColor;
+
     return Container(
       decoration: BoxDecoration(
-        color: _card,
+        color: cardBgColor, // لون البطاقة ديناميكيًا (ثابت في Dark Mode)
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _cardStroke),
+        border: Border.all(color: cardStroke),
       ),
       padding: const EdgeInsets.all(14),
       child: child,
@@ -711,389 +771,415 @@ class _AddBillPageState extends State<AddBillPage> {
   @override
   Widget build(BuildContext context) {
     final isEdit = widget.billId != null;
+    final theme = Theme.of(context);
 
-    return Theme(
-      data: Theme.of(context).copyWith(
-        scaffoldBackgroundColor: _bg,
-        appBarTheme: const AppBarTheme(
-          foregroundColor: Colors.white,
-          backgroundColor: Colors.transparent,
-          elevation: 0,
+    // *** استخدام اللون الأرجواني الموحد الساطع (Accent Color) ***
+    const accentColor = _kAccentColor;
+
+    final dangerColor = theme.colorScheme.error;
+    final textColor = theme.textTheme.bodyMedium!.color!;
+    // استخدام لون خافت من الثوابت الداكنة في Dark Mode، ولون خافت من الثيم في Light Mode
+    final dimColor = theme.brightness == Brightness.dark ? _kTextDimDark : theme
+        .textTheme.bodySmall!.color;
+
+    final isDark = theme.brightness == Brightness.dark;
+
+    // اللون الداكن للحواف/الفواصل
+    final cardStrokeColor = isDark ? _kCardStrokeDark : Colors.black12;
+
+
+    return Scaffold(
+      // Scaffold background color is inherited from MaterialApp (Light/Dark)
+      appBar: AppBar(
+        // AppBar color is inherited from AppBarTheme in MaterialApp
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded),
+          onPressed: () => Navigator.maybePop(context),
+          // لون الأيقونة يعتمد على الثيم
         ),
-        textTheme: Theme.of(context)
-            .textTheme
-            .apply(bodyColor: Colors.white, displayColor: Colors.white),
+        title: Text(isEdit ? 'Edit Bill' : 'Add Bill'),
+        actions: [
+          if (isEdit)
+            IconButton(
+              tooltip: 'Delete',
+              onPressed: _saving ? null : _deleteBill,
+              icon: const Icon(Icons.delete_outline),
+            ),
+        ],
+        // flexibleSpace تم حذفه لتمكين استجابة الثيم
       ),
-      child: Scaffold(
-        appBar: AppBar(
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded),
-            onPressed: () => Navigator.maybePop(context),
-          ),
-          title: Text(isEdit ? 'Edit Bill' : 'Add Bill'),
-          actions: [
-            if (isEdit)
-              IconButton(
-                tooltip: 'Delete',
-                onPressed: _saving ? null : _deleteBill,
-                icon: const Icon(Icons.delete_outline),
-              ),
-          ],
-          flexibleSpace: Container(
-            decoration: const BoxDecoration(gradient: _headerGrad),
-          ),
-        ),
 
-        body: _loadingExisting
-            ? const Center(child: CircularProgressIndicator())
-            : SafeArea(
-          minimum: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-          child: ListView(
-            children: [
-              _sectionCard(
-                child: Column(
-                  children: [
-                    TextField(
-                      controller: _titleCtrl,
-                      decoration: _filled('Bill title/description',
-                          icon: Icons.text_format),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: _shopCtrl,
-                      decoration: _filled('Store name',
-                          icon: Icons.store),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: _amountCtrl,
-                      decoration: _filled('Amount (SAR)',
-                          icon: Icons.attach_money),
-                      keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                      inputFormatters: [
-                        FilteringTextInputFormatter.allow(
-                          RegExp(r'[0-9.]'),
-                        )
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _accent,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 14, vertical: 10),
+      body: _loadingExisting
+          ? const Center(child: CircularProgressIndicator())
+          : SafeArea(
+        minimum: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        child: ListView(
+          children: [
+            _sectionCard(
+              child: Column(
+                children: [
+                  // ===== INPUT FIELDS (Themed) =====
+                  TextField(
+                    controller: _titleCtrl,
+                    style: TextStyle(color: textColor),
+                    decoration: _filled('Bill title/description',
+                        icon: Icons.text_format),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _shopCtrl,
+                    style: TextStyle(color: textColor),
+                    decoration: _filled('Store name',
+                        icon: Icons.store),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _amountCtrl,
+                    style: TextStyle(color: textColor),
+                    decoration: _filled('Amount (SAR)',
+                        icon: Icons.attach_money),
+                    keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(
+                        RegExp(r'[0-9.]'),
+                      )
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+
+                  // ===== ATTACH IMAGE BUTTON (Themed) =====
+                  Row(
+                    children: [
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          // اللون الأرجواني لبوكس Attach Image
+                          backgroundColor: accentColor,
+                          foregroundColor: Colors.white,
+                          // النص أبيض على الأرجواني
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                          onPressed: _pickReceipt,
-                          icon: const Icon(Icons.attach_file),
-                          label: const Text('Attach image'),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 10),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            _receiptImagePath == null
-                                ? 'No image'
-                                : _receiptImagePath!.split('/').last,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: _textDim),
-                          ),
+                        onPressed: _pickReceipt,
+                        icon: const Icon(Icons.attach_file),
+                        label: const Text('Attach image'),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          _receiptImagePath == null
+                              ? 'No image'
+                              : _receiptImagePath!.split('/').last,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: dimColor), // لون خافت
                         ),
-                      ],
-                    ),
-                  ],
-                ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
+            ),
 
-              const SizedBox(height: 14),
+            const SizedBox(height: 14),
 
-              // Purchase Date Section
-              _sectionCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Purchase date',
-                        style: TextStyle(fontWeight: FontWeight.w600)),
-                    const SizedBox(height: 6),
-                    ListTile(
+            // Purchase Date Section
+            _sectionCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Purchase date',
+                      style: TextStyle(
+                          fontWeight: FontWeight.w600, color: textColor)),
+                  const SizedBox(height: 6),
+                  ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      _fmtOrDash(_purchaseDate),
+                      style: TextStyle(color: textColor),
+                    ),
+                    leading: Icon(Icons.date_range, color: dimColor),
+                    trailing: Icon(Icons.edit_calendar, color: dimColor),
+                    iconColor: dimColor,
+                    textColor: textColor,
+                    onTap: () =>
+                        _pickDate(context, _purchaseDate, (d) {
+                          setState(() {
+                            _purchaseDate = d;
+                            _applyAutoWindowsFromPurchase(d);
+                          });
+                        }),
+                  ),
+
+                  Divider(height: 12, color: cardStrokeColor),
+
+                  // Return deadline
+                  Row(
+                    children: [
+                      Icon(Icons.event, color: dimColor),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text('Return deadline',
+                          style: TextStyle(color: textColor))),
+                      Switch(
+                        value: _enableReturn,
+                        activeColor: accentColor, // لون التبديل الأرجواني
+                        onChanged: (v) {
+                          setState(() {
+                            _enableReturn = v;
+                            if (v &&
+                                _returnDeadline == null &&
+                                _purchaseDate != null) {
+                              _returnDeadline = _deadlineFrom(
+                                  _purchaseDate!, (_retDays ?? 3));
+                            }
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+
+                  Opacity(
+                    opacity: _enableReturn ? 1 : .5,
+                    child: ListTile(
                       dense: true,
                       contentPadding: EdgeInsets.zero,
                       title: Text(
-                        _fmtOrDash(_purchaseDate),
-                        style: const TextStyle(color: Colors.white),
+                        _enableReturn
+                            ? _fmtOrDash(_returnDeadline)
+                            : ' (Optional)',
+                        style:
+                        TextStyle(color: textColor),
                       ),
-                      leading: const Icon(Icons.date_range),
-                      trailing: const Icon(Icons.edit_calendar),
-                      iconColor: _textDim,
-                      textColor: Colors.white,
-                      onTap: () =>
-                          _pickDate(context, _purchaseDate, (d) {
-                            setState(() {
-                              _purchaseDate = d;
-                              _applyAutoWindowsFromPurchase(d);
-                            });
-                          }),
+                      trailing: Icon(Icons.edit, color: dimColor),
+                      iconColor: dimColor,
+                      onTap: _enableReturn
+                          ? () =>
+                          _pickDate(
+                            context,
+                            _returnDeadline ??
+                                _purchaseDate ??
+                                DateTime.now(),
+                                (d) =>
+                                setState(() {
+                                  _returnManual = true;
+                                  _returnDeadline = d;
+                                }),
+                          )
+                          : null,
+                      onLongPress: _enableReturn
+                          ? () {
+                        setState(() {
+                          _returnManual = false;
+                          _returnDeadline = null;
+                        });
+                        ScaffoldMessenger.of(context)
+                            .showSnackBar(
+                          const SnackBar(
+                              content: Text(
+                                  'Return deadline cleared')),
+                        );
+                      }
+                          : null,
                     ),
+                  ),
 
-                    const Divider(height: 12, color: _cardStroke),
+                  Divider(height: 12, color: cardStrokeColor),
 
-                    // Return deadline
-                    Row(
-                      children: [
-                        const Icon(Icons.event, color: _textDim),
-                        const SizedBox(width: 8),
-                        const Expanded(child: Text('Return deadline')),
-                        Switch(
-                          value: _enableReturn,
-                          activeColor: _accent,
-                          onChanged: (v) {
-                            setState(() {
-                              _enableReturn = v;
-                              if (v &&
-                                  _returnDeadline == null &&
-                                  _purchaseDate != null) {
-                                _returnDeadline = _deadlineFrom(
-                                    _purchaseDate!, (_retDays ?? 3));
-                              }
-                            });
-                          },
-                        ),
-                      ],
-                    ),
-
-                    Opacity(
-                      opacity: _enableReturn ? 1 : .5,
-                      child: ListTile(
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(
-                          _enableReturn
-                              ? _fmtOrDash(_returnDeadline)
-                              : ' (Optional)',
-                          style:
-                          const TextStyle(color: Colors.white),
-                        ),
-                        trailing: const Icon(Icons.edit),
-                        iconColor: _textDim,
-                        onTap: _enableReturn
-                            ? () => _pickDate(
-                          context,
-                          _returnDeadline ??
-                              _purchaseDate ??
-                              DateTime.now(),
-                              (d) => setState(() {
-                            _returnManual = true;
-                            _returnDeadline = d;
-                          }),
-                        )
-                            : null,
-                        onLongPress: _enableReturn
-                            ? () {
-                          setState(() {
-                            _returnManual = false;
-                            _returnDeadline = null;
-                          });
-                          ScaffoldMessenger.of(context)
-                              .showSnackBar(
-                            const SnackBar(
-                                content: Text(
-                                    'Return deadline cleared')),
-                          );
-                        }
-                            : null,
-                      ),
-                    ),
-
-                    const Divider(height: 12, color: _cardStroke),
-
-                    // Exchange deadline
-                    Row(
-                      children: [
-                        const Icon(Icons.event_repeat,
-                            color: _textDim),
-                        const SizedBox(width: 8),
-                        const Expanded(
-                            child: Text('Exchange deadline')),
-                        Switch(
-                          value: _enableExchange,
-                          activeColor: _accent,
-                          onChanged: (v) {
-                            setState(() {
-                              _enableExchange = v;
-                              if (v &&
-                                  _exchangeDeadline == null &&
-                                  _purchaseDate != null) {
-                                _exchangeDeadline = _deadlineFrom(
-                                    _purchaseDate!,
-                                    (_exDays ?? 7));
-                              }
-                            });
-                          },
-                        ),
-                      ],
-                    ),
-
-                    Opacity(
-                      opacity: _enableExchange ? 1 : .5,
-                      child: ListTile(
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(
-                          _enableExchange
-                              ? _fmtOrDash(_exchangeDeadline)
-                              : ' (Optional)',
-                          style:
-                          const TextStyle(color: Colors.white),
-                        ),
-                        trailing: const Icon(Icons.edit),
-                        iconColor: _textDim,
-                        onTap: _enableExchange
-                            ? () => _pickDate(
-                          context,
-                          _exchangeDeadline ??
-                              _purchaseDate ??
-                              DateTime.now(),
-                              (d) => setState(() {
-                            _exchangeManual = true;
-                            _exchangeDeadline = d;
-                          }),
-                        )
-                            : null,
-                        onLongPress: _enableExchange
-                            ? () {
-                          setState(() {
-                            _exchangeManual = false;
-                            _exchangeDeadline = null;
-                          });
-                          ScaffoldMessenger.of(context)
-                              .showSnackBar(
-                            const SnackBar(
-                                content: Text('Exchange cleared')),
-                          );
-                        }
-                            : null,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 14),
-
-              // Warranty toggle
-              _sectionCard(
-                child: SwitchListTile.adaptive(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  activeColor: _accent,
-                  value: _hasWarranty,
-                  onChanged: (v) =>
-                      setState(() => _hasWarranty = v),
-                  title: const Text('Has warranty?'),
-                  subtitle: (_hasWarranty && widget.billId != null)
-                      ? Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  // Exchange deadline
+                  Row(
                     children: [
-                      if (_checkingWarranty)
-                        const SizedBox(height: 6),
-                      if (_checkingWarranty)
-                        const LinearProgressIndicator(
-                            minHeight: 2),
-                      if (!_checkingWarranty &&
-                          _hasExistingWarranty)
-                        const Padding(
-                          padding:
-                          EdgeInsets.only(top: 6),
-                          child: Text(
-                            'A warranty already exists for this bill.',
-                            style:
-                            TextStyle(color: _textDim),
-                          ),
-                        ),
+                      Icon(Icons.event_repeat,
+                          color: dimColor),
+                      const SizedBox(width: 8),
+                      Expanded(
+                          child: Text('Exchange deadline',
+                              style: TextStyle(color: textColor))),
+                      Switch(
+                        value: _enableExchange,
+                        activeColor: accentColor, // لون التبديل الأرجواني
+                        onChanged: (v) {
+                          setState(() {
+                            _enableExchange = v;
+                            if (v &&
+                                _exchangeDeadline == null &&
+                                _purchaseDate != null) {
+                              _exchangeDeadline = _deadlineFrom(
+                                  _purchaseDate!,
+                                  (_exDays ?? 7));
+                            }
+                          });
+                        },
+                      ),
                     ],
-                  )
-                      : null,
-                ),
+                  ),
+
+                  Opacity(
+                    opacity: _enableExchange ? 1 : .5,
+                    child: ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        _enableExchange
+                            ? _fmtOrDash(_exchangeDeadline)
+                            : ' (Optional)',
+                        style:
+                        TextStyle(color: textColor),
+                      ),
+                      trailing: Icon(Icons.edit, color: dimColor),
+                      iconColor: dimColor,
+                      onTap: _enableExchange
+                          ? () =>
+                          _pickDate(
+                            context,
+                            _exchangeDeadline ??
+                                _purchaseDate ??
+                                DateTime.now(),
+                                (d) =>
+                                setState(() {
+                                  _exchangeManual = true;
+                                  _exchangeDeadline = d;
+                                }),
+                          )
+                          : null,
+                      onLongPress: _enableExchange
+                          ? () {
+                        setState(() {
+                          _exchangeManual = false;
+                          _exchangeDeadline = null;
+                        });
+                        ScaffoldMessenger.of(context)
+                            .showSnackBar(
+                          const SnackBar(
+                              content: Text('Exchange cleared')),
+                        );
+                      }
+                          : null,
+                    ),
+                  ),
+                ],
               ),
+            ),
 
-              const SizedBox(height: 22),
+            const SizedBox(height: 14),
 
-              // Save buttons
-              Row(
-                children: [
+            // Warranty toggle
+            _sectionCard(
+              child: SwitchListTile.adaptive(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                activeColor: accentColor,
+                // لون التبديل الأرجواني
+                value: _hasWarranty,
+                onChanged: (v) =>
+                    setState(() => _hasWarranty = v),
+                title: Text(
+                    'Has warranty?', style: TextStyle(color: textColor)),
+                subtitle: (_hasWarranty && widget.billId != null)
+                    ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (_checkingWarranty)
+                      const SizedBox(height: 6),
+                    if (_checkingWarranty)
+                      const LinearProgressIndicator(
+                          minHeight: 2),
+                    if (!_checkingWarranty &&
+                        _hasExistingWarranty)
+                      Padding(
+                        padding:
+                        const EdgeInsets.only(top: 6),
+                        child: Text(
+                          'A warranty already exists for this bill.',
+                          style:
+                          TextStyle(color: dimColor),
+                        ),
+                      ),
+                  ],
+                )
+                    : null,
+              ),
+            ),
+
+            const SizedBox(height: 22),
+
+            // Save buttons
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: accentColor, // لون زر Save الأرجواني
+                      foregroundColor: Colors.white,
+                      padding:
+                      const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    onPressed: _saving ? null : _save,
+                    icon: const Icon(Icons.save_outlined),
+                    label: Text(
+                      _saving
+                          ? (isEdit ? 'Updating…' : 'Saving…')
+                          : (isEdit ? 'Update' : 'Save'),
+                    ),
+                  ),
+                ),
+
+                if (_hasWarranty &&
+                    !(isEdit && _hasExistingWarranty)) ...[
+                  const SizedBox(width: 12),
                   Expanded(
                     child: ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: _accent,
+                        backgroundColor: accentColor,
+                        // لون زر Save & Add الأرجواني
                         foregroundColor: Colors.white,
-                        padding:
-                        const EdgeInsets.symmetric(vertical: 14),
+                        padding: const EdgeInsets.symmetric(
+                            vertical: 14),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16),
                         ),
                       ),
-                      onPressed: _saving ? null : _save,
-                      icon: const Icon(Icons.save_outlined),
+                      onPressed:
+                      _saving ? null : _saveAndAddWarranty,
+                      icon:
+                      const Icon(Icons.verified_user),
                       label: Text(
-                        _saving
-                            ? (isEdit ? 'Updating…' : 'Saving…')
-                            : (isEdit ? 'Update' : 'Save'),
+                        isEdit
+                            ? 'Update & add'
+                            : 'Save & add',
                       ),
                     ),
                   ),
-
-                  if (_hasWarranty &&
-                      !(isEdit && _hasExistingWarranty)) ...[
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor:
-                          const Color(0xFF2C2B52),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                              vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                        ),
-                        onPressed:
-                        _saving ? null : _saveAndAddWarranty,
-                        icon:
-                        const Icon(Icons.verified_user),
-                        label: Text(
-                          isEdit
-                              ? 'Update & add'
-                              : 'Save & add',
-                        ),
-                      ),
-                    ),
-                  ],
                 ],
-              ),
+              ],
+            ),
 
-              const SizedBox(height: 8),
+            const SizedBox(height: 8),
 
-              if (isEdit)
-                TextButton.icon(
-                  onPressed: _saving ? null : _deleteBill,
-                  icon: const Icon(Icons.delete_outline,
-                      color: _danger),
-                  label: const Text(
-                    'Delete bill',
-                    style: TextStyle(color: _danger),
-                  ),
+            // Delete button
+            if (isEdit)
+              TextButton.icon(
+                onPressed: _saving ? null : _deleteBill,
+                icon: Icon(Icons.delete_outline,
+                    color: dangerColor),
+                label: Text(
+                  'Delete bill',
+                  style: TextStyle(color: dangerColor),
                 ),
-            ],
-          ),
+              ),
+          ],
         ),
       ),
     );
+
   }
 }
+
+
+

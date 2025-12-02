@@ -9,7 +9,6 @@ import '../warranties/ui/warranty_detail_page.dart';
 import 'notifications_service.dart';
 
 /// صفحة "الإشعارات داخل التطبيق"
-/// ما تجيب إشعارات FCM، بل تبني ف feed من الفواتير والضمانات بناءً على تواريخها.
 class NotificationsPage extends StatefulWidget {
   const NotificationsPage({super.key});
   static const route = '/notifications';
@@ -36,13 +35,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
   // (هنا بس نقرأها، ما فيه منطق حذف حاليًا)
   final Set<String> _dismissed = {};
 
-  // ألوان وهوية الصفحة
-  static const _kPrimary = Color(0xFF5B6BFF);
-  static const _kHeaderGrad = LinearGradient(
-    colors: [Color(0xFF1B0B66), Color(0xFF0B0425)],
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-  );
+  // *** تم حذف ثوابت الألوان الداكنة الثابتة (_kPrimary, _kHeaderGrad) ***
 
   // أسهل طريقة تجيب uid للمستخدم الحالي
   String? get _uid => FirebaseAuth.instance.currentUser?.uid;
@@ -431,18 +424,50 @@ class _NotificationsPageState extends State<NotificationsPage> {
     }
   }
 
+  // دالة مساعدة لإنشاء تدرج الـ AppBar
+  LinearGradient _appBarGradient(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final accentColor = theme.primaryColor;
+
+    if (isDark) {
+      // تدرج داكن (مطابق للـ Header الأصلي)
+      return const LinearGradient(
+        colors: [Color(0xFF1B0B66), Color(0xFF0B0425)],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      );
+    } else {
+      // Light Mode: خلفية فاتحة (مطابقة للـ Scaffold)
+      return LinearGradient(
+        colors: [theme.scaffoldBackgroundColor, theme.scaffoldBackgroundColor],
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final textColor = theme.textTheme.bodyMedium!.color!;
+    final accentColor = theme.primaryColor;
+
+    // لون الخلفية الأساسي للمنطقة الآمنة
+    final safeAreaBg = theme.scaffoldBackgroundColor;
+
 
     return Scaffold(
+      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        title: const Text('Notifications'),
+        title: Text('Notifications', style: TextStyle(color: textColor)),
         elevation: 0,
-        backgroundColor: Colors.transparent,
-        foregroundColor: Colors.white,
+        // *** الآن أصبح لون الـ AppBar ديناميكياً ***
+        backgroundColor: Colors.transparent, // نستخدم شفافية للسماح لـ flexibleSpace بالظهور
+        foregroundColor: textColor, // لون النص والأيقونات
         flexibleSpace: Container(
-          decoration: const BoxDecoration(gradient: _kHeaderGrad),
+          decoration: BoxDecoration(gradient: _appBarGradient(context)),
         ),
       ),
       body: _loading
@@ -455,17 +480,20 @@ class _NotificationsPageState extends State<NotificationsPage> {
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 88),
           children: [
             _section(
+              context,
               'Due today',
               _today,
               isToday: true,
               deletable: false,
             ),
             _section(
+              context,
               'Upcoming',
               _upcoming,
               deletable: false,
             ),
             _section(
+              context,
               'Already ended',
               _missed,
               deletable: false,
@@ -478,23 +506,27 @@ class _NotificationsPageState extends State<NotificationsPage> {
       floatingActionButton: FloatingActionButton(
         onPressed: _sendNow,
         tooltip: 'Send test notification',
-        backgroundColor: _kPrimary,
+        backgroundColor: accentColor, // استخدام اللون الأرجواني
+        foregroundColor: Colors.white,
         child: const Icon(Icons.bolt),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-      backgroundColor: cs.surface,
     );
   }
 
   /// تبني جزء من الصفحة لقسم واحد:
   /// (العنوان + قائمة الكروت)
   Widget _section(
+      BuildContext context,
       String title,
       List<_NotifFeedItem> list, {
         bool isToday = false,
         bool deletable = false, // حاليًا مو مستخدم (ما فيه سوايب حذف)
         bool dim = false,
       }) {
+    final theme = Theme.of(context);
+    final textColor = theme.textTheme.bodyMedium!.color!;
+
     // نفلتر أي عنصر تم حذفه مسبقًا (موجود في dismissed)
     final visible = list.where((e) => !_dismissed.contains(e.key)).toList();
     if (visible.isEmpty) {
@@ -503,8 +535,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: ListTile(
           title:
-          Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-          subtitle: const Text('No items'),
+          Text(title, style: TextStyle(fontWeight: FontWeight.bold, color: textColor)),
+          subtitle: Text('No items', style: TextStyle(color: theme.hintColor)),
         ),
       );
     }
@@ -517,7 +549,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
           padding: const EdgeInsets.only(left: 12, top: 12, bottom: 6),
           child: Text(
             title,
-            style: const TextStyle(fontWeight: FontWeight.bold),
+            style: TextStyle(fontWeight: FontWeight.bold, color: textColor),
           ),
         ),
         ...visible.map((e) {
@@ -526,7 +558,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
             isToday: isToday,
             dim: dim,
             baseColor: s.baseColor,
-            todayBackground: isToday ? _kPrimary : null,
+            // لا نستخدم todayBackground صريح لـ Light Mode، نعتمد على opacity
+            todayBackground: isToday ? theme.primaryColor : null,
             icon: s.icon,
             kindLabel: s.kindLabel,
             title: e.title,
@@ -550,13 +583,13 @@ class _NotificationsPageState extends State<NotificationsPage> {
         );
       case _NotifKind.exchangeDeadline:
         return _KindStyle(
-          baseColor: Colors.red.shade600,
+          baseColor: Colors.orange.shade600,
           icon: Icons.change_circle_outlined,
           kindLabel: 'Exchange • Deadline',
         );
       case _NotifKind.warrantyDeadline:
         return _KindStyle(
-          baseColor: Colors.red.shade600,
+          baseColor: Colors.blue.shade600,
           icon: Icons.verified,
           kindLabel: 'Warranty • Deadline',
         );
@@ -573,8 +606,6 @@ class _NotificationsPageState extends State<NotificationsPage> {
 /* ========= نماذج منطق الإشعار (Models) ========= */
 
 /// أنواع الإشعارات المحتملة.
-/// في هذا الكود نستخدم فقط الـ *Deadline*
-/// لكن محجوزة أنواع Reminder لو حبيتي توسعين المنطق لاحقًا.
 enum _NotifKind {
   returnReminder,
   returnDeadline,
@@ -665,15 +696,24 @@ class _NotifTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final onSurface = Theme.of(context).colorScheme.onSurface;
+    final theme = Theme.of(context);
+    final onSurface = theme.textTheme.bodyMedium!.color!;
     final faded = onSurface.withOpacity(0.60);
     final dimmed = dim ? onSurface.withOpacity(0.55) : onSurface;
     final radius = BorderRadius.circular(14);
+    final isDark = theme.brightness == Brightness.dark;
 
     // لون خلفية الكرت: لو اليوم نخليه لون مميز، غير كذا نستخدم cardColor
     final bgColor = isToday
-        ? (todayBackground ?? Colors.purple).withOpacity(0.10)
-        : Theme.of(context).cardColor;
+        ? (todayBackground ?? theme.primaryColor).withOpacity(isDark ? 0.15 : 0.10)
+        : theme.cardColor;
+
+    // لون الحدود
+    final borderColor = isToday
+        ? (todayBackground ?? theme.primaryColor).withOpacity(0.40)
+        : isDark
+        ? Colors.white.withOpacity(0.1)
+        : Colors.black.withOpacity(0.05);
 
     return InkWell(
       onTap: onTap,
@@ -685,16 +725,12 @@ class _NotifTile extends StatelessWidget {
           borderRadius: radius,
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFF000000).withOpacity(0.04),
+              color: const Color(0xFF000000).withOpacity(isDark ? 0.10 : 0.04),
               blurRadius: 6,
               offset: const Offset(0, 2),
             ),
           ],
-          border: Border.all(
-            color: isToday
-                ? (todayBackground ?? Colors.purple).withOpacity(0.25)
-                : const Color(0x1F000000),
-          ),
+          border: Border.all(color: borderColor),
         ),
         child: Padding(
           padding: const EdgeInsets.all(12),
@@ -790,7 +826,7 @@ class _NotifTile extends StatelessWidget {
       child: Text(
         text,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: onSurface),
       ),
     );
   }

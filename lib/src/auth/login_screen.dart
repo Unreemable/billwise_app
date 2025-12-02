@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'auth_service.dart';
-import '../../welcome/welcome_screen.dart'; // اختياري: ليس مطلوبًا للـ pop، لكن مفيد لو حبيتي تستخدمين pushReplacement
+import '../../welcome/welcome_screen.dart';
+
+// تم حذف جميع ثوابت الألوان المخصصة (مثل _kBg, _kCard, _kAccent)
+// وسنعتمد على Theme.of(context) والألوان الخاصة بالثيم الحالي.
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -9,17 +12,6 @@ class LoginScreen extends StatefulWidget {
   @override
   State<LoginScreen> createState() => _LoginScreenState();
 }
-
-// ===== Palette & Style =====
-const Color _kBg      = Color(0xFF0E0B1F);   // background
-const Color _kCard    = Color(0xFF17122B);   // card
-const Color _kField   = Color(0xFF221B3A);   // text fields
-const Color _kStroke  = Color(0x1AFFFFFF);   // subtle borders
-const Color _kText    = Colors.white;
-const Color _kTextSub = Color(0x99FFFFFF);
-const Color _kAccent  = Color(0xFF6A73FF);   // primary accent
-
-const double _kRadius = 20;
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
@@ -40,6 +32,7 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!_formKey.currentState!.validate()) return;
     setState(() { _loading = true; _error = null; });
     try {
+      // نفترض وجود AuthService
       await AuthService.instance.signIn(_email.text.trim(), _password.text);
       if (mounted) Navigator.pushReplacementNamed(context, '/home');
     } catch (_) {
@@ -49,20 +42,34 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  InputDecoration _input(String label, {IconData? icon}) {
+  InputDecoration _input(BuildContext context, String label, {IconData? icon}) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    // ألوان ديناميكية للمدخلات
+    final accentColor = theme.primaryColor;
+    final textColor = theme.textTheme.bodyMedium!.color!;
+    final subtleColor = isDark ? Colors.white70 : Colors.black54;
+
+    // خلفية حقل الإدخال: لون داكن ثابت في Dark Mode، لون فاتح/رمادي خفيف في Light Mode
+    final fieldFillColor = isDark ? const Color(0xFF221B3A) : Colors.grey.shade100;
+
+    // حدود الحقل: شفافة في Dark Mode، رمادية خفيفة في Light Mode
+    final strokeColor = isDark ? Colors.white.withOpacity(0.1) : Colors.black.withOpacity(0.1);
+
     return InputDecoration(
       labelText: label,
-      labelStyle: const TextStyle(color: _kTextSub),
-      prefixIcon: icon == null ? null : Icon(icon, color: _kTextSub),
+      labelStyle: TextStyle(color: subtleColor),
+      prefixIcon: icon == null ? null : Icon(icon, color: subtleColor),
       filled: true,
-      fillColor: _kField,
+      fillColor: fieldFillColor,
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: _kStroke),
+        borderSide: BorderSide(color: strokeColor),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: _kAccent, width: 1.2),
+        borderSide: BorderSide(color: accentColor, width: 1.2),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
@@ -78,24 +85,30 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final accentColor = theme.primaryColor;
+    final textColor = theme.textTheme.bodyMedium!.color!;
+    final cardBg = theme.cardColor;
+    final subtleColor = theme.hintColor; // استخدام hintColor للنصوص الثانوية
+
     return Directionality(
       textDirection: TextDirection.ltr, // English layout
       child: Scaffold(
-        backgroundColor: _kBg,
+        // استخدام لون خلفية الثيم
+        backgroundColor: theme.scaffoldBackgroundColor,
         appBar: AppBar(
+          // AppBarTheme سيحدد الألوان
           backgroundColor: Colors.transparent,
           elevation: 0,
           leading: IconButton(
             tooltip: 'Back',
-            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
+            // استخدام لون نص الثيم للأيقونة
+            icon: Icon(Icons.arrow_back_ios_new_rounded, color: textColor),
             onPressed: () {
-              // يكفي pop للرجوع للـ Welcome (بما أننا أتينا بـ pushNamed)
               Navigator.pop(context);
-              // أو لو تبين فرض الرجوع للـ Welcome دومًا:
-              // Navigator.pushReplacementNamed(context, WelcomeScreen.route);
             },
           ),
-          title: const Text('Log in', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+          title: Text('Log in', style: TextStyle(color: textColor, fontWeight: FontWeight.w700)),
           centerTitle: true,
         ),
         body: SafeArea(
@@ -109,21 +122,21 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // ===== Form Card =====
+                      // ===== Form Card (Theme Aware) =====
                       Container(
                         width: double.infinity,
                         decoration: BoxDecoration(
-                          color: _kCard,
+                          color: cardBg, // لون البطاقة من الثيم
                           borderRadius: BorderRadius.circular(_kRadius),
-                          border: const Border.fromBorderSide(
-                            BorderSide(color: _kStroke),
+                          border: Border.fromBorderSide(
+                            BorderSide(color: theme.dividerColor), // لون الحدود من الثيم
                           ),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.25),
-                              blurRadius: 24,
-                              spreadRadius: -20,
-                              offset: const Offset(0, 18),
+                              color: Colors.black.withOpacity(0.10),
+                              blurRadius: 10,
+                              spreadRadius: 1,
+                              offset: const Offset(0, 5),
                             ),
                           ],
                         ),
@@ -132,12 +145,12 @@ class _LoginScreenState extends State<LoginScreen> {
                           key: _formKey,
                           child: Column(
                             children: [
-                              const Align(
+                              Align(
                                 alignment: Alignment.centerLeft,
                                 child: Text(
                                   'Welcome back',
                                   style: TextStyle(
-                                    color: _kTextSub,
+                                    color: subtleColor, // لون ثانوي
                                     fontSize: 13,
                                     fontWeight: FontWeight.w700,
                                   ),
@@ -149,8 +162,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                 height: 54,
                                 child: TextFormField(
                                   controller: _email,
-                                  style: const TextStyle(color: _kText),
-                                  decoration: _input('Email', icon: Icons.email_outlined),
+                                  style: TextStyle(color: textColor), // لون النص المدخل
+                                  decoration: _input(context, 'Email', icon: Icons.email_outlined),
                                   keyboardType: TextInputType.emailAddress,
                                   validator: (v) =>
                                   (v == null || !v.contains('@')) ? 'Enter a valid email' : null,
@@ -162,13 +175,13 @@ class _LoginScreenState extends State<LoginScreen> {
                                 height: 54,
                                 child: TextFormField(
                                   controller: _password,
-                                  style: const TextStyle(color: _kText),
-                                  decoration: _input('Password', icon: Icons.lock_outline).copyWith(
+                                  style: TextStyle(color: textColor), // لون النص المدخل
+                                  decoration: _input(context, 'Password', icon: Icons.lock_outline).copyWith(
                                     suffixIcon: IconButton(
                                       onPressed: () => setState(() => _obscure = !_obscure),
                                       icon: Icon(
                                         _obscure ? Icons.visibility : Icons.visibility_off,
-                                        color: _kTextSub,
+                                        color: subtleColor, // لون ثانوي
                                       ),
                                     ),
                                   ),
@@ -184,7 +197,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   width: double.infinity,
                                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                                   decoration: BoxDecoration(
-                                    color: Colors.red.withOpacity(.10),
+                                    color: Colors.red.withOpacity(theme.brightness == Brightness.dark ? .10 : .05),
                                     borderRadius: BorderRadius.circular(12),
                                     border: Border.all(color: Colors.redAccent),
                                   ),
@@ -196,7 +209,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                       Expanded(
                                         child: Text(
                                           _error!,
-                                          style: const TextStyle(color: _kText, fontSize: 13),
+                                          style: TextStyle(color: textColor, fontSize: 13),
                                         ),
                                       ),
                                     ],
@@ -210,7 +223,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 child: FilledButton(
                                   onPressed: _loading ? null : _submit,
                                   style: FilledButton.styleFrom(
-                                    backgroundColor: _kAccent,
+                                    backgroundColor: accentColor, // لون الزر الأساسي
                                     foregroundColor: Colors.white,
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(14),
@@ -228,9 +241,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
                               TextButton(
                                 onPressed: _loading ? null : () => Navigator.pushNamed(context, '/register'),
-                                child: const Text(
+                                child: Text(
                                   'Create an account',
-                                  style: TextStyle(color: _kTextSub, fontWeight: FontWeight.w600),
+                                  style: TextStyle(color: subtleColor, fontWeight: FontWeight.w600), // لون ثانوي
                                 ),
                               ),
                             ],
@@ -250,3 +263,5 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 }
+
+const double _kRadius = 20;
