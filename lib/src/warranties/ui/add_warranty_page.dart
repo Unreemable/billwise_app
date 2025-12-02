@@ -34,18 +34,22 @@ class AddWarrantyPage extends StatefulWidget {
     this.warrantyId,
     this.initialProvider,
     this.prefillAttachmentPath,
-    this.purchaseDate,           // 👈 NEW (from bill)
+    this.purchaseDate,
+    this.initialProduct, // 🔥 NEW
+    this.initialSerial,  // 🔥 NEW
   });
 
   static const route = '/add-warranty';
 
   final String? billId;
-  final DateTime? defaultStartDate;   // from OCR
-  final DateTime? defaultEndDate;     // from OCR
-  final DateTime? purchaseDate;       // from AddBillPage
+  final DateTime? defaultStartDate;
+  final DateTime? defaultEndDate;
+  final DateTime? purchaseDate;
   final String? warrantyId;
   final String? initialProvider;
   final String? prefillAttachmentPath;
+  final String? initialProduct; // 🔥 NEW
+  final String? initialSerial;  // 🔥 NEW
 
   @override
   State<AddWarrantyPage> createState() => _AddWarrantyPageState();
@@ -77,6 +81,11 @@ class _AddWarrantyPageState extends State<AddWarrantyPage> {
     super.initState();
 
     _providerCtrl.text = (widget.initialProvider ?? '').trim();
+
+    // 🔥 NEW: تعبئة اسم المنتج والرقم التسلسلي من الفاتورة/OCR
+    _productCtrl.text = (widget.initialProduct ?? '').trim();
+    _serialCtrl.text = (widget.initialSerial ?? '').trim();
+    // 🔥 END NEW
 
     // ============================
     //    🔥 Warranty Start Logic

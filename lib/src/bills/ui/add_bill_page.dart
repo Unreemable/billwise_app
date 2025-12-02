@@ -61,6 +61,10 @@ class _AddBillPageState extends State<AddBillPage> {
   DateTime? _ocrWarrantyStart;
   DateTime? _ocrWarrantyEnd;
 
+  // 🔥 NEW: بيانات المنتج والرقم التسلسلي المستخلصة من OCR ليتم تمريرها للضمان
+  String? _ocrProductName;
+  String? _ocrSerialNumber;
+
   int? _retDays;
   int? _exDays;
 
@@ -229,19 +233,31 @@ class _AddBillPageState extends State<AddBillPage> {
     }
 
     // ============================
-    //  🟣 العنوان = أول منتج
+    //  🟣 العنوان = أول منتج (لتعبئة حقل العنوان)
     // ============================
     if (prefill['items'] is List && prefill['items'].isNotEmpty) {
       final first = prefill['items'].first;
 
       if (first is Map && first['name'] != null) {
         _titleCtrl.text = first['name'].toString();
+        // 🔥 تخزين اسم المنتج
+        _ocrProductName = first['name'].toString();
       } else if (first is String) {
         _titleCtrl.text = first;
+        // 🔥 تخزين اسم المنتج
+        _ocrProductName = first;
       }
     } else {
       _titleCtrl.text = (prefill['title'] ?? _titleCtrl.text).toString();
+      // 🔥 تخزين اسم المنتج من العنوان العادي
+      _ocrProductName = _titleCtrl.text;
     }
+
+    // 🔥 NEW: استخلاص الرقم التسلسلي من OCR وتخزينه
+    final serial = prefill['serial'] ?? prefill['serial_number'] ?? prefill['serialNumber'];
+    _ocrSerialNumber = (serial is String) ? serial.trim() : null;
+    if (_ocrSerialNumber != null && _ocrSerialNumber!.isEmpty) _ocrSerialNumber = null;
+    // 🔥 END NEW
 
     // ============================
     //  🟣 المتجر Store name
@@ -584,8 +600,10 @@ class _AddBillPageState extends State<AddBillPage> {
             defaultStartDate: baseStart,
             defaultEndDate: baseEnd,
             initialProvider: _shopCtrl.text.trim(),
-
-            // 🔥 أهم سطرين — هنا نرسل صورة الفاتورة + تاريخ الشراء
+            // 🔥 NEW: تمرير اسم المنتج والرقم التسلسلي
+            initialProduct: _ocrProductName,
+            initialSerial: _ocrSerialNumber,
+            // 🔥 END NEW
             prefillAttachmentPath: _receiptImagePath,
             purchaseDate: _purchaseDate,
           ),
@@ -612,8 +630,10 @@ class _AddBillPageState extends State<AddBillPage> {
           defaultStartDate: baseStart,
           defaultEndDate: baseEnd,
           initialProvider: _shopCtrl.text.trim(),
-
-          // 🔥 أيضاً هنا
+          // 🔥 NEW: تمرير اسم المنتج والرقم التسلسلي
+          initialProduct: _ocrProductName,
+          initialSerial: _ocrSerialNumber,
+          // 🔥 END NEW
           prefillAttachmentPath: _receiptImagePath,
           purchaseDate: _purchaseDate,
         ),
