@@ -1,14 +1,9 @@
 // lib/src/gemini_service.dart
-// REST v1beta + retry + generationConfig + safetySettings + OCR-friendly models
-
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
-
-// OPTIONAL (لو تبين تشيلينه عادي)
-import 'common/metrics.dart';
 
 /// Text-only models
 const List<String> _TEXT_MODELS = <String>[
@@ -133,7 +128,7 @@ Future<String> _callWithModels({
 }
 
 /// ===============================================================
-///                RECEIPT EXTRACTION (WITH ITEMS)
+///                RECEIPT EXTRACTION (WITH WARRANTY & SERIAL)
 /// ===============================================================
 class GeminiService {
   GeminiService._();
@@ -143,9 +138,10 @@ class GeminiService {
       Uint8List imageBytes, {
         String mimeType = 'image/jpeg',
       }) async {
+
     const prompt = '''
-You are a structured receipt data extractor.
-Return ONLY valid JSON. No explanations.
+You are a smart receipt data extractor for an app called BillWise.
+Return ONLY valid JSON. No markdown, no explanations.
 
 Schema:
 {
@@ -164,14 +160,25 @@ Schema:
 
   "return_deadline": string|null,
   "exchange_deadline": string|null,
-  "notes": string|null
+  "notes": string|null,
+
+ 
+  "serial_number": string|null,
+  "warranty": {
+     "has_warranty": boolean, 
+     "end_date": string|null 
+  }
 }
 
 Rules:
-- Extract purchased items when possible.
-- If items exist & first item has name → set title = that name.
-- Dates must be ISO.
-- Return ONLY JSON.
+1. Items: Extract items if visible. If the first item has a clear name, use it as the "title".
+2. Serial Number: Look for "S/N", "Serial", "IMEI", "الرقم التسلسلي", "رقم الجهاز". Extract the value.
+3. Warranty: 
+   - Look for keywords: "Warranty", "Guarantee", "ضمان", "كفالة", "سنتين", "2 Years".
+   - If found, set "has_warranty" to true.
+   - If a duration is mentioned (e.g., "2 Years"), calculate the "end_date" based on "purchase_date".
+4. Dates: Must be ISO 8601 (YYYY-MM-DD).
+5. Output: Return ONLY raw JSON.
 ''';
 
     final body = {
@@ -217,6 +224,7 @@ Rules:
     return obj == null ? null : ReceiptData.fromJson(obj);
   }
 
+  // ... (rest of methods: generateText, transcribeImage stay the same)
   Future<String> generateText(String prompt) async {
     final body = {
       'contents': [
@@ -277,6 +285,11 @@ class ReceiptData {
   final DateTime? exchangeDeadline;
   final String? notes;
 
+  // 🔥 حقول جديدة
+  final String? serialNumber;
+  final bool hasWarranty;
+  final DateTime? warrantyEndDate;
+
   ReceiptData({
     this.title,
     this.shopName,
@@ -287,8 +300,12 @@ class ReceiptData {
     this.returnDeadline,
     this.exchangeDeadline,
     this.notes,
+    this.serialNumber,
+    this.hasWarranty = false,
+    this.warrantyEndDate,
   });
 
+  // تحويل البيانات لـ Map يفهمها AddBillPage
   Map<String, dynamic> toPrefill() => {
     if (title != null) 'title': title,
     if (shopName != null) 'shop_name': shopName,
@@ -299,6 +316,12 @@ class ReceiptData {
     if (returnDeadline != null) 'return_deadline': returnDeadline,
     if (exchangeDeadline != null) 'exchange_deadline': exchangeDeadline,
     if (notes != null) 'notes': notes,
+
+    // 🔥 تمرير البيانات الجديدة بالأسماء التي يتوقعها الكود السابق
+    if (serialNumber != null) 'serial': serialNumber,
+    if (hasWarranty) 'suggestWarranty': true,
+    if (purchaseDate != null) 'warrantyStart': purchaseDate, // غالباً يبدأ مع الشراء
+    if (warrantyEndDate != null) 'warrantyEnd': warrantyEndDate,
   };
 
   static DateTime? _parseDate(dynamic v) {
@@ -328,6 +351,15 @@ class ReceiptData {
           .toList();
     }
 
+    // 🔥 استخراج بيانات الضمان من الـ JSON الجديد
+    bool warrantyFound = false;
+    DateTime? wEnd;
+    if (j['warranty'] is Map) {
+      final w = j['warranty'];
+      warrantyFound = w['has_warranty'] == true;
+      wEnd = _parseDate(w['end_date']);
+    }
+
     return ReceiptData(
       title: j['title']?.toString(),
       shopName: j['shop_name']?.toString(),
@@ -338,6 +370,11 @@ class ReceiptData {
       returnDeadline: _parseDate(j['return_deadline']),
       exchangeDeadline: _parseDate(j['exchange_deadline']),
       notes: j['notes']?.toString(),
+
+      // 🔥 تعبئة الحقول الجديدة
+      serialNumber: j['serial_number']?.toString(),
+      hasWarranty: warrantyFound,
+      warrantyEndDate: wEnd,
     );
   }
 }
@@ -359,7 +396,6 @@ class ReceiptItem {
   };
 }
 
-/// Simple wrapper
 class GeminiOcrService {
   GeminiOcrService._();
   static final GeminiOcrService I = GeminiOcrService._();
