@@ -1,4 +1,3 @@
-// ================== صفحة الفواتير مع شريط Home GradientBottomBar ==================
 import 'dart:ui' as ui; // لاستخدام TextDirection.ltr
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -10,51 +9,46 @@ import '../../common/widgets/expiry_progress.dart';
 import '../data/bill_service.dart';
 import 'add_bill_page.dart';
 import 'bill_detail_page.dart';
+// استيراد صفحة تفاصيل الضمان (تمت إضافته لحل الخطأ)
+import '../../warranties/ui/warranty_detail_page.dart';
 // لو حابة تفتحي تبويب الضمانات:
 import '../../warranties/ui/warranty_list_page.dart';
 
-/// ===== نفس ألوان صفحة الهوم (ثيم داكن + تدرجات) =====
-const Color _kBgDark   = Color(0xFF0E0722);
-const Color _kCardDark = Color(0x1AFFFFFF);
-const Color _kGrad1    = Color(0xFF9B5CFF);   // بداية التدرّج
-const Color _kGrad2    = Color(0xFF6C3EFF);   // لظل الشادو
-const Color _kGrad3    = Color(0xFFC58CFF);   // نهاية التدرّج
-const Color _kTextDim  = Colors.white70;
-const LinearGradient _kHeaderGradient = LinearGradient(
-  colors: [Color(0xFF1A0B3A), Color(0xFF0E0722)],
-  begin: Alignment.topLeft,
-  end: Alignment.bottomRight,
-);
-const LinearGradient _kSearchGradient = LinearGradient(
-  colors:  [Color(0xFF6C3EFF), Color(0xFFC58CFF)],
+// تم حذف جميع ثوابت الألوان المخصصة هنا واعتماد الثيم بدلاً منها
 
-  begin: Alignment.topLeft,
-  end: Alignment.bottomRight,
-);
+// ===== ثوابت الألوان الداكنة (للمزج في Dark Mode فقط) =====
+const Color _kGrad1    = Color(0xFF9B5CFF);   // Violet أفتح ومريح
+const Color _kGrad2    = Color(0xFF6C3EFF);   // البنفسجي الأساسي
+const Color _kGrad3    = Color(0xFFC58CFF);   // Lavender وردي ناعم بدل الأزرق
+// ========================================================
 
 /// ============ الشريط السفلي المتدرّج (مُعاد استخدامه من الهوم) ============
-/// تنقّل سفلي مشترك بين:
-/// - تبويب الضمانات
-/// - تبويب الفواتير
-/// - نقطة الوسط (الزر الدائري) → الهوم
 class GradientBottomBar extends StatelessWidget {
   /// 0 = Warranties, 1 = Bills
   final int selectedIndex;
   final ValueChanged<int> onTap;
-  final Color startColor;
-  final Color endColor;
 
   const GradientBottomBar({
     super.key,
     required this.selectedIndex,
     required this.onTap,
-    this.startColor = const Color(0xFF6C3EFF),
-    this.endColor   = const Color(0xFF3E8EFD),
   });
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final primaryColor = theme.primaryColor;
+
+    // تحديد ألوان التدرج بناءً على وضع الثيم
+    final Color startColor = primaryColor;
+    // استخدام لون أغمق قليلاً في Light Mode لضمان التباين مع الخلفية اللافندر
+    final Color endColor = isDark
+        ? primaryColor.withOpacity(0.8)
+        : primaryColor.withOpacity(0.9);
+
     final bottomInset = MediaQuery.of(context).padding.bottom;
+
     return SafeArea(
       top: false,
       child: ClipRRect(
@@ -70,6 +64,7 @@ class GradientBottomBar extends StatelessWidget {
               ),
               boxShadow: [
                 BoxShadow(
+                  // الظل يظل داكنًا دائمًا لتمييز الشريط
                   color: Colors.black.withOpacity(0.25),
                   blurRadius: 16,
                   offset: const Offset(0, -6),
@@ -89,11 +84,13 @@ class GradientBottomBar extends StatelessWidget {
                   ),
                   const SizedBox(width: 18),
                   _FabDot(
+                    // تمرير اللون الأساسي لزر الهوم
                     onTap: () {
                       // رجوع لصفحة الهوم (root navigator)
                       Navigator.of(context, rootNavigator: true)
                           .pushNamed('/home');
                     },
+                    accentColor: primaryColor,
                   ),
                   const SizedBox(width: 18),
                   _BottomItem(
@@ -128,6 +125,7 @@ class _BottomItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // الألوان داخل الشريط السفلي ثابتة (أبيض/أبيض خافت) لأن خلفيته داكنة (أرجواني) في كلا الوضعين
     final fg = selected ? Colors.white : Colors.white70;
     final selectedBg = Colors.white.withOpacity(.16);
     return InkWell(
@@ -161,10 +159,15 @@ class _BottomItem extends StatelessWidget {
 /// الزر الدائري في النص المستخدم للرجوع للهوم
 class _FabDot extends StatelessWidget {
   final VoidCallback? onTap;
-  const _FabDot({this.onTap});
+  final Color accentColor;
+  const _FabDot({this.onTap, required this.accentColor});
 
   @override
   Widget build(BuildContext context) {
+    // التدرج هنا يستخدم اللون الأرجواني الممرر
+    final start = accentColor;
+    final end = accentColor.withOpacity(0.8);
+
     return InkWell(
       borderRadius: BorderRadius.circular(27),
       onTap: onTap,
@@ -173,12 +176,13 @@ class _FabDot extends StatelessWidget {
         height: 54,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          gradient: const LinearGradient(
-            colors: [Color(0xFF6C3EFF), Color(0xFF3E8EFD)],
+          gradient: LinearGradient(
+            colors: [start, end],
           ),
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFF934DFE).withOpacity(.45),
+              // الظل ثابت (أرجواني خافت)
+              color: accentColor.withOpacity(.45),
               blurRadius: 16,
               offset: const Offset(0, 6),
             ),
@@ -236,7 +240,7 @@ class _BillListPageState extends State<BillListPage> {
     super.dispose();
   }
 
-  // ================ توابع مساعدة ================
+  // ================ توابع مساعدة (نصوص وألوان) ================
 
   /// إزالة جزء الوقت من التاريخ: نهتم فقط بالسنة/الشهر/اليوم.
   DateTime _onlyDate(DateTime d) => DateTime(d.year, d.month, d.day);
@@ -251,9 +255,6 @@ class _BillListPageState extends State<BillListPage> {
   // ==== منطق الحالة العامة لكل فاتورة (الكرت) ====
 
   /// حساب الحالة العامة للفاتورة بناءً على تواريخ الاسترجاع والاستبدال:
-  /// - active:       الاسترجاع ما زال صالح (today < return_end)
-  /// - exchangeOnly: الاسترجاع منتهي، الاستبدال ما زال صالح
-  /// - expired:      الكل منتهي أو غير مضاف
   _BillOverallStatus _overallStatusForBill(
       DateTime? returnUtc,
       DateTime? exchangeUtc,
@@ -273,15 +274,12 @@ class _BillListPageState extends State<BillListPage> {
       return _BillOverallStatus.exchangeOnly;
     }
 
-    // 🔴 لا استرجاع ولا استبدال متاحين (أو غير معرّفين)
+    // 🔴 لا استرجاع ولا استبدال متاحين (أو غير مضافين)
     return _BillOverallStatus.expired;
   }
 
   /// بناء شِب صغير (Chip) للحالة أسفل كل عنصر فاتورة:
-  /// - active       → شارة خضراء
-  /// - exchangeOnly → شارة برتقالية لكن النص يبقى "active" (استبدال فقط)
-  /// - expired      → شارة حمراء مع أيقونة إغلاق
-  Widget _billStatusChip(DateTime? returnUtc, DateTime? exchangeUtc) {
+  Widget _billStatusChip(BuildContext context, DateTime? returnUtc, DateTime? exchangeUtc) {
     final status = _overallStatusForBill(returnUtc, exchangeUtc);
 
     late Color color;
@@ -320,7 +318,6 @@ class _BillListPageState extends State<BillListPage> {
   }
 
   /// منطق الألوان لسياسة استرجاع 3 أيام (تقدّم خلال 3 أيام).
-  /// يطبّق فقط إذا (end - start) == 3 أيام.
   Color? _threeDayReturnColor(DateTime? startUtc, DateTime? endUtc) {
     if (startUtc == null || endUtc == null) return null;
     final s = _onlyDate(startUtc.toLocal());
@@ -459,6 +456,7 @@ class _BillListPageState extends State<BillListPage> {
   ///
   /// يختار منطق اللون/التسمية بناءً على [title].
   Widget _policyBlock({
+    required BuildContext context,
     required String title,
     required DateTime? start,
     required DateTime? end,
@@ -469,6 +467,11 @@ class _BillListPageState extends State<BillListPage> {
     final isReturn = kind == 'return';
     final isExchange = kind == 'exchange';
     final isWarranty = kind == 'warranty';
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    // *** الحل: تثبيت اللون الأسود الصريح في Light Mode، والأبيض في Dark Mode ***
+    final policyTextColor = isDark ? Colors.white : Colors.black;
 
     // اختيار منطق اللون/التسمية حسب نوع السياسة
     final threeDayColor = isReturn ? _threeDayReturnColor(start, end) : null;
@@ -486,6 +489,17 @@ class _BillListPageState extends State<BillListPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // *** هذا هو النص الخارجي الملون يدوياً (أسود/أبيض) ***
+        Text(
+          title,
+          style: TextStyle(
+            color: policyTextColor, // تثبيت اللون ديناميكياً
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 6),
+
         if (threeDayColor != null) ...[
           Row(
             children: [
@@ -500,8 +514,8 @@ class _BillListPageState extends State<BillListPage> {
               const SizedBox(width: 8),
               Text(
                 threeDayLabel ?? 'Return (3-day window)',
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: policyTextColor, // تم الإصلاح: أسود/أبيض صريح
                   fontSize: 12,
                   fontWeight: FontWeight.w500,
                 ),
@@ -524,8 +538,8 @@ class _BillListPageState extends State<BillListPage> {
               const SizedBox(width: 8),
               Text(
                 sevenDayLabel ?? 'Exchange (7-day window)',
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: policyTextColor, // تم تثبيت اللون هنا
                   fontSize: 12,
                   fontWeight: FontWeight.w500,
                 ),
@@ -548,8 +562,8 @@ class _BillListPageState extends State<BillListPage> {
               const SizedBox(width: 8),
               Text(
                 warrantyLabel ?? 'Warranty (3 segments)',
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: policyTextColor, // تم تثبيت اللون هنا
                   fontSize: 12,
                   fontWeight: FontWeight.w500,
                 ),
@@ -558,6 +572,7 @@ class _BillListPageState extends State<BillListPage> {
           ),
           const SizedBox(height: 6),
         ],
+        // *** تم إخفاء العنوان الداخلي لمنع التكرار والاختفاء (showTitle: false) ***
         ExpiryProgress(
           title: title,
           startDate: start,
@@ -565,31 +580,23 @@ class _BillListPageState extends State<BillListPage> {
           dense: true,
           showInMonths: isWarranty,
           barColor: barColor,
+          showTitle: false, // <-- هذا هو الحل لإخفاء النص الأبيض الافتراضي
         ),
         const SizedBox(height: 6),
       ],
     );
   }
 
-  /// إيجاد أقرب تاريخ انتهاء بين:
-  /// - return_deadline
-  /// - exchange_deadline
-  /// - warranty_end_date
-  /// يُستخدم في فرز "Near expiry".
   DateTime? _nearestExpiry(Map<String, dynamic> d) {
-    DateTime? parseTs(dynamic v) =>
-        (v is Timestamp) ? v.toDate().toLocal() : null;
-
+    DateTime? parseTs(dynamic v) => (v is Timestamp) ? v.toDate().toLocal() : null;
     DateTime? minDate(DateTime? a, DateTime? b) {
       if (a == null) return b;
       if (b == null) return a;
       return a.isBefore(b) ? a : b;
     }
-
     final ret = parseTs(d['return_deadline']);
     final ex  = parseTs(d['exchange_deadline']);
     final w   = parseTs(d['warranty_end_date']);
-
     final m = minDate(minDate(ret, ex), w);
     return m == null ? null : DateTime(m.year, m.month, m.day);
   }
@@ -597,24 +604,62 @@ class _BillListPageState extends State<BillListPage> {
   @override
   Widget build(BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    // الألوان الموحدة
+    final accentColor = theme.primaryColor;
+    final textColor = theme.textTheme.bodyMedium!.color!; // أسود/أبيض
+    final dimColor = isDark ? Colors.white70 : Colors.black54; // نص خافت
+
+    // لون البطاقة
+    final cardBgColor = theme.cardColor;
+    // لون حد البطاقة
+    final cardStrokeColor = isDark
+        ? Colors.white.withOpacity(0.1)
+        : Colors.black.withOpacity(0.1);
+
+    // ====== إصلاح شريط البحث وفلاتر الفرز للوضع الداكن ======
+    // في Dark Mode: نستخدم تدرج أرجواني ساطع للبحث.
+    // في Light Mode: نستخدم لون أرجواني خفيف أو لون عادي.
+    final searchGradient = isDark
+        ? LinearGradient(
+      colors: [accentColor, accentColor.withOpacity(0.8)],
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+    )
+        : null; // لا تدرج في Light Mode، نستخدم لون ثابت للخلفية
+
+    final searchBgColor = isDark
+        ? Colors.transparent // مع التدرج نستخدم شفافية هنا
+        : Colors.grey.shade100; // لون خلفية فاتح للحقل في Light Mode
+
+    final searchFgColor = isDark ? Colors.white : textColor;
+    final searchHintColor = isDark ? Colors.white70 : Colors.black45;
+
+    // الظل ثابت في Dark Mode، وخفيف جداً في Light Mode
+    final searchShadowColor = isDark ? accentColor.withOpacity(0.45) : Colors.black.withOpacity(0.05);
+    // ========================================================
+
+    // خلفية مربعات التصفية غير المختارة في Dark Mode (أرجواني خافت)
+    final chipBackgroundDark = accentColor.withOpacity(0.12);
+
 
     return Directionality(
       textDirection: ui.TextDirection.ltr,
       child: Scaffold(
-        backgroundColor: _kBgDark,
+        backgroundColor: theme.scaffoldBackgroundColor, // الخلفية من الثيم
 
         // ===== AppBar بدون سهم رجوع (لأنه في شريط تنقّل سفلي) =====
         appBar: AppBar(
           automaticallyImplyLeading: false,
-          backgroundColor: Colors.transparent,
+          backgroundColor: theme.scaffoldBackgroundColor, // خلفية من الثيم
           elevation: 0,
-          title: const Text(
+          title: Text(
             'Bills',
-            style: TextStyle(color: Colors.white),
+            style: TextStyle(color: textColor),
           ),
-          flexibleSpace: Container(
-            decoration: const BoxDecoration(gradient: _kHeaderGradient),
-          ),
+          // تم حذف flexibleSpace
         ),
 
 
@@ -627,15 +672,17 @@ class _BillListPageState extends State<BillListPage> {
             );
             if (mounted) setState(() {}); // إعادة تحميل بعد الإضافة
           },
+          backgroundColor: accentColor, // لون أرجواني
+          foregroundColor: Colors.white,
           child: const Icon(Icons.add),
         ),
 
         body: uid == null
         // إذا المستخدم غير مسجّل الدخول، نعرض رسالة بسيطة
-            ? const Center(
+            ? Center(
           child: Text(
             'Please sign in to view your bills.',
-            style: TextStyle(color: Colors.white),
+            style: TextStyle(color: textColor),
           ),
         )
             : Column(
@@ -647,14 +694,13 @@ class _BillListPageState extends State<BillListPage> {
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(16),
-                  gradient: const LinearGradient(
-                    colors: [_kGrad1, _kGrad3],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
+                  // لون خلفية ثابت في Light Mode
+                  color: searchBgColor,
+                  // تدرج في Dark Mode فقط
+                  gradient: searchGradient,
                   boxShadow: [
                     BoxShadow(
-                      color: _kGrad2.withOpacity(0.45),
+                      color: searchShadowColor,
                       blurRadius: 16,
                       offset: const Offset(0, 6),
                     ),
@@ -662,26 +708,26 @@ class _BillListPageState extends State<BillListPage> {
                 ),
                 child: Row(
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.search,
-                      color: Colors.white,
+                      color: searchFgColor,
                       size: 22,
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: TextField(
                         controller: _searchCtrl,
-                        style: const TextStyle(
-                          color: Colors.white,
+                        style: TextStyle(
+                          color: searchFgColor,
                           fontSize: 16,
                         ),
-                        cursorColor: Colors.white,
-                        decoration: const InputDecoration(
+                        cursorColor: searchFgColor,
+                        decoration: InputDecoration(
                           hintText: 'Search by title or store',
-                          hintStyle: TextStyle(color: Colors.white70),
+                          hintStyle: TextStyle(color: searchHintColor),
                           border: InputBorder.none,
                           isDense: true,
-                          contentPadding: EdgeInsets.symmetric(
+                          contentPadding: const EdgeInsets.symmetric(
                             vertical: 12,
                           ),
                         ),
@@ -695,9 +741,9 @@ class _BillListPageState extends State<BillListPage> {
                           _searchCtrl.clear();
                           setState(() {});
                         },
-                        icon: const Icon(
+                        icon: Icon(
                           Icons.close_rounded,
-                          color: Colors.white,
+                          color: searchFgColor,
                         ),
                       ),
                   ],
@@ -719,12 +765,15 @@ class _BillListPageState extends State<BillListPage> {
                     onSelected: (_) =>
                         setState(() => _sort = _BillSort.newest),
                     labelStyle: TextStyle(
+                      // النص أبيض عند الاختيار، أو لون النص العادي للثيم
                       color: _sort == _BillSort.newest
                           ? Colors.white
-                          : _kTextDim,
+                          : textColor,
                     ),
-                    selectedColor: Colors.white.withOpacity(.14),
-                    backgroundColor: Colors.white.withOpacity(.06),
+                    selectedColor: accentColor, // خلفية أرجوانية عند الاختيار
+                    backgroundColor: isDark
+                        ? chipBackgroundDark // خلفية داكنة مائلة للشفافية
+                        : Colors.grey.shade100, // خلفية فاتحة خفيفة في Light Mode
                   ),
                   ChoiceChip(
                     label: const Text('Oldest'),
@@ -734,10 +783,12 @@ class _BillListPageState extends State<BillListPage> {
                     labelStyle: TextStyle(
                       color: _sort == _BillSort.oldest
                           ? Colors.white
-                          : _kTextDim,
+                          : textColor,
                     ),
-                    selectedColor: Colors.white.withOpacity(.14),
-                    backgroundColor: Colors.white.withOpacity(.06),
+                    selectedColor: accentColor,
+                    backgroundColor: isDark
+                        ? chipBackgroundDark
+                        : Colors.grey.shade100,
                   ),
                   ChoiceChip(
                     label: const Text('Near expiry'),
@@ -747,10 +798,12 @@ class _BillListPageState extends State<BillListPage> {
                     labelStyle: TextStyle(
                       color: _sort == _BillSort.nearExpiry
                           ? Colors.white
-                          : _kTextDim,
+                          : textColor,
                     ),
-                    selectedColor: Colors.white.withOpacity(.14),
-                    backgroundColor: Colors.white.withOpacity(.06),
+                    selectedColor: accentColor,
+                    backgroundColor: isDark
+                        ? chipBackgroundDark
+                        : Colors.grey.shade100,
                   ),
                 ],
               ),
@@ -771,7 +824,7 @@ class _BillListPageState extends State<BillListPage> {
                     return Center(
                       child: Text(
                         'Error: ${s.error}',
-                        style: const TextStyle(color: Colors.white),
+                        style: TextStyle(color: textColor),
                       ),
                     );
                   }
@@ -800,10 +853,10 @@ class _BillListPageState extends State<BillListPage> {
                   }
 
                   if (docs.isEmpty) {
-                    return const Center(
+                    return Center(
                       child: Text(
                         'No bills found.',
-                        style: TextStyle(color: Colors.white),
+                        style: TextStyle(color: textColor),
                       ),
                     );
                   }
@@ -863,9 +916,10 @@ class _BillListPageState extends State<BillListPage> {
 
                       return Container(
                         decoration: BoxDecoration(
-                          color: _kCardDark,
+                          color: cardBgColor, // لون البطاقة من الثيم
                           borderRadius:
                           BorderRadius.circular(12),
+                          border: Border.all(color: cardStrokeColor), // حد خفيف
                         ),
                         child: ListTile(
                           contentPadding:
@@ -877,8 +931,8 @@ class _BillListPageState extends State<BillListPage> {
                             shop,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Colors.white,
+                            style: TextStyle(
+                              color: textColor,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
@@ -889,23 +943,25 @@ class _BillListPageState extends State<BillListPage> {
                               const SizedBox(height: 2),
                               Text(
                                 '${title == shop ? '' : '$title • '}${amount == null ? '-' : _money.format(amount)}',
-                                style: const TextStyle(
-                                  color: Colors.white70,
+                                style: TextStyle(
+                                  color: dimColor, // نص خافت
                                   fontSize: 12,
                                 ),
                               ),
                               const SizedBox(height: 10),
 
-                              // ===== بلوك سياسة الاسترجاع =====
+                              // ===== بلوك سياسة الاسترجاع (مع العنوان) =====
                               _policyBlock(
+                                context: context,
                                 title: 'Return',
                                 start: purchase,
                                 end: ret,
                               ),
                               const SizedBox(height: 10),
 
-                              // ===== بلوك سياسة الاستبدال =====
+                              // ===== بلوك سياسة الاستبدال (مع العنوان) =====
                               _policyBlock(
+                                context: context,
                                 title: 'Exchange',
                                 start: purchase,
                                 end: ex,
@@ -914,7 +970,7 @@ class _BillListPageState extends State<BillListPage> {
 
                               // ملاحظة: لا نعرض شريط الضمان في التايل
                               // (الضمان معروض بشكل أوضح في صفحة التفاصيل)
-                              _billStatusChip(ret, ex),
+                              _billStatusChip(context, ret, ex),
                             ],
                           ),
                           // عند الضغط → فتح صفحة تفاصيل الفاتورة مع BillDetails

@@ -11,6 +11,9 @@ class ExpiryProgress extends StatelessWidget {
   final bool showTitle;
   final bool showStatus;
 
+  // إضافة متغير للتحكم بلون النص من الخارج
+  final Color? textColor;
+
   const ExpiryProgress({
     super.key,
     required this.startDate,
@@ -21,6 +24,7 @@ class ExpiryProgress extends StatelessWidget {
     this.barColor,
     this.showTitle = true,
     this.showStatus = true,
+    this.textColor, // استقبال اللون الاختياري
   });
 
   DateTime _d(DateTime x) => DateTime(x.year, x.month, x.day);
@@ -150,6 +154,14 @@ class ExpiryProgress extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // تحديد الثيم الحالي
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    // تحديد الألوان بناءً على (1) المتغير الممرر، أو (2) الثيم
+    final mainTextColor = textColor ?? (isDark ? Colors.white : Colors.black87);
+    final subTextColor = textColor?.withOpacity(0.7) ?? (isDark ? Colors.white70 : Colors.black54);
+    final trackColor = isDark ? Colors.white24 : Colors.black12;
+
     final s = _d(startDate);
     final e = _d(endDate);
     final now = _d(DateTime.now());
@@ -201,8 +213,8 @@ class ExpiryProgress extends StatelessWidget {
               Text(
                 title[0].toUpperCase() +
                     title.substring(1).toLowerCase(),
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: mainTextColor, // استخدام اللون الديناميكي
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -219,8 +231,8 @@ class ExpiryProgress extends StatelessWidget {
                 const SizedBox(width: 8),
                 Text(
                   style.stage!,
-                  style: const TextStyle(
-                    color: Colors.white70,
+                  style: TextStyle(
+                    color: subTextColor, // استخدام اللون الديناميكي الخافت
                     fontSize: 12,
                   ),
                 ),
@@ -230,14 +242,14 @@ class ExpiryProgress extends StatelessWidget {
 
         if (showTitle) const SizedBox(height: 6),
 
-        // ← الشكل القديم والواضح
+        // شريط التقدم
         ClipRRect(
           borderRadius: BorderRadius.circular(999),
           child: Stack(
             children: [
               Container(
                 height: dense ? 6 : 8,
-                color: Colors.white24,
+                color: trackColor, // لون الخلفية للشريط (يتغير حسب الثيم)
               ),
               FractionallySizedBox(
                 widthFactor: visualProgress,
@@ -254,8 +266,8 @@ class ExpiryProgress extends StatelessWidget {
         if (showStatus)
           Text(
             statusText,
-            style: const TextStyle(
-              color: Colors.white70,
+            style: TextStyle(
+              color: subTextColor, // استخدام اللون الديناميكي الخافت
               fontSize: 12,
             ),
           ),

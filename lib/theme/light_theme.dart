@@ -12,7 +12,7 @@ final ThemeData lightTheme = ThemeData.light().copyWith(
   ),
 
   textTheme: const TextTheme(
-    bodyMedium: TextStyle(color: Colors.black87),
+    bodyMedium: TextStyle(color: Colors.black87), // نص داكن
     bodyLarge: TextStyle(color: Colors.black87),
   ),
 

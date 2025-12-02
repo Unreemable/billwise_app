@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'auth_service.dart';
-import '../../welcome/welcome_screen.dart'; // اختياري لو حابة ترجعي للترحيب دائمًا
+import '../../welcome/welcome_screen.dart';
+
+// تم حذف جميع ثوابت الألوان المخصصة (مثل _kBg, _kCard, _kAccent)
+// وسنعتمد على Theme.of(context) والألوان الخاصة بالثيم الحالي.
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -9,16 +12,6 @@ class RegisterScreen extends StatefulWidget {
   @override
   State<RegisterScreen> createState() => _RegisterScreenState();
 }
-
-// ===== Shared Palette & Style =====
-const Color _kBg      = Color(0xFF0E0B1F);
-const Color _kCard    = Color(0xFF1A1530);
-const Color _kField   = Color(0xFF241C3E);
-const Color _kStroke  = Color(0x22FFFFFF);
-const Color _kText    = Color(0xFFFFFFFF);
-const Color _kTextSub = Color(0x99FFFFFF);
-const Color _kAccent  = Color(0xFF6A73FF);
-const double _kRadius = 20;
 
 class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
@@ -30,6 +23,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _obscure = true;
   bool _obscure2 = true;
   String? _error;
+
+  // ثابت محلي للاستخدام داخل هذا الكلاس فقط
+  static const double _kRadius = 20;
 
   @override
   void dispose() {
@@ -43,6 +39,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (!_formKey.currentState!.validate()) return;
     setState(() { _loading = true; _error = null; });
     try {
+      // نفترض وجود AuthService
       await AuthService.instance.register(_email.text.trim(), _password.text);
       if (mounted) Navigator.pushReplacementNamed(context, '/home');
     } catch (e) {
@@ -52,20 +49,34 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
   }
 
-  InputDecoration _input(String label, {IconData? icon}) {
+  InputDecoration _input(BuildContext context, String label, {IconData? icon}) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    // ألوان ديناميكية للمدخلات
+    final accentColor = theme.primaryColor;
+    final subtleColor = isDark ? Colors.white70 : Colors.black54;
+
+    // خلفية حقل الإدخال: لون داكن ثابت في Dark Mode، لون فاتح/رمادي خفيف في Light Mode
+    // استخدام لون الـ field الداكن (#241C3E) لـ Dark Mode
+    final fieldFillColor = isDark ? const Color(0xFF241C3E) : Colors.grey.shade100;
+
+    // حدود الحقل: شفافة في Dark Mode، رمادية خفيفة في Light Mode
+    final strokeColor = isDark ? Colors.white.withOpacity(0.13) : Colors.black.withOpacity(0.1);
+
     return InputDecoration(
       labelText: label,
-      labelStyle: const TextStyle(color: _kTextSub),
-      prefixIcon: icon == null ? null : Icon(icon, color: _kTextSub),
+      labelStyle: TextStyle(color: subtleColor),
+      prefixIcon: icon == null ? null : Icon(icon, color: subtleColor),
       filled: true,
-      fillColor: _kField,
+      fillColor: fieldFillColor,
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: _kStroke),
+        borderSide: BorderSide(color: strokeColor),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: _kAccent, width: 1.4),
+        borderSide: BorderSide(color: accentColor, width: 1.4),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
@@ -81,25 +92,32 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final accentColor = theme.primaryColor;
+    final textColor = theme.textTheme.bodyMedium!.color!;
+    final cardBg = theme.cardColor;
+    final subtleColor = theme.hintColor;
+    final isDark = theme.brightness == Brightness.dark;
+
+    // لون الحدود الخارجية للكارد (للتطبيق الصارم)
+    final cardStrokeColor = isDark ? Colors.white.withOpacity(0.13) : Colors.black.withOpacity(0.1);
+
     return Directionality(
       textDirection: TextDirection.ltr, // English layout
       child: Scaffold(
-        backgroundColor: _kBg,
+        backgroundColor: theme.scaffoldBackgroundColor,
         appBar: AppBar(
           backgroundColor: Colors.transparent,
           elevation: 0,
           leading: IconButton(
             tooltip: 'Back',
-            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
+            icon: Icon(Icons.arrow_back_ios_new_rounded, color: textColor),
             onPressed: () {
-              // يكفي pop للرجوع للترحيب بما أننا جئنا من هناك
               Navigator.pop(context);
-              // أو لفرض الرجوع دائمًا للترحيب:
-              // Navigator.pushReplacementNamed(context, WelcomeScreen.route);
             },
           ),
-          title: const Text('Create account',
-              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+          title: Text('Create account',
+              style: TextStyle(color: textColor, fontWeight: FontWeight.w700)),
           centerTitle: true,
         ),
         body: SafeArea(
@@ -113,19 +131,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // ===== Form Card =====
+                      // ===== Form Card (Theme Aware) =====
                       Container(
                         width: double.infinity,
                         decoration: BoxDecoration(
-                          color: _kCard,
-                          borderRadius: BorderRadius.circular(18),
-                          border: const Border.fromBorderSide(BorderSide(color: _kStroke)),
+                          color: cardBg,
+                          borderRadius: BorderRadius.circular(_kRadius),
+                          border: Border.fromBorderSide(BorderSide(color: cardStrokeColor)),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.25),
-                              blurRadius: 24,
-                              spreadRadius: -18,
-                              offset: const Offset(0, 12),
+                              color: Colors.black.withOpacity(isDark ? 0.25 : 0.10),
+                              blurRadius: 18,
+                              spreadRadius: isDark ? -10 : 0,
+                              offset: const Offset(0, 10),
                             ),
                           ],
                         ),
@@ -135,12 +153,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Align(
+                              Align(
                                 alignment: Alignment.centerLeft,
                                 child: Text(
                                   'Let’s get you started',
                                   style: TextStyle(
-                                    color: _kTextSub,
+                                    color: subtleColor,
                                     fontSize: 13,
                                     fontWeight: FontWeight.w700,
                                   ),
@@ -150,8 +168,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
                               TextFormField(
                                 controller: _email,
-                                style: const TextStyle(color: _kText),
-                                decoration: _input('Email address', icon: Icons.email_outlined),
+                                style: TextStyle(color: textColor),
+                                decoration: _input(context, 'Email address', icon: Icons.email_outlined),
                                 keyboardType: TextInputType.emailAddress,
                                 validator: (v) =>
                                 (v == null || !v.contains('@')) ? 'Enter a valid email' : null,
@@ -160,13 +178,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
                               TextFormField(
                                 controller: _password,
-                                style: const TextStyle(color: _kText),
-                                decoration: _input('Password', icon: Icons.lock_outline).copyWith(
+                                style: TextStyle(color: textColor),
+                                decoration: _input(context, 'Password', icon: Icons.lock_outline).copyWith(
                                   suffixIcon: IconButton(
                                     onPressed: () => setState(() => _obscure = !_obscure),
                                     icon: Icon(
                                       _obscure ? Icons.visibility : Icons.visibility_off,
-                                      color: _kTextSub,
+                                      color: subtleColor,
                                     ),
                                   ),
                                 ),
@@ -178,13 +196,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
                               TextFormField(
                                 controller: _confirm,
-                                style: const TextStyle(color: _kText),
-                                decoration: _input('Confirm password', icon: Icons.lock_person_outlined).copyWith(
+                                style: TextStyle(color: textColor),
+                                decoration: _input(context, 'Confirm password', icon: Icons.lock_person_outlined).copyWith(
                                   suffixIcon: IconButton(
                                     onPressed: () => setState(() => _obscure2 = !_obscure2),
                                     icon: Icon(
                                       _obscure2 ? Icons.visibility : Icons.visibility_off,
-                                      color: _kTextSub,
+                                      color: subtleColor,
                                     ),
                                   ),
                                 ),
@@ -200,7 +218,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                   width: double.infinity,
                                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                                   decoration: BoxDecoration(
-                                    color: Colors.red.withOpacity(.10),
+                                    color: Colors.red.withOpacity(isDark ? .10 : .05),
                                     borderRadius: BorderRadius.circular(12),
                                     border: Border.all(color: Colors.redAccent),
                                   ),
@@ -211,7 +229,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                       const SizedBox(width: 8),
                                       Expanded(
                                         child: Text(_error!,
-                                            style: const TextStyle(color: _kText, fontSize: 13)),
+                                            style: TextStyle(color: textColor, fontSize: 13)),
                                       ),
                                     ],
                                   ),
@@ -225,7 +243,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 child: FilledButton(
                                   onPressed: _loading ? null : _submit,
                                   style: FilledButton.styleFrom(
-                                    backgroundColor: _kAccent,
+                                    backgroundColor: accentColor,
                                     foregroundColor: Colors.white,
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(14),
@@ -249,9 +267,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 onPressed: _loading
                                     ? null
                                     : () => Navigator.pushReplacementNamed(context, '/login'),
-                                child: const Text(
+                                child: Text(
                                   'Already have an account? Log in',
-                                  style: TextStyle(color: _kTextSub, fontWeight: FontWeight.w600),
+                                  style: TextStyle(color: subtleColor, fontWeight: FontWeight.w600),
                                 ),
                               ),
                             ],

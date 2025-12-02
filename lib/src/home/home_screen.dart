@@ -1,8 +1,8 @@
-// ================== Home Screen (الهوم الرئيسية مع التحيّة + البلاطات + نتائج البحث) ==================
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 
 import '../auth/login_screen.dart';
 import '../ocr/scan_receipt_page.dart';
@@ -23,14 +23,11 @@ import '../common/widgets/expiry_progress.dart';
 
 import 'dart:math' as math;
 
-// ===== ألوان عامة نستخدمها في الهوم =====
-const Color _kBgDark   = Color(0xFF18102F);   // زي ما هو
+// ===== ألوان عامة نستخدمها في الهوم (تم تحويلها لثوابت ديناميكية) =====
 const Color _kGrad1    = Color(0xFF9B5CFF);   // Violet أفتح ومريح
 const Color _kGrad2    = Color(0xFF6C3EFF);   // البنفسجي الأساسي
 const Color _kGrad3    = Color(0xFFC58CFF);   // Lavender وردي ناعم بدل الأزرق
-const Color _kCardDark = Color(0xFF2B2048);   // كروت Expiring
-const Color _kTextDim  = Colors.white70;
-// تدرّج الهيدر العلوي
+// تدرّج الهيدر العلوي (سيتم تعويضه بتدرج ديناميكي)
 const LinearGradient kHeaderGradient = LinearGradient(
   colors: [Color(0xFF1A0B3A), Color(0xFF0E0722)],
   begin: Alignment.topLeft,
@@ -38,16 +35,15 @@ const LinearGradient kHeaderGradient = LinearGradient(
 );
 
 
-
 // === إعدادات ثابتة للمقاسات ===
-const double _kHeaderHeight = 240;   // ارتفاع الهيدر
-const double _kTilesGap     = 12;    // المسافة بين البلاطات
-const double _kColGap       = 12;    // المسافة بين عمودي Bill/Warranty
-const double _kTilesYOffset = -6;    // تعديل بسيط لرفع البلاطات لفوق
+const double _kHeaderHeight = 240;
+const double _kTilesGap     = 12;
+const double _kColGap       = 12;
+const double _kTilesYOffset = -6;
 
 // تحكم سريع بالمقاسات (نسب الارتفاع بالنسبة للعرض)
-const double kRowTileAspect   = 0.66; // ارتفاع مربعات Bill/Warranty = عرضها * هذا الرقم
-const double kQuickTileAspect = 0.68; // ارتفاع Quick Add             = عرضها * هذا الرقم
+const double kRowTileAspect   = 0.66;
+const double kQuickTileAspect = 0.68;
 
 // ================== الـ Widget الرئيسي للهوم ==================
 class HomeContent extends StatefulWidget {
@@ -84,7 +80,14 @@ class _HomeContentState extends State<HomeContent> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final user = FirebaseAuth.instance.currentUser;
+    final accentColor = theme.primaryColor;
+
+    // الألوان المخصصة للخلفية والكروت
+    final cardBgColor = theme.cardColor;
+    final bgColor = theme.scaffoldBackgroundColor; // الخلفية الرئيسية
 
     // === حسابات مقاسات البلاطات مرّة واحدة ===
     final screenW   = MediaQuery.of(context).size.width;
@@ -110,12 +113,9 @@ class _HomeContentState extends State<HomeContent> {
       child: Directionality(
         textDirection: ui.TextDirection.ltr, // نخلي الهوم LTR عشان التصميم
         child: Scaffold(
-          backgroundColor: Theme.of(context).colorScheme.background,        // الخلفية الغامقة الأصلية للهوم
+          // *** الإصلاح: استخدام خلفية الثيم (ستكون بيضاء في Light Mode) ***
+          backgroundColor: bgColor,
           resizeToAvoidBottomInset: true,   // عشان ما يغطي الكيبورد المحتوى
-
-          // ملاحظة مهمة:
-          // ما عندنا bottomNavigationBar هنا، البار السفلي صار مسؤولية AppShell بس 👇
-          // AppShell يغير بين Home / Warranties / Bills
 
           body: Stack(
             clipBehavior: Clip.none,
@@ -163,7 +163,7 @@ class _HomeContentState extends State<HomeContent> {
                               title: 'Bill',
                               subtitle: 'Add Bill',
                               icon: Icons.receipt_long_rounded,
-                              gradient: const [_kGrad3, _kGrad1],
+                              accentColor: accentColor,
                               onTap: () => Navigator.of(context, rootNavigator: true)
                                   .push(MaterialPageRoute(builder: (_) => const AddBillPage())),
                             ),
@@ -176,7 +176,7 @@ class _HomeContentState extends State<HomeContent> {
                               title: 'Warranty',
                               subtitle: 'Add Warranty',
                               icon: Icons.verified_user_rounded,
-                              gradient: const [_kGrad3, _kGrad1],
+                              accentColor: accentColor,
                               onTap: () => Navigator.of(context, rootNavigator: true).push(
                                 MaterialPageRoute(builder: (_) => const AddWarrantyPage(
                                   billId: null, defaultStartDate: null, defaultEndDate: null,
@@ -195,7 +195,7 @@ class _HomeContentState extends State<HomeContent> {
                           title: 'Quick Add',
                           subtitle: 'OCR',
                           icon: Icons.document_scanner_outlined,
-                          gradient: const [_kGrad1, _kGrad2],
+                          accentColor: accentColor,
                           onTap: () => Navigator.of(context, rootNavigator: true)
                               .push(MaterialPageRoute(builder: (_) => const ScanReceiptPage())),
                         ),
@@ -219,6 +219,8 @@ class _HomeContentState extends State<HomeContent> {
                         _ExpiringMixed3(
                           userId: FirebaseAuth.instance.currentUser?.uid,
                           query: _searchCtrl.text,
+                          cardBgColor: cardBgColor,
+                          textColor: theme.textTheme.bodyMedium!.color!,
                         ),
                         const SizedBox(height: 16),
                       ],
@@ -239,6 +241,10 @@ class _HomeContentState extends State<HomeContent> {
                       _searchFocus.unfocus();
                       setState(() {});
                     },
+                    cardBgColor: cardBgColor,
+                    bgColor: bgColor,
+                    textColor: theme.textTheme.bodyMedium!.color!,
+                    dimColor: theme.hintColor,
                   ),
                 ),
             ],
@@ -279,11 +285,35 @@ class _Header extends StatelessWidget {
     required this.onSearchSubmitted,
   });
 
+  // تدرج ديناميكي للهيدر
+  LinearGradient _headerGradient(BuildContext context, bool isDark, Color accentColor) {
+    if (isDark) {
+      return const LinearGradient(
+        colors: [Color(0xFF1A0B3A), Color(0xFF0E0722)],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      );
+    } else {
+      // Light Mode: خلفية فاتحة جداً مائلة للأرجواني
+      return LinearGradient(
+        colors: [accentColor.withOpacity(0.08), accentColor.withOpacity(0.02)],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final accentColor = theme.primaryColor;
+    final textColor = theme.textTheme.bodyMedium!.color!;
+    final dimColor = isDark ? Colors.white70 : Colors.black54;
+
     return Container(
       height: _kHeaderHeight,
-      decoration: const BoxDecoration(gradient: kHeaderGradient),
+      decoration: BoxDecoration(gradient: _headerGradient(context, isDark, accentColor)),
       child: SafeArea(
         bottom: false,
         child: Padding(
@@ -303,12 +333,12 @@ class _Header extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text('Hello,', style: TextStyle(color: _kTextDim, fontSize: 14)),
+                              Text('Hello,', style: TextStyle(color: dimColor, fontSize: 14)),
                               Text(
                                 name,
                                 maxLines: 1, overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                    color: Colors.white, fontSize: 20, fontWeight: FontWeight.w700),
+                                style: TextStyle(
+                                    color: textColor, fontSize: 20, fontWeight: FontWeight.w700),
                               ),
                             ],
                           ),
@@ -320,14 +350,14 @@ class _Header extends StatelessWidget {
                   IconButton(
                     tooltip: 'Notifications',
                     onPressed: onNotifications,
-                    icon: const Icon(Icons.notifications_none_rounded, color: Colors.white),
+                    icon: Icon(Icons.notifications_none_rounded, color: textColor),
                   ),
                   const SizedBox(width: 4),
                   // زر تسجيل الخروج
                   IconButton(
                     tooltip: 'Sign out',
                     onPressed: onLogout,
-                    icon: const Icon(Icons.logout, color: Colors.white),
+                    icon: Icon(Icons.logout, color: textColor),
                   ),
                 ],
               ),
@@ -336,9 +366,11 @@ class _Header extends StatelessWidget {
               _SearchBar(
                 controller: searchCtrl,
                 focusNode: searchFocus,
-                hint: 'Search by store name ...',
+                hint: 'Search bills or warranties...',
                 onChanged: onSearchChanged,
                 onSubmitted: onSearchSubmitted,
+                accentColor: accentColor,
+                isDark: isDark,
               ),
             ],
           ),
@@ -355,6 +387,8 @@ class _SearchBar extends StatelessWidget {
   final String hint;
   final ValueChanged<String>? onChanged;
   final ValueChanged<String>? onSubmitted;
+  final Color accentColor;
+  final bool isDark;
 
   const _SearchBar({
     required this.controller,
@@ -362,26 +396,50 @@ class _SearchBar extends StatelessWidget {
     required this.hint,
     this.onChanged,
     this.onSubmitted,
+    required this.accentColor,
+    required this.isDark,
   });
+
+  // تدرج شريط البحث
+  LinearGradient _searchGradient(Color accentColor) {
+    if (isDark) {
+      return LinearGradient(
+        colors: [_kGrad1, _kGrad3],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      );
+    } else {
+      // Light Mode: خلفية بيضاء صلبة (أو رمادية فاتحة)
+      return const LinearGradient(colors: [Colors.white, Colors.white]);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    // ألوان الشريط في Light Mode
+    final fgColor = isDark ? Colors.white : Colors.black87;
+    final hintColor = isDark ? Colors.white70 : Colors.black54;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
-        gradient: const LinearGradient(
-          colors: [_kGrad1, _kGrad3],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+        gradient: _searchGradient(accentColor),
+        // حدود صريحة في Light Mode
+        border: Border.all(
+          color: isDark ? Colors.transparent : Colors.black.withOpacity(0.1),
         ),
         boxShadow: [
-          BoxShadow(color: _kGrad2.withOpacity(0.45), blurRadius: 16, offset: const Offset(0, 6)),
+          BoxShadow(
+            color: isDark ? _kGrad2.withOpacity(0.45) : Colors.black.withOpacity(0.1),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
         ],
       ),
       child: Row(
         children: [
-          const Icon(Icons.search, color: Colors.white, size: 22),
+          Icon(Icons.search, color: fgColor, size: 22),
           const SizedBox(width: 8),
           Expanded(
             child: TextField(
@@ -390,15 +448,15 @@ class _SearchBar extends StatelessWidget {
               onChanged: onChanged,
               onSubmitted: onSubmitted,
               onTapOutside: (_) => focusNode?.unfocus(),
-              style: const TextStyle(color: Colors.white, fontSize: 16),
-              cursorColor: Colors.white,
+              style: TextStyle(color: fgColor, fontSize: 16),
+              cursorColor: accentColor,
               textInputAction: TextInputAction.search,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 hintText: 'Search bills or warranties...',
-                hintStyle: TextStyle(color: Colors.white70),
+                hintStyle: TextStyle(color: hintColor),
                 border: InputBorder.none,
                 isDense: true,
-                contentPadding: EdgeInsets.symmetric(vertical: 12),
+                contentPadding: const EdgeInsets.symmetric(vertical: 12),
               ),
             ),
           ),
@@ -410,7 +468,7 @@ class _SearchBar extends StatelessWidget {
                 controller.clear();
                 onChanged?.call('');
               },
-              icon: const Icon(Icons.close_rounded, color: Colors.white),
+              icon: Icon(Icons.close_rounded, color: fgColor),
             ),
         ],
       ),
@@ -423,19 +481,21 @@ class _ActionMiniTile extends StatelessWidget {
   final String title;
   final String subtitle;
   final IconData icon;
-  final List<Color> gradient;
   final VoidCallback onTap;
+  final Color accentColor;
 
   const _ActionMiniTile({
     required this.title,
     required this.subtitle,
     required this.icon,
-    required this.gradient,
     required this.onTap,
+    required this.accentColor,
   });
 
   @override
   Widget build(BuildContext context) {
+    final gradient = [_kGrad3, _kGrad1]; // ثابت في كلا الوضعين للحفاظ على التباين
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(18),
       child: Material(
@@ -485,19 +545,21 @@ class _ActionRectWide extends StatelessWidget {
   final String title;
   final String subtitle;
   final IconData icon;
-  final List<Color> gradient;
   final VoidCallback onTap;
+  final Color accentColor;
 
   const _ActionRectWide({
     required this.title,
     required this.subtitle,
     required this.icon,
-    required this.gradient,
     required this.onTap,
+    required this.accentColor,
   });
 
   @override
   Widget build(BuildContext context) {
+    final gradient = [_kGrad1, _kGrad2]; // ثابت في كلا الوضعين
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(22),
       child: Material(
@@ -563,6 +625,7 @@ class _ActionRectWide extends StatelessWidget {
 
 // ======= أفاتارات (صورة المستخدم بالأيموجي) =======
 const Map<String, List<dynamic>> _kAvatarPresets = {
+  // ... (تم حذف الـ Map لتقليل حجم الكود، لكنها تظل متاحة في الكود الكامل)
   'fox_purple':     ['🦊', [Color(0xFF6A73FF), Color(0xFFE6E9FF)]],
   'panda_blue':     ['🐼', [Color(0xFF38BDF8), Color(0xFFD1FAFF)]],
   'cat_pink':       ['🐱', [Color(0xFFF472B6), Color(0xFFFCE7F3)]],
@@ -587,16 +650,19 @@ class _ProfileAvatar extends StatelessWidget {
 
   // افاتار افتراضي بحرف من الاسم لو ما فيه إعدادات
   Widget _fallbackCircle(BuildContext context, String initials) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accentColor = Theme.of(context).primaryColor;
+
     return Container(
       width: 42, height: 42,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: Colors.white.withOpacity(0.9),
+        color: isDark ? Colors.white.withOpacity(0.9) : accentColor, // خلفية ملونة في Light Mode
         boxShadow: [BoxShadow(blurRadius: 10, color: Colors.black.withOpacity(0.08), offset: Offset(0, 2))],
       ),
       alignment: Alignment.center,
       child: Text(initials, style: Theme.of(context).textTheme.titleMedium?.copyWith(
-        color: Colors.black87, fontWeight: FontWeight.w700,
+        color: isDark ? Colors.black87 : Colors.white, fontWeight: FontWeight.w700,
       )),
     );
   }
@@ -650,7 +716,31 @@ class _ProfileAvatar extends StatelessWidget {
 class _ExpiringMixed3 extends StatelessWidget {
   final String? userId;
   final String query;
-  const _ExpiringMixed3({required this.userId, required this.query});
+  final Color cardBgColor;
+  final Color textColor;
+
+  const _ExpiringMixed3({required this.userId, required this.query, required this.cardBgColor, required this.textColor});
+
+  // دالة مساعدة لحساب رسالة الحالة (Expires today, etc.)
+  String _getExpiryStatusLabel(DateTime expiry, bool isWarranty) {
+    final today = DateTime.now();
+    final expiryOnly = DateTime(expiry.year, expiry.month, expiry.day);
+    final diff = expiryOnly.difference(DateTime(today.year, today.month, today.day)).inDays;
+
+    if (diff < 0) {
+      return "Expired";
+    } else if (diff == 0) {
+      return "Expires today";
+    } else if (diff == 1) {
+      return "Expires in 1 day";
+    } else if (diff <= 7) {
+      return "Expires in $diff days";
+    } else if (isWarranty && diff <= 30) {
+      return "Expires this month";
+    } else {
+      return "Active";
+    }
+  }
 
   String _fmt(DateTime dt) =>
       '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
@@ -687,6 +777,9 @@ class _ExpiringMixed3 extends StatelessWidget {
     // نجيب آخر 200 فاتورة وأقصى 300 ضمان
     final billsStream = billsBase.orderBy('created_at', descending: true).limit(200).snapshots();
     final warrStream  = warrBase.limit(300).snapshots();
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final dimColor = isDark ? Colors.white70 : Colors.black54;
 
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: billsStream,
@@ -771,14 +864,14 @@ class _ExpiringMixed3 extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text('Expiring soon',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Colors.white)),
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(color: textColor)),
                   const SizedBox(height: 8),
                   Container(
-                    decoration: BoxDecoration(color: _kCardDark, borderRadius: BorderRadius.circular(12)),
+                    decoration: BoxDecoration(color: cardBgColor, borderRadius: BorderRadius.circular(12)),
                     padding: const EdgeInsets.all(16),
                     child: Text(
                       q.isEmpty ? 'No items with deadlines.' : 'No results for "$q".',
-                      style: const TextStyle(color: Colors.white70),
+                      style: TextStyle(color: dimColor),
                     ),
                   ),
                 ],
@@ -799,7 +892,7 @@ class _ExpiringMixed3 extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text('Expiring soon',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Colors.white)),
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(color: textColor)),
                 const SizedBox(height: 8),
                 ...selected.map((e) {
                   final type    = e['type'] as String;
@@ -821,9 +914,12 @@ class _ExpiringMixed3 extends StatelessWidget {
                       (e['purchase'] as DateTime?) ??
                       DateTime.now();
 
+                  // رسالة الحالة التي تم إضافتها
+                  final expiryStatus = _getExpiryStatusLabel(expiry, type == 'warranty');
+
                   return Container(
                     margin: const EdgeInsets.only(bottom: 10),
-                    decoration: BoxDecoration(color: _kCardDark, borderRadius: BorderRadius.circular(12)),
+                    decoration: BoxDecoration(color: cardBgColor, borderRadius: BorderRadius.circular(12)),
                     child: MediaQuery( // نتحكم بتكبير النص داخل البلاطة بس
                       data: MediaQuery.of(context).copyWith(
                         textScaleFactor: MediaQuery.textScaleFactorOf(context).clamp(1.0, 1.25),
@@ -832,27 +928,27 @@ class _ExpiringMixed3 extends StatelessWidget {
                         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                         isThreeLine: true,
                         minVerticalPadding: 6,
-                        leading: Icon(leadingIcon, color: Colors.white70),
+                        leading: Icon(leadingIcon, color: dimColor),
                         title: Row(
                           children: [
                             Expanded(child: Text(e['title'] as String,
                                 maxLines: 1, overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(color: Colors.white))),
+                                style: TextStyle(color: textColor))),
                             if (kindLabel.isNotEmpty)
                               Container(
                                 margin: const EdgeInsets.only(left: 8),
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                 decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.08),
+                                  color: isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.05),
                                   borderRadius: BorderRadius.circular(10),
                                 ),
-                                child: Text(kindLabel, style: const TextStyle(fontSize: 11, color: Colors.white70)),
+                                child: Text(kindLabel, style: TextStyle(fontSize: 11, color: dimColor)),
                               ),
                           ],
                         ),
                         subtitle: Text(
                           (e['subtitle'] as String?)?.isEmpty == true ? '—' : (e['subtitle'] as String? ?? '—'),
-                          maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70),
+                          maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: dimColor),
                         ),
                         // ===== يمين: التاريخ + شريط التقدّم =====
                         trailing: ConstrainedBox(
@@ -871,13 +967,27 @@ class _ExpiringMixed3 extends StatelessWidget {
                               mainAxisSize: MainAxisSize.min,
                               crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
+                                // نص التاريخ
                                 Text(
                                   _fmt(expiry),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(color: Colors.white70),
+                                  style: TextStyle(color: dimColor),
                                 ),
                                 const SizedBox(height: 6),
+                                // رسالة الانتهاء
+                                Text(
+                                  expiryStatus,
+                                  style: TextStyle(
+                                    color: expiryStatus == "Expired"
+                                        ? Colors.redAccent
+                                        : dimColor,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                // شريط التقدم
                                 ExpiryProgress(
                                   startDate: startForBar,
                                   endDate:   expiry,
@@ -887,7 +997,7 @@ class _ExpiringMixed3 extends StatelessWidget {
 
                                   dense:     true,
                                   showTitle: false,         // نخفي العنوان شكلياً فقط
-                                  showStatus: true,
+                                  showStatus: false, // تم إيقاف عرض الحالة التلقائي لتجنب التعارض
                                   showInMonths: (type == 'warranty'),
                                 ),
 
@@ -944,18 +1054,27 @@ class _SearchResultsPanel extends StatelessWidget {
   final String query;
   final String? userId;
   final VoidCallback onClose;
+  final Color cardBgColor;
+  final Color bgColor;
+  final Color textColor;
+  final Color dimColor;
 
   const _SearchResultsPanel({
     required this.query,
     required this.userId,
     required this.onClose,
+    required this.cardBgColor,
+    required this.bgColor,
+    required this.textColor,
+    required this.dimColor,
   });
 
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom; // ارتفاع الكيبورد لو ظاهر
     return Material(
-      color: _kBgDark.withOpacity(0.94), // طبقة شبه شفافة فوق المحتوى
+      // استخدام لون الخلفية بصبغة خفيفة
+      color: bgColor.withOpacity(0.94),
       child: SafeArea(
         top: false,
         bottom: false,
@@ -965,17 +1084,17 @@ class _SearchResultsPanel extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  const Text('Results', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                  Text('Results', style: TextStyle(color: dimColor, fontSize: 12)),
                   const Spacer(),
                   IconButton(
                     tooltip: 'Close',
                     onPressed: onClose,
-                    icon: const Icon(Icons.close_rounded, color: Colors.white70),
+                    icon: Icon(Icons.close_rounded, color: dimColor),
                   )
                 ],
               ),
               const SizedBox(height: 4),
-              Expanded(child: _LiveSearchList(query: query, userId: userId)),
+              Expanded(child: _LiveSearchList(query: query, userId: userId, cardBgColor: cardBgColor, textColor: textColor, dimColor: dimColor,)),
               SizedBox(height: bottomInset), // نخلي space تحت قد الكيبورد
             ],
           ),
@@ -989,7 +1108,11 @@ class _SearchResultsPanel extends StatelessWidget {
 class _LiveSearchList extends StatelessWidget {
   final String query;
   final String? userId;
-  const _LiveSearchList({required this.query, required this.userId});
+  final Color cardBgColor;
+  final Color textColor;
+  final Color dimColor;
+
+  const _LiveSearchList({required this.query, required this.userId, required this.cardBgColor, required this.textColor, required this.dimColor});
 
   @override
   Widget build(BuildContext context) {
@@ -1052,8 +1175,8 @@ class _LiveSearchList extends StatelessWidget {
             }
 
             if (out.isEmpty) {
-              return const Center(
-                child: Text('No results', style: TextStyle(color: Colors.white70)),
+              return Center(
+                child: Text('No results', style: TextStyle(color: dimColor)),
               );
             }
 
@@ -1066,16 +1189,16 @@ class _LiveSearchList extends StatelessWidget {
               itemBuilder: (context, i) {
                 final it = out[i];
                 return Container(
-                  decoration: BoxDecoration(color: _kCardDark, borderRadius: BorderRadius.circular(12)),
+                  decoration: BoxDecoration(color: cardBgColor, borderRadius: BorderRadius.circular(12)),
                   child: ListTile(
                     leading: Icon(
                       it.isBill ? Icons.receipt_long_rounded : Icons.verified_user_rounded,
-                      color: Colors.white70,
+                      color: dimColor,
                     ),
                     title: Text(it.title, maxLines: 1, overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: Colors.white)),
+                        style: TextStyle(color: textColor)),
                     subtitle: Text(it.subtitle, maxLines: 1, overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: Colors.white70)),
+                        style: TextStyle(color: dimColor)),
                     onTap: () {
                       if (it.isBill) {
                         Navigator.of(context, rootNavigator: true).push(

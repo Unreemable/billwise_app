@@ -1,5 +1,3 @@
-// ======================= BILL DETAIL PAGE ===========================
-
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -8,6 +6,7 @@ import 'package:intl/intl.dart';
 
 import '../../common/models.dart';
 import '../../common/widgets/expiry_progress.dart';
+import './add_bill_page.dart'; // نحتاج هذه الصفحة للتعديل
 
 const List<String> _kMonthNames = [
   'January','February','March','April','May','June',
@@ -134,11 +133,14 @@ class _BillDetailPageState extends State<BillDetailPage> {
 
   Future<void> _openEditSheet() async {
     if (_d.id == null) return;
+    final theme = Theme.of(context);
+    final cardBg = theme.cardColor;
 
     final result = await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
+      backgroundColor: cardBg,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -194,6 +196,9 @@ class _BillDetailPageState extends State<BillDetailPage> {
     if (_receiptPath == null) {
       return const SizedBox.shrink();
     }
+    final theme = Theme.of(context);
+    final textColor = theme.textTheme.titleSmall!.color!;
+    final accentColor = theme.primaryColor;
 
     final isNetwork = _receiptPath!.startsWith('http');
 
@@ -202,7 +207,7 @@ class _BillDetailPageState extends State<BillDetailPage> {
       children: [
         const SizedBox(height: 8),
         Text('Receipt image',
-            style: Theme.of(context).textTheme.titleSmall),
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(color: textColor)),
         const SizedBox(height: 8),
         GestureDetector(
           onTap: _openFullScreenReceipt,
@@ -215,8 +220,8 @@ class _BillDetailPageState extends State<BillDetailPage> {
         ),
         TextButton.icon(
           onPressed: _openFullScreenReceipt,
-          icon: const Icon(Icons.open_in_full),
-          label: const Text('Open'),
+          icon: Icon(Icons.open_in_full, color: accentColor),
+          label: Text('Open', style: TextStyle(color: accentColor)),
         ),
       ],
     );
@@ -225,11 +230,14 @@ class _BillDetailPageState extends State<BillDetailPage> {
   void _openFullScreenReceipt() {
     if (_receiptPath == null) return;
     final isNetwork = _receiptPath!.startsWith('http');
+    final theme = Theme.of(context);
+    final cardBg = theme.cardColor;
 
     showDialog(
       context: context,
       builder: (_) => Dialog(
         insetPadding: const EdgeInsets.all(12),
+        backgroundColor: cardBg,
         child: InteractiveViewer(
           minScale: 0.5,
           maxScale: 4,
@@ -246,28 +254,62 @@ class _BillDetailPageState extends State<BillDetailPage> {
           ? '—'
           : '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
+  // دالة مساعدة لإنشاء تدرج الـ AppBar
+  LinearGradient _headerGradient(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final accentColor = theme.primaryColor;
+
+    if (isDark) {
+      // تدرج داكن (مطابق للـ Header الأصلي)
+      return const LinearGradient(
+        colors: [Color(0xFF1B0E3E), Color(0xFF0B0B1A)],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      );
+    } else {
+      // Light Mode: تدرج خفيف (مطابق لـ Scaffold)
+      return LinearGradient(
+        colors: [theme.scaffoldBackgroundColor, theme.scaffoldBackgroundColor],
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final textColor = theme.textTheme.bodyMedium!.color!;
+    final dimColor = theme.hintColor;
+    final cardBg = theme.cardColor;
+    final accentColor = theme.primaryColor;
+
+    // تثبيت ألوان البوكسات الداكنة في Dark Mode
+    final detailCardColor = isDark ? const Color(0xFF19142A) : cardBg;
+    final appBarFgColor = isDark ? Colors.white : textColor;
+
+
     return Directionality(
       textDirection: ui.TextDirection.ltr,
       child: Scaffold(
+        backgroundColor: theme.scaffoldBackgroundColor,
         appBar: AppBar(
           backgroundColor: Colors.transparent,
           elevation: 0,
-          foregroundColor: Colors.white,
+          foregroundColor: appBarFgColor,
           leading: IconButton(
             icon: const Icon(Icons.arrow_back_ios_new_rounded),
             onPressed: () => Navigator.of(context).pop(),
           ),
-          title: const Text('Bill'),
-          actions: const [_LogoStub()],
+          title: Text('Bill', style: TextStyle(color: appBarFgColor)),
+          actions: [
+            _LogoStub(textColor: appBarFgColor, dimColor: dimColor),
+          ],
           flexibleSpace: Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Color(0xFF1B0E3E), Color(0xFF0B0B1A)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
+            decoration: BoxDecoration(
+              gradient: _headerGradient(context),
             ),
           ),
         ),
@@ -276,7 +318,7 @@ class _BillDetailPageState extends State<BillDetailPage> {
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
           children: [
             Card(
-              color: const Color(0xFF19142A),
+              color: detailCardColor,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(18),
               ),
@@ -287,7 +329,7 @@ class _BillDetailPageState extends State<BillDetailPage> {
                   children: [
                     Row(
                         children: [
-                          const Icon(Icons.receipt_long, color: Colors.white70),
+                          Icon(Icons.receipt_long, color: dimColor),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Text(
@@ -295,7 +337,7 @@ class _BillDetailPageState extends State<BillDetailPage> {
                               style: Theme.of(context)
                                   .textTheme
                                   .titleMedium
-                                  ?.copyWith(color: Colors.white),
+                                  ?.copyWith(color: textColor),
                             ),
                           ),
                           if (_primaryEnd != null)
@@ -304,29 +346,29 @@ class _BillDetailPageState extends State<BillDetailPage> {
                     const SizedBox(height: 20),
 
                     if (_d.returnDeadline != null)
-                      _section(title: 'Return', start: _d.purchaseDate, end: _d.returnDeadline!, months: false),
+                      _section(context, title: 'Return', start: _d.purchaseDate, end: _d.returnDeadline!, months: false),
 
                     if (_d.exchangeDeadline != null) ...[
                       const SizedBox(height: 8),
-                      _section(title: 'Exchange', start: _d.purchaseDate, end: _d.exchangeDeadline!, months: false),
+                      _section(context, title: 'Exchange', start: _d.purchaseDate, end: _d.exchangeDeadline!, months: false),
                     ],
 
                     if (_d.warrantyExpiry != null) ...[
                       const SizedBox(height: 8),
-                      _section(title: 'Warranty', start: _d.purchaseDate, end: _d.warrantyExpiry!, months: true),
+                      _section(context, title: 'Warranty', start: _d.purchaseDate, end: _d.warrantyExpiry!, months: true),
                     ],
 
                     const SizedBox(height: 12),
 
-                    _kv('Product/Store', _d.product ?? '—'),
-                    _kv('Amount', _d.amount == null ? '—' : _money.format(_d.amount)),
-                    _kv('Purchase date', _ymd(_d.purchaseDate)),
+                    _kv(context, 'Product/Store', _d.product ?? '—'),
+                    _kv(context, 'Amount', _d.amount == null ? '—' : _money.format(_d.amount)),
+                    _kv(context, 'Purchase date', _ymd(_d.purchaseDate)),
                     if (_d.returnDeadline != null)
-                      _kv('Return deadline', _ymd(_d.returnDeadline)),
+                      _kv(context, 'Return deadline', _ymd(_d.returnDeadline)),
                     if (_d.exchangeDeadline != null)
-                      _kv('Exchange deadline', _ymd(_d.exchangeDeadline)),
+                      _kv(context, 'Exchange deadline', _ymd(_d.exchangeDeadline)),
                     if (_d.warrantyExpiry != null)
-                      _kv('Warranty expiry', _ymd(_d.warrantyExpiry)),
+                      _kv(context, 'Warranty expiry', _ymd(_d.warrantyExpiry)),
 
                     _receiptSection(),
                   ],
@@ -345,6 +387,10 @@ class _BillDetailPageState extends State<BillDetailPage> {
                   onPressed: _openEditSheet,
                   icon: const Icon(Icons.edit),
                   label: const Text('Edit'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: accentColor,
+                    foregroundColor: Colors.white,
+                  ),
                 ),
               ),
               const SizedBox(width: 12),
@@ -353,32 +399,39 @@ class _BillDetailPageState extends State<BillDetailPage> {
                   onPressed: _deleteBill,
                   icon: const Icon(Icons.delete),
                   label: const Text('Delete'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: theme.colorScheme.error,
+                    foregroundColor: Colors.white,
+                  ),
                 ),
               ),
             ],
           ),
         ),
 
-        backgroundColor: const Color(0xFF0E0A1C),
+        // تم إزالة backgroundColor الثابت
       ),
     );
   }
 
   Future<void> _deleteBill() async {
     if (_d.id == null) return;
+    final theme = Theme.of(context);
 
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Delete bill?'),
-        content: const Text('This action cannot be undone.'),
+        backgroundColor: theme.cardColor,
+        title: Text('Delete bill?', style: TextStyle(color: theme.textTheme.bodyMedium!.color)),
+        content: Text('This action cannot be undone.', style: TextStyle(color: theme.hintColor)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: Text('Cancel', style: TextStyle(color: theme.hintColor)),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(backgroundColor: theme.colorScheme.error),
             child: const Text('Delete'),
           ),
         ],
@@ -394,6 +447,7 @@ class _BillDetailPageState extends State<BillDetailPage> {
     }
   }
 }
+
 class EditBillSheet extends StatefulWidget {
   final BillDetails d;
   const EditBillSheet({super.key, required this.d});
@@ -437,29 +491,73 @@ class _EditBillSheetState extends State<EditBillSheet> {
 
   Future<void> pickDate(DateTime? initial, void Function(DateTime?) assign) async {
     final now = DateTime.now();
+    final theme = Theme.of(context);
+    final accentColor = theme.primaryColor;
+
     final picked = await showDatePicker(
       context: context,
       initialDate: initial ?? purchase,
       firstDate: DateTime(now.year - 10),
       lastDate: DateTime(now.year + 10),
+      builder: (context, child) {
+        return Theme(
+          data: theme.copyWith(
+            colorScheme: ColorScheme.light(primary: accentColor),
+          ),
+          child: child!,
+        );
+      },
     );
     if (picked != null) assign(DateTime(picked.year, picked.month, picked.day));
     setState(() {});
   }
 
-  Widget dateRow(String label, DateTime? value, VoidCallback onPick, {VoidCallback? onClear}) {
+  Widget dateRow(BuildContext context, String label, DateTime? value, VoidCallback onPick, {VoidCallback? onClear}) {
+    final theme = Theme.of(context);
+    final textColor = theme.textTheme.bodyMedium!.color!;
+    final dimColor = theme.hintColor;
+    final accentColor = theme.primaryColor;
+
     return Row(
       children: [
-        Expanded(child: Text('$label: ${value == null ? "—" : value.toString().split(" ").first}')),
-        IconButton(icon: const Icon(Icons.event), onPressed: onPick),
+        Expanded(child: Text(
+          '$label: ${value == null ? "—" : value.toString().split(" ").first}',
+          style: TextStyle(color: textColor),
+        )),
+        IconButton(icon: Icon(Icons.event, color: dimColor), onPressed: onPick),
         if (onClear != null)
-          IconButton(icon: const Icon(Icons.clear), onPressed: onClear),
+          IconButton(icon: Icon(Icons.clear, color: dimColor), onPressed: onClear),
       ],
+    );
+  }
+
+  InputDecoration _inputDecoration(BuildContext context, String label, IconData icon) {
+    final theme = Theme.of(context);
+    final textColor = theme.textTheme.bodyMedium!.color!;
+    final dimColor = theme.hintColor;
+    final accentColor = theme.primaryColor;
+
+    return InputDecoration(
+      labelText: label,
+      prefixIcon: Icon(icon, color: dimColor),
+      labelStyle: TextStyle(color: dimColor),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: theme.dividerColor),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: accentColor, width: 2),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final textColor = theme.textTheme.bodyMedium!.color!;
+    final accentColor = theme.primaryColor;
+
     return SingleChildScrollView(
       padding: EdgeInsets.only(
         left: 16,
@@ -470,47 +568,43 @@ class _EditBillSheetState extends State<EditBillSheet> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Edit bill', style: Theme.of(context).textTheme.titleLarge),
+          Text('Edit bill', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: textColor)),
           const SizedBox(height: 12),
 
           TextField(
             controller: titleCtrl,
-            decoration: const InputDecoration(
-              labelText: 'Title',
-              prefixIcon: Icon(Icons.text_fields),
-            ),
+            style: TextStyle(color: textColor),
+            decoration: _inputDecoration(context, 'Title', Icons.text_fields),
           ),
 
           const SizedBox(height: 8),
 
           TextField(
             controller: productCtrl,
-            decoration: const InputDecoration(
-              labelText: 'Product / Store',
-              prefixIcon: Icon(Icons.store),
-            ),
+            style: TextStyle(color: textColor),
+            decoration: _inputDecoration(context, 'Product / Store', Icons.store),
           ),
 
           const SizedBox(height: 8),
 
           TextField(
             controller: amountCtrl,
-            decoration: const InputDecoration(
-              labelText: 'Amount (SAR)',
-              prefixIcon: Icon(Icons.attach_money),
-            ),
+            style: TextStyle(color: textColor),
+            decoration: _inputDecoration(context, 'Amount (SAR)', Icons.attach_money),
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
           ),
 
           const SizedBox(height: 12),
 
           dateRow(
+            context,
             'Purchase date',
             purchase,
                 () => pickDate(purchase, (v) => purchase = v!),
           ),
 
           dateRow(
+            context,
             'Return deadline',
             ret,
                 () => pickDate(ret, (v) => ret = v),
@@ -518,6 +612,7 @@ class _EditBillSheetState extends State<EditBillSheet> {
           ),
 
           dateRow(
+            context,
             'Exchange deadline',
             exc,
                 () => pickDate(exc, (v) => exc = v),
@@ -540,6 +635,7 @@ class _EditBillSheetState extends State<EditBillSheet> {
                 'exc': exc,
               });
             },
+            style: FilledButton.styleFrom(backgroundColor: accentColor),
           ),
         ],
       ),
@@ -548,7 +644,9 @@ class _EditBillSheetState extends State<EditBillSheet> {
 }
 
 class _LogoStub extends StatelessWidget {
-  const _LogoStub();
+  final Color textColor;
+  final Color dimColor;
+  const _LogoStub({required this.textColor, required this.dimColor});
 
   @override
   Widget build(BuildContext context) {
@@ -557,42 +655,49 @@ class _LogoStub extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text('B', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Colors.white)),
-          Text('ill Wise', style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.white70)),
+          Text('B', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: textColor)),
+          Text('ill Wise', style: Theme.of(context).textTheme.labelSmall?.copyWith(color: dimColor)),
         ],
       ),
     );
   }
 }
 
-Widget _kv(String k, String v) => Padding(
-  padding: const EdgeInsets.only(bottom: 8),
-  child: Row(
-    children: [
-      SizedBox(
-        width: 160,
-        child: Text(k,
-            style: const TextStyle(
-              fontWeight: FontWeight.w600,
-              color: Colors.white,
-            )),
-      ),
-      Expanded(
-        child: Text(
-          v,
-          style: const TextStyle(color: Colors.white70),
-        ),
-      ),
-    ],
-  ),
-);
+Widget _kv(BuildContext context, String k, String v) {
+  final theme = Theme.of(context);
+  final textColor = theme.textTheme.bodyMedium!.color!;
+  final dimColor = theme.hintColor;
 
-Widget _section({
-  required String title,
-  required DateTime start,
-  required DateTime end,
-  required bool months,
-}) {
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: Row(
+      children: [
+        SizedBox(
+          width: 160,
+          child: Text(k,
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: textColor,
+              )),
+        ),
+        Expanded(
+          child: Text(
+            v,
+            style: TextStyle(color: dimColor),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+Widget _section(
+    BuildContext context,
+    {required String title,
+      required DateTime start,
+      required DateTime end,
+      required bool months}
+    ) {
   return ExpiryProgress(
     title: title,
     startDate: start,

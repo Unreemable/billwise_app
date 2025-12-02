@@ -21,18 +21,6 @@ class ScanReceiptPage extends StatefulWidget {
 }
 
 class _ScanReceiptPageState extends State<ScanReceiptPage> {
-  static const _bg = Color(0xFF0B0B2E);
-  static const _card = Color(0xFF171636);
-  static const _cardStroke = Color(0x1FFFFFFF);
-  static const _textDim = Color(0xFFBFC3D9);
-  static const _accent = Color(0xFF9B5CFF);
-  static const _secondaryBtn = Color(0xFF2C2B52);
-  static const _headerGrad = LinearGradient(
-    colors: [Color(0xFF0B0B2E), Color(0xFF21124C)],
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-  );
-
   File? _image;
   bool _processing = false;
   String? _error;
@@ -101,9 +89,6 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
 
       Map<String, dynamic>? prefill;
 
-      // ===============================
-      //      JSON SUCCESS BRANCH
-      // ===============================
       if (receipt != null) {
         methodUsed = 'json';
 
@@ -114,34 +99,22 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
               receipt.shopName!.trim().isEmpty)
               ? 'Receipt'
               : '${receipt.shopName} Purchase',
-
           'shop_name': receipt.shopName,
           'store': receipt.shopName,
           'total_amount': receipt.totalAmount,
           'amount': receipt.totalAmount,
           'currency': receipt.currency,
-
           'purchase_date': receipt.purchaseDate?.toIso8601String(),
           'return_deadline': receipt.returnDeadline?.toIso8601String(),
           'exchange_deadline': receipt.exchangeDeadline?.toIso8601String(),
-
-          // warranty
           'warrantyStart': receipt.purchaseDate?.toIso8601String(),
           'warrantyEnd': receipt.exchangeDeadline?.toIso8601String() ??
               receipt.returnDeadline?.toIso8601String(),
-
-          // 🟣 مسار الصورة عشان يروح مع الفاتورة والضمان
           'receiptPath': _image!.path,
-
           'rawText': null,
           'raw_source': 'gemini-ocr-json',
         };
-      }
-
-      // ===============================
-      //      TEXT FALLBACK BRANCH
-      // ===============================
-      else {
+      } else {
         final plain = await GeminiOcrService.I.ocrToText(
           processedBytes,
           mimeType: mime,
@@ -162,26 +135,19 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
               parsed.storeName!.trim().isEmpty)
               ? 'Receipt'
               : '${parsed.storeName} Purchase',
-
           'shop_name': parsed.storeName,
           'store': parsed.storeName,
           'total_amount': parsed.totalAmount,
           'amount': parsed.totalAmount,
-
           'purchase_date': parsed.purchaseDate?.toIso8601String(),
           'warrantyStart': parsed.warrantyStartDate?.toIso8601String(),
           'warrantyEnd': parsed.warrantyExpiryDate?.toIso8601String(),
-
           'receiptPath': _image!.path,
-
           'rawText': plain,
           'raw_source': 'gemini-ocr-text+parser',
         };
       }
 
-      // ===============================
-      //   ✅ التحقق إنها فعلاً فاتورة
-      // ===============================
       bool isProbablyBill = false;
       if (prefill != null) {
         final shop = (prefill['shop_name'] ?? prefill['store'] ?? '')
@@ -196,9 +162,7 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
       }
 
       if (!isProbablyBill) {
-        // 🔴 مو فاتورة → لا تروحين لصفحة AddBill وخلي المستخدم يعيد التصوير
-        errorMsg =
-        'This image does not look like a bill.\nPlease try again .';
+        errorMsg = 'This image does not look like a bill.\nPlease try again .';
         setState(() => _error = errorMsg);
         return;
       }
@@ -215,9 +179,8 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
 
       await Navigator.pushNamed(context, AddBillPage.route, arguments: args);
 
-// بعد الرجوع من AddBill / AddWarranty
       if (mounted) {
-        Navigator.popUntil(context, (r) => r.isFirst); // ← يرجّع للهوم
+        Navigator.popUntil(context, (r) => r.isFirst);
       }
     } catch (e) {
       errorMsg = e.toString();
@@ -239,38 +202,85 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
     }
   }
 
-  BoxDecoration _cardBox() => BoxDecoration(
-    color: _card,
-    borderRadius: BorderRadius.circular(16),
-    border: Border.all(color: _cardStroke),
-  );
+  BoxDecoration _cardBox(BuildContext context) {
+    final brightness = Theme.of(context).brightness;
+    if (brightness == Brightness.dark) {
+      return BoxDecoration(
+        color: const Color(0xFF171636),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0x33FFFFFF)),
+      );
+    } else {
+      return BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade300),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final brightness = Theme.of(context).brightness;
+
+    final textDim = brightness == Brightness.dark
+        ? Colors.white70
+        : Colors.grey.shade700;
+
+    final accent = Theme.of(context).colorScheme.primary;
+
+    final secondaryBtn = brightness == Brightness.dark
+        ? Colors.grey.shade700
+        : Colors.grey.shade300;
+
+    final cardBorderColor = brightness == Brightness.dark
+        ? const Color(0x33FFFFFF)
+        : Colors.grey.shade300;
+
+    final cardBackground = brightness == Brightness.dark
+        ? const Color(0xFF171636)
+        : Colors.white;
+
+    final imageContainerBg = brightness == Brightness.dark
+        ? const Color(0xFF202048)
+        : const Color(0xFFF3F3F8);
+
     final canRun = _image != null && !_processing;
 
     return Theme(
       data: Theme.of(context).copyWith(
-        scaffoldBackgroundColor: _bg,
-        appBarTheme: const AppBarTheme(
+        scaffoldBackgroundColor:
+        brightness == Brightness.dark ? const Color(0xFF0B0B2E) : Colors.white,
+        appBarTheme: AppBarTheme(
           backgroundColor: Colors.transparent,
-          foregroundColor: Colors.white,
+          foregroundColor: brightness == Brightness.dark ? Colors.white : Colors.black,
           elevation: 0,
         ),
-        textTheme: Theme.of(context)
-            .textTheme
-            .apply(bodyColor: Colors.white, displayColor: Colors.white),
+        textTheme: Theme.of(context).textTheme.apply(
+          bodyColor: brightness == Brightness.dark ? Colors.white : Colors.black,
+          displayColor: brightness == Brightness.dark ? Colors.white : Colors.black,
+        ),
       ),
       child: Scaffold(
         appBar: AppBar(
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                color: Colors.white),
+            icon: Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: brightness == Brightness.dark ? Colors.white : Colors.black,
+            ),
             onPressed: () => Navigator.maybePop(context),
           ),
           title: const Text('Quick Add'),
           flexibleSpace: Container(
-            decoration: const BoxDecoration(gradient: _headerGrad),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: brightness == Brightness.dark
+                    ? const [Color(0xFF0B0B2E), Color(0xFF21124C)]
+                    : const [Color(0xFFE0E0E0), Color(0xFFF8F8F8)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
           ),
         ),
         body: SafeArea(
@@ -279,28 +289,26 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
             children: [
               Container(
                 width: double.infinity,
-                decoration: _cardBox(),
+                decoration: _cardBox(context),
                 padding: const EdgeInsets.all(14),
                 child: AspectRatio(
                   aspectRatio: 16 / 9,
                   child: Container(
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(12),
-                      border:
-                      Border.all(color: Colors.white.withOpacity(0.12)),
-                      color: const Color(0xFF202048),
+                      border: Border.all(color: cardBorderColor.withOpacity(0.3)),
+                      color: imageContainerBg,
                     ),
                     child: Stack(
                       children: [
                         if (_image == null)
                           Center(
                             child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 16),
+                              padding: const EdgeInsets.symmetric(horizontal: 16),
                               child: Text(
                                 'Take a photo of the bill or select from gallery',
                                 textAlign: TextAlign.center,
-                                style: TextStyle(color: _textDim),
+                                style: TextStyle(color: textDim),
                               ),
                             ),
                           )
@@ -317,7 +325,9 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
                         if (_processing)
                           Container(
                             decoration: BoxDecoration(
-                              color: Colors.black.withOpacity(0.35),
+                              color: brightness == Brightness.dark
+                                  ? Colors.black.withOpacity(0.35)
+                                  : Colors.black.withOpacity(0.1),
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: const Center(
@@ -338,8 +348,7 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
                   decoration: BoxDecoration(
                     color: Colors.red.withOpacity(0.08),
                     borderRadius: BorderRadius.circular(12),
-                    border:
-                    Border.all(color: Colors.red.withOpacity(0.2)),
+                    border: Border.all(color: Colors.red.withOpacity(0.2)),
                   ),
                   child: Text(_error!, textAlign: TextAlign.center),
                 ),
@@ -352,8 +361,9 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
                   Expanded(
                     child: OutlinedButton.icon(
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        side: const BorderSide(color: _accent),
+                        foregroundColor:
+                        brightness == Brightness.dark ? Colors.white : Colors.black87,
+                        side: BorderSide(color: accent),
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(14),
@@ -368,7 +378,7 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
                   Expanded(
                     child: ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: _accent,
+                        backgroundColor: accent,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         shape: RoundedRectangleBorder(
@@ -389,7 +399,7 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
                 width: double.infinity,
                 child: ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: canRun ? _accent : _secondaryBtn,
+                    backgroundColor: canRun ? accent : secondaryBtn,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
@@ -401,15 +411,12 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
                       ? const SizedBox(
                     width: 18,
                     height: 18,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2, color: Colors.white),
+                    child:
+                    CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                   )
                       : const Icon(Icons.auto_fix_high),
-                  label: Text(
-                    _processing
-                        ? 'Recognizing…'
-                        : 'Recognize & Fill Fields',
-                  ),
+                  label:
+                  Text(_processing ? 'Recognizing…' : 'Recognize & Fill Fields'),
                 ),
               ),
             ],
@@ -419,11 +426,3 @@ class _ScanReceiptPageState extends State<ScanReceiptPage> {
     );
   }
 }
-
-
-
-
-
-
-
-

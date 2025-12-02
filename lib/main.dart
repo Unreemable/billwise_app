@@ -218,7 +218,8 @@ class _AppState extends State<App> {
       darkTheme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.dark,
-        scaffoldBackgroundColor: Colors.transparent,
+        // *** تم إصلاح هذا: يجب أن تكون الخلفية هي اللون الداكن، وليس شفافاً ***
+        scaffoldBackgroundColor: darkBg,
         canvasColor: Colors.transparent,
         cardColor: const Color(0x1AFFFFFF),
         colorScheme: ColorScheme.fromSeed(
@@ -235,6 +236,7 @@ class _AppState extends State<App> {
       themeMode: _themeMode,
 
       // الخلفية العامة الناعمة
+      // بما أن الـ Scaffold أصبح الآن معتماً في الوضع الداكن، فإنه سيغطي هذه الخلفية
       builder: (context, child) => const SoftPastelBackground(
         child: SizedBox.expand(child: ColoredBox(color: Colors.transparent)),
       ).copyWithChild(child ?? const SizedBox.shrink()),

@@ -7,22 +7,9 @@ import 'edit_profile_page.dart';
 
 import '../../main.dart'; // للوصول لحالة الثيم
 
-// ========= الألوان =========
-const LinearGradient kHeaderGradient = LinearGradient(
-  colors: [Color(0xFF5F33E1), Color(0xFF0B0A1C)],
-  begin: Alignment.topRight,
-  end: Alignment.bottomLeft,
-);
+// *** تم حذف جميع ثوابت الألوان الداكنة واستبدالها بـ Theme.of(context) ***
 
-const Color kBg      = Color(0xFF0E0B1F);
-const Color kCard    = Color(0xFF1A1530);
-const Color kStroke  = Color(0x22FFFFFF);
-const Color kText    = Color(0xFFFFFFFF);
-const Color kTextSub = Color(0x99FFFFFF);
-const Color kAccent  = Color(0xFF6A73FF);
-const Color kDanger  = Color(0xFFFF5252);
-
-// ====== نفس Presets المستخدمة في صفحة التعديل ======
+// ====== نفس Presets المستخدمة في صفحة التعديل (تبقى ثابتة) ======
 class _AvatarPreset {
   final String id;
   final String emoji;
@@ -82,23 +69,29 @@ class _ProfilePageState extends State<ProfilePage> {
   void _backupComingSoon() => _toast('Backup قادم قريبًا ✨');
 
   Future<void> _confirmResetData() async {
+    final theme = Theme.of(context);
+    final dangerColor = theme.colorScheme.error;
+    final cardBg = theme.cardColor;
+    final textColor = theme.textTheme.bodyMedium!.color!;
+    final textSub = theme.hintColor;
+
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: kCard,
+        backgroundColor: cardBg,
         surfaceTintColor: Colors.transparent,
-        title: const Text('Reset Data?', style: TextStyle(color: kText)),
-        content: const Text(
+        title: Text('Reset Data?', style: TextStyle(color: textColor)),
+        content: Text(
           'سيتم حذف جميع الفواتير والضمانات الخاصة بك. لا يمكن التراجع.',
-          style: TextStyle(color: kTextSub),
+          style: TextStyle(color: textSub),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: Text('Cancel', style: TextStyle(color: textSub))),
           FilledButton.tonal(
             onPressed: () => Navigator.pop(context, true),
             style: FilledButton.styleFrom(
-              backgroundColor: kDanger.withOpacity(.12),
-              foregroundColor: kDanger,
+              backgroundColor: dangerColor.withOpacity(.12),
+              foregroundColor: dangerColor,
             ),
             child: const Text('Delete'),
           ),
@@ -141,24 +134,29 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   void _contactUs() {
+    final theme = Theme.of(context);
+    final cardBg = theme.cardColor;
+    final textColor = theme.textTheme.bodyMedium!.color!;
+    final textSub = theme.hintColor;
+
     showModalBottomSheet(
       context: context,
       showDragHandle: true,
-      backgroundColor: kCard,
+      backgroundColor: cardBg,
       builder: (_) => Padding(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          children: const [
+          children: [
             ListTile(
-              leading: Icon(Icons.email_outlined, color: kText),
-              title: Text('Email', style: TextStyle(color: kText)),
-              subtitle: Text('support@billwise.app', style: TextStyle(color: kTextSub)),
+              leading: Icon(Icons.email_outlined, color: textColor),
+              title: Text('Email', style: TextStyle(color: textColor)),
+              subtitle: Text('support@billwise.app', style: TextStyle(color: textSub)),
             ),
             ListTile(
-              leading: Icon(Icons.chat_bubble_outline, color: kText),
-              title: Text('Feedback', style: TextStyle(color: kText)),
-              subtitle: Text('Tell us what to improve', style: TextStyle(color: kTextSub)),
+              leading: Icon(Icons.chat_bubble_outline, color: textColor),
+              title: Text('Feedback', style: TextStyle(color: textColor)),
+              subtitle: Text('Tell us what to improve', style: TextStyle(color: textSub)),
             ),
           ],
         ),
@@ -167,34 +165,43 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   void _showHelp() {
+    final theme = Theme.of(context);
+    final cardBg = theme.cardColor;
+    final textColor = theme.textTheme.bodyMedium!.color!;
+    final textSub = theme.hintColor;
+
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: kCard,
+        backgroundColor: cardBg,
         surfaceTintColor: Colors.transparent,
-        title: const Text('Help & FAQ', style: TextStyle(color: kText)),
-        content: const Text(
+        title: Text('Help & FAQ', style: TextStyle(color: textColor)),
+        content: Text(
           '• أضف فواتيرك وضماناتك لتتبع المواعيد.\n'
               '• استخدم OCR لقراءة البيانات من الفاتورة.\n'
               '• فعّل الإشعارات للتذكير بالاسترجاع أو الضمان.\n'
               '• قريبًا: النسخ الاحتياطي والتصدير.',
-          style: TextStyle(color: kTextSub),
+          style: TextStyle(color: textSub),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
+          TextButton(onPressed: () => Navigator.pop(context), child: Text('Close', style: TextStyle(color: textSub))),
         ],
       ),
     );
   }
 
   Widget _debugDiagnostics() {
+    final theme = Theme.of(context);
+    final textColor = theme.textTheme.bodyMedium!.color!;
+    final accentColor = theme.primaryColor;
+
     if (kReleaseMode) return const SizedBox.shrink();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 18),
-        const Text('Diagnostics',
-            style: TextStyle(color: kText, fontSize: 13, fontWeight: FontWeight.w700)),
+        Text('Diagnostics',
+            style: TextStyle(color: textColor, fontSize: 13, fontWeight: FontWeight.w700)),
         const SizedBox(height: 8),
         _SettingTile(
           icon: Icons.bug_report_outlined,
@@ -206,14 +213,42 @@ class _ProfilePageState extends State<ProfilePage> {
             FirebaseCrashlytics.instance.crash();
           },
           danger: true,
+          accentColor: accentColor,
         ),
       ],
     );
   }
 
+  // دالة مساعدة لإنشاء تدرج الـ AppBar
+  LinearGradient _headerGradient(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final accentColor = theme.primaryColor;
+
+    if (isDark) {
+      // تدرج داكن (تم التأكد من استخدامه)
+      return const LinearGradient(
+        colors: [Color(0xFF5F33E1), Color(0xFF0B0A1C)],
+        begin: Alignment.topRight,
+        end: Alignment.bottomLeft,
+      );
+    } else {
+      // Light Mode: تدرج خفيف (لون فاتح موحد أو تدرج خفيف)
+      return LinearGradient(
+        colors: [accentColor.withOpacity(0.10), theme.scaffoldBackgroundColor],
+        begin: Alignment.topRight,
+        end: Alignment.bottomLeft,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
+    final theme = Theme.of(context);
+    final textColor = theme.textTheme.bodyMedium!.color!;
+    final textSub = theme.hintColor;
+    final accentColor = theme.primaryColor;
 
     // 🔥 السويتش حق الثيم
     final appState = App.of(context);
@@ -224,13 +259,14 @@ class _ProfilePageState extends State<ProfilePage> {
       child: Stack(
         children: [
           Scaffold(
-            backgroundColor: kBg,
+            // استخدام خلفية الثيم
+            backgroundColor: theme.scaffoldBackgroundColor,
             appBar: AppBar(
-              foregroundColor: Colors.white,
+              foregroundColor: textColor,
               elevation: 0,
               backgroundColor: Colors.transparent,
               title: const Text('Profile'),
-              flexibleSpace: Container(decoration: const BoxDecoration(gradient: kHeaderGradient)),
+              flexibleSpace: Container(decoration: BoxDecoration(gradient: _headerGradient(context))),
             ),
             body: ListView(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
@@ -260,8 +296,8 @@ class _ProfilePageState extends State<ProfilePage> {
                   ),
 
                 const SizedBox(height: 18),
-                const Text('Tools',
-                    style: TextStyle(color: kText, fontSize: 13, fontWeight: FontWeight.w700)),
+                Text('Tools',
+                    style: TextStyle(color: textColor, fontSize: 13, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 8),
 
                 // ===== زر تغيير الثيم =====
@@ -280,6 +316,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   title: 'Backup',
                   subtitle: 'Save a copy of your data',
                   onTap: _backupComingSoon,
+                  accentColor: accentColor,
                 ),
                 _SettingTile(
                   icon: Icons.delete_sweep_outlined,
@@ -287,27 +324,30 @@ class _ProfilePageState extends State<ProfilePage> {
                   subtitle: 'Delete all bills & warranties',
                   onTap: _confirmResetData,
                   danger: true,
+                  accentColor: accentColor,
                 ),
                 _SettingTile(
                   icon: Icons.chat_bubble_outline,
                   title: 'Contact Us',
                   subtitle: 'Support & feedback',
                   onTap: _contactUs,
+                  accentColor: accentColor,
                 ),
                 _SettingTile(
                   icon: Icons.help_outline,
                   title: 'Help / FAQ',
                   subtitle: 'How BillWise works',
                   onTap: _showHelp,
+                  accentColor: accentColor,
                 ),
 
                 // Debug
                 _debugDiagnostics(),
 
                 const SizedBox(height: 24),
-                const Center(
+                Center(
                   child: Text('BillWise • v1.0.0',
-                      style: TextStyle(color: kTextSub, fontSize: 12)),
+                      style: TextStyle(color: textSub, fontSize: 12)),
                 ),
               ],
             ),
@@ -317,7 +357,7 @@ class _ProfilePageState extends State<ProfilePage> {
             Container(
               color: Colors.black26,
               alignment: Alignment.center,
-              child: const CircularProgressIndicator(color: kAccent),
+              child: CircularProgressIndicator(color: accentColor),
             ),
         ],
       ),
@@ -336,26 +376,34 @@ class _ThemeSwitchTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final textColor = theme.textTheme.bodyMedium!.color!;
+    final textSub = theme.hintColor;
+    final cardBg = theme.cardColor;
+    final strokeColor = theme.dividerColor;
+    final accentColor = theme.primaryColor;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
-        color: kCard,
+        color: cardBg,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: kStroke),
+        border: Border.all(color: strokeColor),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.25), blurRadius: 24, spreadRadius: -18),
+          BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10, spreadRadius: -2),
         ],
       ),
       child: SwitchListTile(
-        title: const Text('Dark Mode',
-            style: TextStyle(color: kText, fontWeight: FontWeight.w700)),
+        title: Text('Dark Mode',
+            style: TextStyle(color: textColor, fontWeight: FontWeight.w700)),
         subtitle: Text(
           value ? 'Using dark theme' : 'Using light theme',
-          style: const TextStyle(color: kTextSub),
+          style: TextStyle(color: textSub),
         ),
-        activeColor: kAccent,
-        inactiveThumbColor: Colors.white,
-        inactiveTrackColor: Colors.white30,
+        // *** تم التأكد من أن activeColor هو اللون الأرجواني المطلوب ***
+        activeColor: accentColor,
+        inactiveThumbColor: Colors.grey.shade400,
+        inactiveTrackColor: Colors.black.withOpacity(0.15),
         value: value,
         onChanged: onChanged,
       ),
@@ -388,15 +436,21 @@ class _ProfileHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final preset = _findPreset(avatarId);
+    final cardBg = theme.cardColor;
+    final strokeColor = theme.dividerColor;
+    final textColor = theme.textTheme.bodyMedium!.color!;
+    final textSub = theme.hintColor;
+    final accentColor = theme.primaryColor;
 
     return Container(
       decoration: BoxDecoration(
-        color: kCard,
+        color: cardBg,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: kStroke),
+        border: Border.all(color: strokeColor),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.25), blurRadius: 24, spreadRadius: -18),
+          BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10, spreadRadius: -2),
         ],
       ),
       padding: const EdgeInsets.all(16),
@@ -410,22 +464,23 @@ class _ProfileHeader extends StatelessWidget {
               children: [
                 Text(displayName,
                     style:
-                    const TextStyle(color: kText, fontSize: 18, fontWeight: FontWeight.w700)),
-                Text(email, style: const TextStyle(color: kTextSub, fontSize: 13)),
+                    TextStyle(color: textColor, fontSize: 18, fontWeight: FontWeight.w700)),
+                Text(email, style: TextStyle(color: textSub, fontSize: 13)),
                 const SizedBox(height: 6),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: kStroke),
-                    gradient: const LinearGradient(
-                      colors: [Color(0x1A6A73FF), Color(0x1A000000)],
+                    border: Border.all(color: strokeColor),
+                    // تدرج ديناميكي خفيف للخلفية
+                    gradient: LinearGradient(
+                      colors: [accentColor.withOpacity(0.10), Colors.transparent],
                       begin: Alignment.topRight,
                       end: Alignment.bottomLeft,
                     ),
                   ),
-                  child: const Text('Basic Account',
-                      style: TextStyle(color: kText, fontSize: 12, fontWeight: FontWeight.w600)),
+                  child: Text('Basic Account',
+                      style: TextStyle(color: textColor, fontSize: 12, fontWeight: FontWeight.w600)),
                 ),
               ],
             ),
@@ -433,11 +488,11 @@ class _ProfileHeader extends StatelessWidget {
           const SizedBox(width: 8),
           OutlinedButton.icon(
             onPressed: onEdit,
-            icon: const Icon(Icons.edit_outlined, size: 18, color: kText),
-            label: const Text('Edit', style: TextStyle(color: kText)),
+            icon: Icon(Icons.edit_outlined, size: 18, color: textColor),
+            label: Text('Edit', style: TextStyle(color: textColor)),
             style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: kStroke),
-              backgroundColor: Colors.white.withOpacity(0.02),
+              side: BorderSide(color: strokeColor),
+              backgroundColor: Colors.transparent,
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
@@ -456,6 +511,12 @@ class _Avatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final strokeColor = theme.dividerColor;
+    final textColor = theme.textTheme.bodyMedium!.color!;
+    final accentColor = theme.primaryColor;
+
     if (preset != null) {
       return Container(
         width: 56,
@@ -467,7 +528,7 @@ class _Avatar extends StatelessWidget {
             begin: Alignment.topRight,
             end: Alignment.bottomLeft,
           ),
-          border: Border.all(color: kStroke),
+          border: Border.all(color: strokeColor),
         ),
         alignment: Alignment.center,
         child: Text(preset!.emoji, style: const TextStyle(fontSize: 24)),
@@ -480,13 +541,18 @@ class _Avatar extends StatelessWidget {
       height: 56,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: const Color(0x22FFFFFF),
-        border: Border.all(color: kStroke),
+        // لون خلفية افتراضي: لون ثانوي خفيف
+        color: isDark ? Colors.white.withOpacity(0.1) : accentColor.withOpacity(0.15),
+        border: Border.all(color: strokeColor),
       ),
       alignment: Alignment.center,
       child: Text(
         initials,
-        style: const TextStyle(color: kText, fontSize: 20, fontWeight: FontWeight.w800),
+        style: TextStyle(
+          color: isDark ? textColor : accentColor, // نص أرجواني في Light Mode
+          fontSize: 20,
+          fontWeight: FontWeight.w800,
+        ),
       ),
     );
   }
@@ -498,6 +564,7 @@ class _SettingTile extends StatelessWidget {
   final String subtitle;
   final VoidCallback onTap;
   final bool danger;
+  final Color accentColor;
 
   const _SettingTile({
     required this.icon,
@@ -505,20 +572,30 @@ class _SettingTile extends StatelessWidget {
     required this.subtitle,
     required this.onTap,
     this.danger = false,
+    required this.accentColor,
   });
 
   @override
   Widget build(BuildContext context) {
-    final Color tint = danger ? kDanger : kAccent;
+    final theme = Theme.of(context);
+    final cardBg = theme.cardColor;
+    final strokeColor = theme.dividerColor;
+    final textColor = theme.textTheme.bodyMedium!.color!;
+    final textSub = theme.hintColor;
+    final dangerColor = theme.colorScheme.error;
+
+    // اللون النشط لـ Leading Icon: أرجواني (ما لم يكن خطر)
+    final Color tint = danger ? dangerColor : accentColor;
+    final isDark = theme.brightness == Brightness.dark;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
-        color: kCard,
+        color: cardBg,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: kStroke),
+        border: Border.all(color: strokeColor),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.25), blurRadius: 24, spreadRadius: -18),
+          BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10, spreadRadius: -2),
         ],
       ),
       child: ListTile(
@@ -528,18 +605,21 @@ class _SettingTile extends StatelessWidget {
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             gradient: LinearGradient(
-              colors: [tint.withOpacity(.18), kBg.withOpacity(.18)],
+              // تدرج دائري خفيف يعتمد على اللون الأساسي/الخطر
+              // تم تعديل الجزء السفلي للتأكد من أنه داكن/شفاف في Dark Mode
+              colors: [tint.withOpacity(.18), isDark ? Colors.black.withOpacity(0.1) : theme.scaffoldBackgroundColor.withOpacity(0.0)],
               begin: Alignment.topRight,
               end: Alignment.bottomLeft,
             ),
             border: Border.all(color: tint, width: 1.2),
           ),
           alignment: Alignment.center,
+          // *** الأيقونة الآن تستخدم اللون الأرجواني (tint) بشكل صريح ***
           child: Icon(icon, size: 22, color: tint),
         ),
-        title: Text(title, style: const TextStyle(color: kText, fontWeight: FontWeight.w700)),
-        subtitle: Text(subtitle, style: const TextStyle(color: kTextSub)),
-        trailing: const Icon(Icons.chevron_right, color: kTextSub),
+        title: Text(title, style: TextStyle(color: textColor, fontWeight: FontWeight.w700)),
+        subtitle: Text(subtitle, style: TextStyle(color: textSub)),
+        trailing: Icon(Icons.chevron_right, color: textSub),
         onTap: onTap,
       ),
     );
