@@ -37,8 +37,7 @@ class _AddBillPageState extends State<AddBillPage> {
   static const Color _kCardStrokeDark = Color(0x1FFFFFFF);
   static const Color _kTextDimDark = Color(0xFFBFC3D9);
   // *** اللون الأرجواني الساطع الموحد المطلوب لجميع الأزرار والمفاتيح ***
-  static const Color _kAccentColor = Color(0xFF9B5CFF); // لون أرجواني ساطع وموحد
-  // ---------------------------------------------------------------------------------
+  static const Color _kAccentColor = Color(0xFF9B5CFF);
 
   final _titleCtrl = TextEditingController();
   final _shopCtrl = TextEditingController();
@@ -60,9 +59,10 @@ class _AddBillPageState extends State<AddBillPage> {
   DateTime? _ocrWarrantyStart;
   DateTime? _ocrWarrantyEnd;
 
-  // 🔥 NEW: بيانات المنتج والرقم التسلسلي المستخلصة من OCR ليتم تمريرها للضمان
+  // 🔥 متغيرات البيانات المستخلصة من OCR
   String? _ocrProductName;
   String? _ocrSerialNumber;
+  int _detectedWarrantyYears = 2; // الافتراضي سنتين
 
   int? _retDays;
   int? _exDays;
@@ -76,6 +76,7 @@ class _AddBillPageState extends State<AddBillPage> {
   bool _loadingExisting = false;
   bool _checkingWarranty = false;
   bool _hasExistingWarranty = false;
+  bool _prefillApplied = false;
 
   @override
   void initState() {
@@ -83,6 +84,56 @@ class _AddBillPageState extends State<AddBillPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _notifs.requestPermissions(context);
     });
+  }
+
+  // ============================
+  //   🔥 Helper Functions
+  // ============================
+
+  // دالة ذكية لاستخراج عدد السنوات من النصوص (عربي/إنجليزي/أرقام/كتابة)
+  int _extractYearsSmartly(Map<String, dynamic> data) {
+    // 1. تجميع كل النصوص التي قد تحتوي على معلومة الضمان
+    String text = "${data['warranty_text'] ?? ''} ${data['description'] ?? ''} ${data['policy'] ?? ''} ${data['notes'] ?? ''}".toLowerCase();
+
+    // 2. تحويل الأرقام العربية المشرقية (٠-٩) إلى إنجليزية
+    const englishDigits = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+    const arabicDigits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+    for (int i = 0; i < arabicDigits.length; i++) {
+      text = text.replaceAll(arabicDigits[i], englishDigits[i]);
+    }
+
+    // --- المرحلة الأولى: الكلمات الخاصة (المثنى) ---
+    if (text.contains('سنتين') || text.contains('سنتان') || text.contains('عامين') || text.contains('عامان')) return 2;
+    if (text.contains('سنة واحدة') || text.contains('عام واحد')) return 1;
+
+    // --- المرحلة الثانية: الأرقام المكتوبة نصاً ---
+    Map<String, int> numberWords = {
+      'ثلاث': 3, 'ثلاثة': 3, 'three': 3,
+      'أربع': 4, 'أربعة': 4, 'four': 4,
+      'خمس': 5, 'خمسة': 5, 'five': 5,
+      'ست': 6, 'ستة': 6, 'six': 6,
+      'سبع': 7, 'سبعة': 7, 'seven': 7,
+      'عشر': 10, 'عشرة': 10, 'ten': 10,
+    };
+
+    final yearKeywords = r'(years?|yrs?|سنة|سنوات|سنين|عام|أعوام)';
+
+    for (var entry in numberWords.entries) {
+      // بحث عن: (الرقم كتابة) + مسافة + (كلمة سنة)
+      if (text.contains(RegExp('${entry.key}\\s*$yearKeywords'))) {
+        return entry.value;
+      }
+    }
+
+    // --- المرحلة الثالثة: الأرقام كرموز (3 سنوات) ---
+    final digitMatch = RegExp(r'(\d+)\s*' + yearKeywords).firstMatch(text);
+    if (digitMatch != null) {
+      final val = int.tryParse(digitMatch.group(1)!);
+      if (val != null && val >= 1 && val <= 20) return val;
+    }
+
+    // الافتراضي
+    return 2;
   }
 
   DateTime? _parseDate(dynamic v) {
@@ -104,26 +155,17 @@ class _AddBillPageState extends State<AddBillPage> {
 
   int? _extractDays(dynamic v) {
     if (v == null) return null;
-
     var normalized = v.toString().trim();
     const eastern = '٠١٢٣٤٥٦٧٨٩';
-
     for (var i = 0; i < eastern.length; i++) {
       normalized = normalized.replaceAll(eastern[i], i.toString());
     }
-
     final lower = normalized.toLowerCase();
-
-    final m = RegExp(
-      r'(\d{1,3})\s*(day|days|يوم|يوماً|يوما|ايام|أيام)',
-      caseSensitive: false,
-    ).firstMatch(lower);
+    final m = RegExp(r'(\d{1,3})\s*(day|days|يوم|يوماً|يوما|ايام|أيام)', caseSensitive: false).firstMatch(lower);
     if (m != null) return int.tryParse(m.group(1)!);
-
     if (RegExp(r'(يومان|يومين)').hasMatch(lower)) return 2;
     if (RegExp(r'\b(a day)\b').hasMatch(lower)) return 1;
     if (RegExp(r'(يوم|يوماً|يوما)').hasMatch(lower)) return 1;
-
     return int.tryParse(lower.replaceAll(RegExp(r'[^0-9]'), ''));
   }
 
@@ -138,7 +180,6 @@ class _AddBillPageState extends State<AddBillPage> {
   void _applyAutoWindowsFromPurchase(DateTime purchase) {
     final defRet = _retDays ?? 3;
     final defEx = _exDays ?? 7;
-
     if (!_returnManual) _returnDeadline = _deadlineFrom(purchase, defRet);
     if (!_exchangeManual) _exchangeDeadline = _deadlineFrom(purchase, defEx);
   }
@@ -146,13 +187,13 @@ class _AddBillPageState extends State<AddBillPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-
     if (widget.billId != null && !_loadingExisting) {
       _loadExisting(widget.billId!);
     } else if (widget.billId == null) {
       _applyPrefillOnce();
     }
   }
+
   Future<void> _loadExisting(String billId) async {
     setState(() {
       _loadingExisting = true;
@@ -163,27 +204,21 @@ class _AddBillPageState extends State<AddBillPage> {
       final data = await BillService.instance.getBill(billId);
       if (data == null) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Bill not found')));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bill not found')));
         Navigator.of(context).pop();
         return;
       }
-
       _titleCtrl.text = (data['title'] ?? '').toString();
       _shopCtrl.text = (data['shop_name'] ?? '').toString();
       final amount = data['total_amount'];
       if (amount != null) _amountCtrl.text = amount.toString();
-
       _purchaseDate = _parseDate(data['purchase_date']);
       _returnDeadline = _parseDate(data['return_deadline']);
       _exchangeDeadline = _parseDate(data['exchange_deadline']);
-
       _returnManual = _returnDeadline != null;
       _exchangeManual = _exchangeDeadline != null;
-
       _enableReturn = _returnDeadline != null;
       _enableExchange = _exchangeDeadline != null;
-
       _hasWarranty = (data['warranty_coverage'] as bool?) ?? false;
       _receiptImagePath = (data['receipt_image_path'] as String?);
 
@@ -192,9 +227,7 @@ class _AddBillPageState extends State<AddBillPage> {
           .where('bill_id', isEqualTo: billId)
           .limit(1)
           .get();
-
       _hasExistingWarranty = snap.docs.isNotEmpty;
-
       setState(() {});
     } finally {
       if (!mounted) return;
@@ -205,12 +238,9 @@ class _AddBillPageState extends State<AddBillPage> {
     }
   }
 
-  bool _prefillApplied = false;
-
-  /// ============================
-  ///   OCR Prefill + أول منتج = عنوان
-  ///   + دعم warrantyStart / warrantyEnd
-  /// ============================
+  // ============================
+  //   OCR Prefill Application
+  // ============================
   void _applyPrefillOnce() {
     if (_prefillApplied) return;
     _prefillApplied = true;
@@ -218,109 +248,74 @@ class _AddBillPageState extends State<AddBillPage> {
     Map<String, dynamic> prefill = {};
     bool suggestWarranty = widget.suggestWarranty;
 
-    // 1) Prefill from navigation args
     final args = ModalRoute.of(context)?.settings.arguments;
     if (args is Map) {
       final fromArgs = (args['prefill'] as Map?) ?? {};
       prefill = {...prefill, ...fromArgs};
       if (args['suggestWarranty'] == true) suggestWarranty = true;
     }
-
-    // 2) Prefill from widget
     if (widget.prefill != null) {
       prefill = {...prefill, ...widget.prefill!};
     }
+    if (prefill['suggestWarranty'] == true) {
+      suggestWarranty = true;
+    }
 
-    // ============================
-    //  🟣 العنوان = أول منتج (لتعبئة حقل العنوان)
-    // ============================
+    // Title / Product
     if (prefill['items'] is List && prefill['items'].isNotEmpty) {
       final first = prefill['items'].first;
-
       if (first is Map && first['name'] != null) {
         _titleCtrl.text = first['name'].toString();
-        // 🔥 تخزين اسم المنتج
         _ocrProductName = first['name'].toString();
       } else if (first is String) {
         _titleCtrl.text = first;
-        // 🔥 تخزين اسم المنتج
         _ocrProductName = first;
       }
     } else {
       _titleCtrl.text = (prefill['title'] ?? _titleCtrl.text).toString();
-      // 🔥 تخزين اسم المنتج من العنوان العادي
       _ocrProductName = _titleCtrl.text;
     }
 
-    // 🔥 NEW: استخلاص الرقم التسلسلي من OCR وتخزينه
+    // Serial
     final serial = prefill['serial'] ?? prefill['serial_number'] ?? prefill['serialNumber'];
     _ocrSerialNumber = (serial is String) ? serial.trim() : null;
     if (_ocrSerialNumber != null && _ocrSerialNumber!.isEmpty) _ocrSerialNumber = null;
-    // 🔥 END NEW
 
-    // ============================
-    //  🟣 المتجر Store name
-    // ============================
-    _shopCtrl.text = (prefill['store'] ??
-        prefill['shop'] ??
-        prefill['shop_name'] ??
-        '')
-        .toString();
+    // Store
+    _shopCtrl.text = (prefill['store'] ?? prefill['shop'] ?? prefill['shop_name'] ?? '').toString();
 
-    // ============================
-    //  🟣 Purchase date
-    // ============================
+    // Purchase Date
     _purchaseDate ??= _parseDate(prefill['purchase_date']);
 
-    // ============================
-    //  🟣 Warranty Start / End
-    // ============================
+    // Warranty Dates & Logic
     _ocrWarrantyStart = _parseDate(prefill['warrantyStart']);
     _ocrWarrantyEnd = _parseDate(prefill['warrantyEnd']);
-
-    // لو ما في purchase date → خليها من warrantyStart
     if (_purchaseDate == null && _ocrWarrantyStart != null) {
       _purchaseDate = _ocrWarrantyStart;
     }
 
-    // ============================
-    //  🟣 المبلغ Amount
-    // ============================
+    // 🔥🔥🔥 تحليل سنوات الضمان الذكي 🔥🔥🔥
+    _detectedWarrantyYears = _extractYearsSmartly(prefill);
+
+    // Amount
     final amt = _parseAmount(prefill['amount'] ?? prefill['total_amount']);
     if (amt != null) _amountCtrl.text = amt.toString();
 
-    // ============================
-    //  🟣 Return / Exchange windows
-    // ============================
-    _retDays ??= _extractDays(prefill['return_text'] ??
-        prefill['return'] ??
-        prefill['returnPolicy'] ??
-        prefill['policy']);
-
-    _exDays ??= _extractDays(prefill['exchange_text'] ??
-        prefill['exchange'] ??
-        prefill['exchangePolicy'] ??
-        prefill['policy']);
-
+    // Return/Exchange
+    _retDays ??= _extractDays(prefill['return_text'] ?? prefill['return'] ?? prefill['returnPolicy'] ?? prefill['policy']);
+    _exDays ??= _extractDays(prefill['exchange_text'] ?? prefill['exchange'] ?? prefill['exchangePolicy'] ?? prefill['policy']);
     if (_purchaseDate != null) {
-      _returnDeadline ??=
-          _deadlineFrom(_purchaseDate!, (_retDays ?? 3));
-      _exchangeDeadline ??=
-          _deadlineFrom(_purchaseDate!, (_exDays ?? 7));
+      _returnDeadline ??= _deadlineFrom(_purchaseDate!, (_retDays ?? 3));
+      _exchangeDeadline ??= _deadlineFrom(_purchaseDate!, (_exDays ?? 7));
     }
 
-    // ============================
-    //  🟣 Receipt Path
-    // ============================
+    // Image Path
     final path = (prefill['receiptPath'] ?? '') as String;
     if (path.isNotEmpty) _receiptImagePath = path;
 
-    // ============================
-    //  🟣 OCR detected warranty
-    // ============================
+    // Enable Warranty if detected
     if (suggestWarranty && !_hasWarranty) {
       _hasWarranty = true;
-
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -335,9 +330,7 @@ class _AddBillPageState extends State<AddBillPage> {
     setState(() {});
   }
 
-
   // ===== Pickers =====
-
   Future<void> _pickDate(
       BuildContext ctx,
       DateTime? initial,
@@ -345,7 +338,6 @@ class _AddBillPageState extends State<AddBillPage> {
       ) async {
     final min = DateTime(2015);
     final max = DateTime(2100);
-
     var init = initial ?? DateTime.now();
     if (init.isBefore(min)) init = min;
     if (init.isAfter(max)) init = max;
@@ -355,13 +347,10 @@ class _AddBillPageState extends State<AddBillPage> {
       initialDate: init,
       firstDate: min,
       lastDate: max,
-      // تأكد من استخدام primaryColor للـ DatePicker
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
-            colorScheme: ColorScheme.light(
-              primary: Theme.of(context).primaryColor,
-            ),
+            colorScheme: ColorScheme.light(primary: Theme.of(context).primaryColor),
           ),
           child: child!,
         );
@@ -374,10 +363,8 @@ class _AddBillPageState extends State<AddBillPage> {
     final theme = Theme.of(context);
     final textStyle = theme.textTheme.bodyMedium;
     final iconColor = theme.iconTheme.color;
-
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
-      // الخلفية تعتمد على الثيم الرئيسي
       builder: (ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -396,44 +383,27 @@ class _AddBillPageState extends State<AddBillPage> {
         ),
       ),
     );
-
     if (source == null) return;
-
-    final x = await _picker.pickImage(
-      source: source,
-      imageQuality: 85,
-    );
-
+    final x = await _picker.pickImage(source: source, imageQuality: 85);
     if (x != null) {
       setState(() => _receiptImagePath = x.path);
     }
   }
-  // ===== منطق الحفظ =====
 
+  // ===== Saving Logic =====
   Future<String?> _saveNewBill() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please sign in first')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please sign in first')));
       return null;
     }
-
-    if (_titleCtrl.text.trim().isEmpty ||
-        _shopCtrl.text.trim().isEmpty ||
-        _amountCtrl.text.trim().isEmpty ||
-        _purchaseDate == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please complete all required fields')),
-      );
+    if (_titleCtrl.text.trim().isEmpty || _shopCtrl.text.trim().isEmpty || _amountCtrl.text.trim().isEmpty || _purchaseDate == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please complete all required fields')));
       return null;
     }
-
     final amount = num.tryParse(_amountCtrl.text.trim());
     if (amount == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Invalid amount')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Invalid amount')));
       return null;
     }
 
@@ -468,23 +438,15 @@ class _AddBillPageState extends State<AddBillPage> {
       );
 
       if (!mounted) return id;
-
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('Bill saved ✅'),
           behavior: SnackBarBehavior.floating,
-          margin: const EdgeInsets.only(
-            left: 16,
-            right: 16,
-            bottom: 10, // عشان ما يدف زر الهوم
-          ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
+          margin: const EdgeInsets.only(left: 16, right: 16, bottom: 10),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           duration: const Duration(seconds: 2),
         ),
       );
-
       return id;
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -493,22 +455,13 @@ class _AddBillPageState extends State<AddBillPage> {
 
   Future<void> _updateBill() async {
     if (widget.billId == null) return;
-
-    if (_titleCtrl.text.trim().isEmpty ||
-        _shopCtrl.text.trim().isEmpty ||
-        _amountCtrl.text.trim().isEmpty ||
-        _purchaseDate == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please complete all required fields')),
-      );
+    if (_titleCtrl.text.trim().isEmpty || _shopCtrl.text.trim().isEmpty || _amountCtrl.text.trim().isEmpty || _purchaseDate == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please complete all required fields')));
       return;
     }
-
     final amount = num.tryParse(_amountCtrl.text.trim());
     if (amount == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Invalid amount')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Invalid amount')));
       return;
     }
 
@@ -543,10 +496,7 @@ class _AddBillPageState extends State<AddBillPage> {
       );
 
       if (!mounted) return;
-
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Bill updated ✅')));
-
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bill updated ✅')));
       Navigator.of(context).pop();
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -555,20 +505,15 @@ class _AddBillPageState extends State<AddBillPage> {
 
   Future<void> _deleteBill() async {
     if (widget.billId == null) return;
-
     final theme = Theme.of(context);
     final dangerColor = theme.colorScheme.error;
-
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Delete bill?'),
         content: const Text('This action cannot be undone.'),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
             style: FilledButton.styleFrom(backgroundColor: dangerColor),
@@ -577,22 +522,16 @@ class _AddBillPageState extends State<AddBillPage> {
         ],
       ),
     );
-
     if (ok != true) return;
-
     try {
       await BillService.instance.deleteBill(widget.billId!);
       await _notifs.cancelBillReminders(widget.billId!);
-
       if (!mounted) return;
-
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Bill deleted')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bill deleted')));
       Navigator.of(context).pop();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Error: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
     }
   }
 
@@ -606,24 +545,20 @@ class _AddBillPageState extends State<AddBillPage> {
   }
 
   Future<void> _saveAndAddWarranty() async {
-    // إذا الفاتورة لها ضمان سابق → لا نسمح بإضافة جديد
     if (widget.billId != null && _hasExistingWarranty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Warranty already exists')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Warranty already exists')));
       return;
     }
 
-    // ================================
-    //   حالة تعديل فاتورة موجودة
-    // ================================
+    // 1) Update Existing
     if (widget.billId != null) {
       await _updateBill();
       if (!mounted) return;
 
       final baseStart = _ocrWarrantyStart ?? _purchaseDate ?? DateTime.now();
-      final baseEnd = _ocrWarrantyEnd ?? baseStart.add(const Duration(days: 365));
+      // 🔥 حساب التاريخ بناءً على السنوات المكتشفة من النص
+      final baseEnd = _ocrWarrantyEnd ?? DateTime(baseStart.year + _detectedWarrantyYears, baseStart.month, baseStart.day);
 
       await Navigator.of(context).push(
         MaterialPageRoute(
@@ -632,28 +567,24 @@ class _AddBillPageState extends State<AddBillPage> {
             defaultStartDate: baseStart,
             defaultEndDate: baseEnd,
             initialProvider: _shopCtrl.text.trim(),
-            // 🔥 NEW: تمرير اسم المنتج والرقم التسلسلي
             initialProduct: _ocrProductName,
             initialSerial: _ocrSerialNumber,
-            // 🔥 END NEW
             prefillAttachmentPath: _receiptImagePath,
             purchaseDate: _purchaseDate,
           ),
         ),
       );
-
       if (mounted) Navigator.of(context).pop();
       return;
     }
 
-    // ================================
-    //   حالة إنشاء فاتورة جديدة
-    // ================================
+    // 2) Create New
     final newId = await _saveNewBill();
     if (newId == null || !mounted) return;
 
     final baseStart = _ocrWarrantyStart ?? _purchaseDate ?? DateTime.now();
-    final baseEnd = _ocrWarrantyEnd ?? baseStart.add(const Duration(days: 365));
+    // 🔥 حساب التاريخ بناءً على السنوات المكتشفة من النص
+    final baseEnd = _ocrWarrantyEnd ?? DateTime(baseStart.year + _detectedWarrantyYears, baseStart.month, baseStart.day);
 
     await Navigator.of(context).push(
       MaterialPageRoute(
@@ -662,16 +593,13 @@ class _AddBillPageState extends State<AddBillPage> {
           defaultStartDate: baseStart,
           defaultEndDate: baseEnd,
           initialProvider: _shopCtrl.text.trim(),
-          // 🔥 NEW: تمرير اسم المنتج والرقم التسلسلي
           initialProduct: _ocrProductName,
           initialSerial: _ocrSerialNumber,
-          // 🔥 END NEW
           prefillAttachmentPath: _receiptImagePath,
           purchaseDate: _purchaseDate,
         ),
       ),
     );
-
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -694,9 +622,7 @@ class _AddBillPageState extends State<AddBillPage> {
       );
     } catch (e) {
       final msg = e.toString();
-
       if (!mounted) return;
-
       if (msg.contains('exact_alarms_not_permitted')) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -708,58 +634,38 @@ class _AddBillPageState extends State<AddBillPage> {
           ),
         );
       } else {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Saved but notifications failed: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Saved but notifications failed: $e')));
       }
     }
   }
 
-  // ===== Theme Aware Input Field Definition (Using explicit Dark Mode colors) =====
+  // ===== Theme Aware Widgets =====
   InputDecoration _filled(String label, {IconData? icon}) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-
-    // *** استخدام الألوان الثابتة الداكنة لـ Dark Mode لتحقيق المظهر المطلوب ***
-    final inputFillColor = isDark
-        ? _kInputFillDark // #202048 (لون ملء حقول الإدخال)
-        : const Color(0xFFF0F0F5); // لون رمادي فاتح جداً في Light Mode
-
-    // لون النص والتسمية (افتراضي من الثيم، أو مُعرَّف بوضوح)
-    final labelColor = isDark
-        ? _kTextDimDark // #BFC3D9 (لون نص خافت لـ Dark Mode)
-        : Colors.black54;
+    final inputFillColor = isDark ? _kInputFillDark : const Color(0xFFF0F0F5);
+    final labelColor = isDark ? _kTextDimDark : Colors.black54;
 
     return InputDecoration(
       labelText: label,
       prefixIcon: icon == null ? null : Icon(icon, color: labelColor),
       filled: true,
       fillColor: inputFillColor,
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide.none,
-      ),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
       labelStyle: TextStyle(color: labelColor),
-      // لون النص المدخل نفسه سيأتي من TextTheme الرئيسي
       counterStyle: TextStyle(color: labelColor),
     );
   }
 
-  // ===== Theme Aware Section Card (Using explicit Dark Mode colors) =====
   Widget _sectionCard({required Widget child}) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-
-    // لون حد البطاقة
-    final cardStroke = isDark
-        ? _kCardStrokeDark // #1FFFFFFF (شفافية بيضاء خفيفة)
-        : theme.primaryColor.withOpacity(0.1);
-
-    // لون خلفية البطاقة
+    final cardStroke = isDark ? _kCardStrokeDark : theme.primaryColor.withOpacity(0.1);
     final cardBgColor = isDark ? _kCardDark : theme.cardColor;
 
     return Container(
       decoration: BoxDecoration(
-        color: cardBgColor, // لون البطاقة ديناميكيًا (ثابت في Dark Mode)
+        color: cardBgColor,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: cardStroke),
       ),
@@ -772,30 +678,18 @@ class _AddBillPageState extends State<AddBillPage> {
   Widget build(BuildContext context) {
     final isEdit = widget.billId != null;
     final theme = Theme.of(context);
-
-    // *** استخدام اللون الأرجواني الموحد الساطع (Accent Color) ***
     const accentColor = _kAccentColor;
-
     final dangerColor = theme.colorScheme.error;
     final textColor = theme.textTheme.bodyMedium!.color!;
-    // استخدام لون خافت من الثوابت الداكنة في Dark Mode، ولون خافت من الثيم في Light Mode
-    final dimColor = theme.brightness == Brightness.dark ? _kTextDimDark : theme
-        .textTheme.bodySmall!.color;
-
+    final dimColor = theme.brightness == Brightness.dark ? _kTextDimDark : theme.textTheme.bodySmall!.color;
     final isDark = theme.brightness == Brightness.dark;
-
-    // اللون الداكن للحواف/الفواصل
     final cardStrokeColor = isDark ? _kCardStrokeDark : Colors.black12;
 
-
     return Scaffold(
-      // Scaffold background color is inherited from MaterialApp (Light/Dark)
       appBar: AppBar(
-        // AppBar color is inherited from AppBarTheme in MaterialApp
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded),
           onPressed: () => Navigator.maybePop(context),
-          // لون الأيقونة يعتمد على الثيم
         ),
         title: Text(isEdit ? 'Edit Bill' : 'Add Bill'),
         actions: [
@@ -806,9 +700,7 @@ class _AddBillPageState extends State<AddBillPage> {
               icon: const Icon(Icons.delete_outline),
             ),
         ],
-        // flexibleSpace تم حذفه لتمكين استجابة الثيم
       ),
-
       body: _loadingExisting
           ? const Center(child: CircularProgressIndicator())
           : SafeArea(
@@ -818,50 +710,34 @@ class _AddBillPageState extends State<AddBillPage> {
             _sectionCard(
               child: Column(
                 children: [
-                  // ===== INPUT FIELDS (Themed) =====
                   TextField(
                     controller: _titleCtrl,
                     style: TextStyle(color: textColor),
-                    decoration: _filled('Bill title/description',
-                        icon: Icons.text_format),
+                    decoration: _filled('Bill title/description', icon: Icons.text_format),
                   ),
                   const SizedBox(height: 10),
                   TextField(
                     controller: _shopCtrl,
                     style: TextStyle(color: textColor),
-                    decoration: _filled('Store name',
-                        icon: Icons.store),
+                    decoration: _filled('Store name', icon: Icons.store),
                   ),
                   const SizedBox(height: 10),
                   TextField(
                     controller: _amountCtrl,
                     style: TextStyle(color: textColor),
-                    decoration: _filled('Amount (SAR)',
-                        icon: Icons.attach_money),
-                    keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                    inputFormatters: [
-                      FilteringTextInputFormatter.allow(
-                        RegExp(r'[0-9.]'),
-                      )
-                    ],
+                    decoration: _filled('Amount (SAR)', icon: Icons.attach_money),
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
                   ),
                   const SizedBox(height: 12),
-
-                  // ===== ATTACH IMAGE BUTTON (Themed) =====
                   Row(
                     children: [
                       ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
-                          // اللون الأرجواني لبوكس Attach Image
                           backgroundColor: accentColor,
                           foregroundColor: Colors.white,
-                          // النص أبيض على الأرجواني
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 10),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                         ),
                         onPressed: _pickReceipt,
                         icon: const Icon(Icons.attach_file),
@@ -870,12 +746,10 @@ class _AddBillPageState extends State<AddBillPage> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          _receiptImagePath == null
-                              ? 'No image'
-                              : _receiptImagePath!.split('/').last,
+                          _receiptImagePath == null ? 'No image' : _receiptImagePath!.split('/').last,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: dimColor), // لون خافت
+                          style: TextStyle(color: dimColor),
                         ),
                       ),
                     ],
@@ -883,92 +757,68 @@ class _AddBillPageState extends State<AddBillPage> {
                 ],
               ),
             ),
-
             const SizedBox(height: 14),
-
-            // Purchase Date Section
             _sectionCard(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Purchase date',
-                      style: TextStyle(
-                          fontWeight: FontWeight.w600, color: textColor)),
+                  Text('Purchase date', style: TextStyle(fontWeight: FontWeight.w600, color: textColor)),
                   const SizedBox(height: 6),
                   ListTile(
                     dense: true,
                     contentPadding: EdgeInsets.zero,
-                    title: Text(
-                      _fmtOrDash(_purchaseDate),
-                      style: TextStyle(color: textColor),
-                    ),
+                    title: Text(_fmtOrDash(_purchaseDate), style: TextStyle(color: textColor)),
                     leading: Icon(Icons.date_range, color: dimColor),
                     trailing: Icon(Icons.edit_calendar, color: dimColor),
                     iconColor: dimColor,
                     textColor: textColor,
-                    onTap: () =>
-                        _pickDate(context, _purchaseDate, (d) {
-                          setState(() {
-                            _purchaseDate = d;
-                            _applyAutoWindowsFromPurchase(d);
-                          });
-                        }),
+                    onTap: () => _pickDate(context, _purchaseDate, (d) {
+                      setState(() {
+                        _purchaseDate = d;
+                        _applyAutoWindowsFromPurchase(d);
+                      });
+                    }),
                   ),
-
                   Divider(height: 12, color: cardStrokeColor),
-
-                  // Return deadline
                   Row(
                     children: [
                       Icon(Icons.event, color: dimColor),
                       const SizedBox(width: 8),
-                      Expanded(child: Text('Return deadline',
-                          style: TextStyle(color: textColor))),
+                      Expanded(child: Text('Return deadline', style: TextStyle(color: textColor))),
                       Switch(
                         value: _enableReturn,
-                        activeColor: accentColor, // لون التبديل الأرجواني
+                        activeColor: accentColor,
                         onChanged: (v) {
                           setState(() {
                             _enableReturn = v;
-                            if (v &&
-                                _returnDeadline == null &&
-                                _purchaseDate != null) {
-                              _returnDeadline = _deadlineFrom(
-                                  _purchaseDate!, (_retDays ?? 3));
+                            if (v && _returnDeadline == null && _purchaseDate != null) {
+                              _returnDeadline = _deadlineFrom(_purchaseDate!, (_retDays ?? 3));
                             }
                           });
                         },
                       ),
                     ],
                   ),
-
                   Opacity(
                     opacity: _enableReturn ? 1 : .5,
                     child: ListTile(
                       dense: true,
                       contentPadding: EdgeInsets.zero,
                       title: Text(
-                        _enableReturn
-                            ? _fmtOrDash(_returnDeadline)
-                            : ' (Optional)',
-                        style:
-                        TextStyle(color: textColor),
+                        _enableReturn ? _fmtOrDash(_returnDeadline) : ' (Optional)',
+                        style: TextStyle(color: textColor),
                       ),
                       trailing: Icon(Icons.edit, color: dimColor),
                       iconColor: dimColor,
                       onTap: _enableReturn
-                          ? () =>
-                          _pickDate(
-                            context,
-                            _returnDeadline ??
-                                _purchaseDate ??
-                                DateTime.now(),
-                                (d) =>
-                                setState(() {
-                                  _returnManual = true;
-                                  _returnDeadline = d;
-                                }),
-                          )
+                          ? () => _pickDate(
+                        context,
+                        _returnDeadline ?? _purchaseDate ?? DateTime.now(),
+                            (d) => setState(() {
+                          _returnManual = true;
+                          _returnDeadline = d;
+                        }),
+                      )
                           : null,
                       onLongPress: _enableReturn
                           ? () {
@@ -976,74 +826,51 @@ class _AddBillPageState extends State<AddBillPage> {
                           _returnManual = false;
                           _returnDeadline = null;
                         });
-                        ScaffoldMessenger.of(context)
-                            .showSnackBar(
-                          const SnackBar(
-                              content: Text(
-                                  'Return deadline cleared')),
-                        );
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Return deadline cleared')));
                       }
                           : null,
                     ),
                   ),
-
                   Divider(height: 12, color: cardStrokeColor),
-
-                  // Exchange deadline
                   Row(
                     children: [
-                      Icon(Icons.event_repeat,
-                          color: dimColor),
+                      Icon(Icons.event_repeat, color: dimColor),
                       const SizedBox(width: 8),
-                      Expanded(
-                          child: Text('Exchange deadline',
-                              style: TextStyle(color: textColor))),
+                      Expanded(child: Text('Exchange deadline', style: TextStyle(color: textColor))),
                       Switch(
                         value: _enableExchange,
-                        activeColor: accentColor, // لون التبديل الأرجواني
+                        activeColor: accentColor,
                         onChanged: (v) {
                           setState(() {
                             _enableExchange = v;
-                            if (v &&
-                                _exchangeDeadline == null &&
-                                _purchaseDate != null) {
-                              _exchangeDeadline = _deadlineFrom(
-                                  _purchaseDate!,
-                                  (_exDays ?? 7));
+                            if (v && _exchangeDeadline == null && _purchaseDate != null) {
+                              _exchangeDeadline = _deadlineFrom(_purchaseDate!, (_exDays ?? 7));
                             }
                           });
                         },
                       ),
                     ],
                   ),
-
                   Opacity(
                     opacity: _enableExchange ? 1 : .5,
                     child: ListTile(
                       dense: true,
                       contentPadding: EdgeInsets.zero,
                       title: Text(
-                        _enableExchange
-                            ? _fmtOrDash(_exchangeDeadline)
-                            : ' (Optional)',
-                        style:
-                        TextStyle(color: textColor),
+                        _enableExchange ? _fmtOrDash(_exchangeDeadline) : ' (Optional)',
+                        style: TextStyle(color: textColor),
                       ),
                       trailing: Icon(Icons.edit, color: dimColor),
                       iconColor: dimColor,
                       onTap: _enableExchange
-                          ? () =>
-                          _pickDate(
-                            context,
-                            _exchangeDeadline ??
-                                _purchaseDate ??
-                                DateTime.now(),
-                                (d) =>
-                                setState(() {
-                                  _exchangeManual = true;
-                                  _exchangeDeadline = d;
-                                }),
-                          )
+                          ? () => _pickDate(
+                        context,
+                        _exchangeDeadline ?? _purchaseDate ?? DateTime.now(),
+                            (d) => setState(() {
+                          _exchangeManual = true;
+                          _exchangeDeadline = d;
+                        }),
+                      )
                           : null,
                       onLongPress: _enableExchange
                           ? () {
@@ -1051,11 +878,7 @@ class _AddBillPageState extends State<AddBillPage> {
                           _exchangeManual = false;
                           _exchangeDeadline = null;
                         });
-                        ScaffoldMessenger.of(context)
-                            .showSnackBar(
-                          const SnackBar(
-                              content: Text('Exchange cleared')),
-                        );
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Exchange cleared')));
                       }
                           : null,
                     ),
@@ -1063,39 +886,27 @@ class _AddBillPageState extends State<AddBillPage> {
                 ],
               ),
             ),
-
             const SizedBox(height: 14),
-
-            // Warranty toggle
             _sectionCard(
               child: SwitchListTile.adaptive(
                 dense: true,
                 contentPadding: EdgeInsets.zero,
                 activeColor: accentColor,
-                // لون التبديل الأرجواني
                 value: _hasWarranty,
-                onChanged: (v) =>
-                    setState(() => _hasWarranty = v),
-                title: Text(
-                    'Has warranty?', style: TextStyle(color: textColor)),
+                onChanged: (v) => setState(() => _hasWarranty = v),
+                title: Text('Has warranty?', style: TextStyle(color: textColor)),
                 subtitle: (_hasWarranty && widget.billId != null)
                     ? Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (_checkingWarranty)
-                      const SizedBox(height: 6),
-                    if (_checkingWarranty)
-                      const LinearProgressIndicator(
-                          minHeight: 2),
-                    if (!_checkingWarranty &&
-                        _hasExistingWarranty)
+                    if (_checkingWarranty) const SizedBox(height: 6),
+                    if (_checkingWarranty) const LinearProgressIndicator(minHeight: 2),
+                    if (!_checkingWarranty && _hasExistingWarranty)
                       Padding(
-                        padding:
-                        const EdgeInsets.only(top: 6),
+                        padding: const EdgeInsets.only(top: 6),
                         child: Text(
                           'A warranty already exists for this bill.',
-                          style:
-                          TextStyle(color: dimColor),
+                          style: TextStyle(color: dimColor),
                         ),
                       ),
                   ],
@@ -1103,83 +914,52 @@ class _AddBillPageState extends State<AddBillPage> {
                     : null,
               ),
             ),
-
             const SizedBox(height: 22),
-
-            // Save buttons
             Row(
               children: [
                 Expanded(
                   child: ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: accentColor, // لون زر Save الأرجواني
+                      backgroundColor: accentColor,
                       foregroundColor: Colors.white,
-                      padding:
-                      const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                     ),
                     onPressed: _saving ? null : _save,
                     icon: const Icon(Icons.save_outlined),
                     label: Text(
-                      _saving
-                          ? (isEdit ? 'Updating…' : 'Saving…')
-                          : (isEdit ? 'Update' : 'Save'),
+                      _saving ? (isEdit ? 'Updating…' : 'Saving…') : (isEdit ? 'Update' : 'Save'),
                     ),
                   ),
                 ),
-
-                if (_hasWarranty &&
-                    !(isEdit && _hasExistingWarranty)) ...[
+                if (_hasWarranty && !(isEdit && _hasExistingWarranty)) ...[
                   const SizedBox(width: 12),
                   Expanded(
                     child: ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: accentColor,
-                        // لون زر Save & Add الأرجواني
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                            vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                       ),
-                      onPressed:
-                      _saving ? null : _saveAndAddWarranty,
-                      icon:
-                      const Icon(Icons.verified_user),
-                      label: Text(
-                        isEdit
-                            ? 'Update & add'
-                            : 'Save & add',
-                      ),
+                      onPressed: _saving ? null : _saveAndAddWarranty,
+                      icon: const Icon(Icons.verified_user),
+                      label: Text(isEdit ? 'Update & add' : 'Save & add'),
                     ),
                   ),
                 ],
               ],
             ),
-
             const SizedBox(height: 8),
-
-            // Delete button
             if (isEdit)
               TextButton.icon(
                 onPressed: _saving ? null : _deleteBill,
-                icon: Icon(Icons.delete_outline,
-                    color: dangerColor),
-                label: Text(
-                  'Delete bill',
-                  style: TextStyle(color: dangerColor),
-                ),
+                icon: Icon(Icons.delete_outline, color: dangerColor),
+                label: Text('Delete bill', style: TextStyle(color: dangerColor)),
               ),
           ],
         ),
       ),
     );
-
   }
 }
-
-
-
